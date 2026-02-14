@@ -1,0 +1,810 @@
+.home-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Navigation */
+.home-nav {
+  height: 64px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+  display: flex;
+  align-items: center;
+}
+
+.home-nav__inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 120px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-nav__logo img {
+  height: 20px;
+  width: auto;
+  display: block;
+}
+
+.home-nav__links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.home-nav__link {
+  text-decoration: none;
+  color: #111827;
+  font-size: 14px;
+  padding: 8px 14px;
+}
+
+.home-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-nav__icon {
+  width: 31px;
+  height: 31px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.home-nav__menu {
+  width: 31px;
+  height: 31px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: transparent;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.home-nav__signin {
+  text-decoration: none;
+  color: #111827;
+  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+/* Banner Section */
+.banner-section {
+  width: 100%;
+  height: 700px;
+  background: #fff;
+  color: #111827;
+  padding: 64px 0 0;
+}
+
+.banner-container {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 120px;
+  display: flex;
+  align-items: center;
+  gap: 157px;
+}
+
+.banner-content {
+  flex: 1;
+  max-width: 511px;
+}
+
+.banner-title {
+  font-size: 62px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 24px 0;
+}
+
+.banner-title .highlight {
+  color: #685ff7;
+}
+
+.banner-description {
+  font-size: 18px;
+  line-height: 1.6;
+  margin-bottom: 32px;
+  color: #6b7280;
+}
+
+.banner-features {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.feature-row {
+  display: flex;
+  gap: 14px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.feature-item svg {
+  color: #685ff7;
+}
+
+.browse-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background: #685ff7;
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 500;
+  margin-bottom: 32px;
+  transition: background 0.2s;
+}
+
+.browse-button:hover {
+  background: #564be8;
+}
+
+.banner-stats {
+  display: flex;
+  gap: 28px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-number {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.banner-image {
+  flex: 1;
+  position: relative;
+  height: 500px;
+}
+
+.banner-image .image-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #f3f4f6;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #9ca3af;
+}
+
+.ready-badge {
+  position: absolute;
+  bottom: 20px;
+  left: -21px;
+  background: white;
+  color: #333;
+  padding: 21px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.badge-icon {
+  width: 42px;
+  height: 42px;
+  background: #685ff7;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.badge-title {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.badge-subtitle {
+  font-size: 14px;
+  color: #666;
+}
+
+/* Section Styles */
+.section-container {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 80px 120px;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.section-title {
+  font-size: 42px;
+  font-weight: 700;
+  margin: 0 0 16px 0;
+  color: #333;
+}
+
+.section-description {
+  font-size: 16px;
+  color: #666;
+  max-width: 572px;
+  margin: 0 auto;
+}
+
+/* Choose Car Section */
+.choose-car-section {
+  background: #fff;
+}
+
+.category-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 48px;
+}
+
+.category-tab {
+  padding: 6px 24px;
+  border: 1px solid #e5e5e5;
+  background: white;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.category-tab:hover {
+  border-color: #007bff;
+  color: #007bff;
+}
+
+.category-tab.active {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.cars-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+}
+
+/* How It Works Section */
+.how-it-works-section {
+  background: #f9f9f9;
+}
+
+.how-it-works-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 48px;
+}
+
+.how-it-works-card {
+  background: white;
+  padding: 32px 24px;
+  border-radius: 8px;
+  text-align: center;
+  position: relative;
+}
+
+.step-number {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) translateY(-50%);
+  background: #007bff;
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.step-icon {
+  font-size: 56px;
+  margin: 24px 0 16px 0;
+}
+
+.step-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  color: #333;
+}
+
+.step-description {
+  font-size: 14px;
+  color: #666;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Marketing Section */
+.marketing-section {
+  background: #fff;
+}
+
+.marketing-content {
+  display: flex;
+  gap: 80px;
+  align-items: center;
+}
+
+.marketing-text {
+  flex: 1;
+}
+
+.marketing-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin: 0 0 32px 0;
+  color: #333;
+}
+
+.marketing-features {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.marketing-feature {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.marketing-feature svg {
+  color: #007bff;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.marketing-feature h4 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: #333;
+}
+
+.marketing-feature p {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.marketing-image {
+  flex: 1;
+  height: 476px;
+}
+
+.marketing-image .image-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #f5f5f5;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #999;
+}
+
+/* Advantages Section */
+.advantages-section {
+  background: #f9f9f9;
+}
+
+.advantages-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 48px;
+}
+
+.advantage-card {
+  background: white;
+  padding: 24px;
+  border-radius: 8px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.advantage-icon {
+  font-size: 42px;
+  flex-shrink: 0;
+}
+
+.advantage-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.advantage-description {
+  font-size: 14px;
+  color: #666;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Get Offers Section */
+.get-offers-section {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 91px 0;
+}
+
+.offers-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  gap: 80px;
+  align-items: center;
+}
+
+.offers-text {
+  flex: 1;
+}
+
+.offers-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin: 0 0 24px 0;
+}
+
+.offers-description {
+  font-size: 18px;
+  opacity: 0.9;
+  margin: 0;
+}
+
+.offers-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: white;
+  font-size: 14px;
+}
+
+.form-input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.form-input.full-width {
+  width: 100%;
+}
+
+.form-checkbox {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.form-checkbox input[type="checkbox"] {
+  margin-top: 2px;
+}
+
+.form-checkbox label {
+  font-size: 14px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.more-info {
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: underline;
+  width: fit-content;
+}
+
+.submit-button {
+  padding: 12px 24px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  align-self: flex-start;
+}
+
+.submit-button:hover {
+  background: #0056b3;
+}
+
+@media (max-width: 1024px) {
+  .home-nav__inner {
+    padding: 0 48px;
+  }
+
+  .banner-container,
+  .section-container,
+  .footer-container {
+    padding-left: 48px;
+    padding-right: 48px;
+  }
+
+  .banner-container {
+    gap: 64px;
+  }
+
+  .cars-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .how-it-works-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .advantages-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .home-nav__inner {
+    padding: 0 24px;
+  }
+
+  .home-nav__links,
+  .home-nav__signin,
+  .home-nav__icon {
+    display: none;
+  }
+
+  .home-nav__menu {
+    display: inline-flex;
+  }
+
+  .banner-section {
+    height: auto;
+    padding: 32px 0 0;
+  }
+
+  .banner-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 32px;
+  }
+
+  .banner-content {
+    max-width: 100%;
+  }
+
+  .banner-title {
+    font-size: 38px;
+  }
+
+  .banner-description {
+    font-size: 16px;
+  }
+
+  .feature-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .browse-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .banner-stats {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .banner-image {
+    width: 100%;
+    height: 360px;
+  }
+
+  .ready-badge {
+    left: 14px;
+    bottom: 16px;
+    padding: 14px;
+  }
+
+  .section-container {
+    padding: 56px 24px;
+  }  .section-header {
+    text-align: left;
+  }
+
+  .section-title {
+    font-size: 30px;
+  }
+
+  .section-description {
+    margin: 0;
+    max-width: 100%;
+  }
+
+  .category-tabs {
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .category-tab {
+    flex: 1;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  .cars-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .how-it-works-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .how-it-works-card {
+    text-align: center;
+  }
+
+  .step-number {
+    left: auto;
+    right: 16px;
+    transform: translateY(-50%);
+  }
+
+  .marketing-content {
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .marketing-title {
+    font-size: 32px;
+  }
+
+  .marketing-image {
+    width: 100%;
+    height: 316px;
+  }
+
+  .advantages-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .advantage-card {
+    padding: 20px;
+  }
+
+  .get-offers-section {
+    padding: 56px 0;
+    background: #f9fafb;
+    color: #111827;
+  }
+
+  .offers-content {
+    flex-direction: column;
+    gap: 32px;
+    max-width: 100%;
+  }
+
+  .offers-title {
+    font-size: 28px;
+  }
+
+  .offers-description {
+    font-size: 16px;
+    opacity: 0.9;
+  }
+
+  .offers-form {
+    width: 100%;
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+
+  .form-input {
+    background: #fff;
+    color: #111827;
+    border-color: #e5e7eb;
+  }
+
+  .form-input::placeholder {
+    color: #9ca3af;
+  }
+
+  .submit-button {
+    width: 100%;
+    align-self: stretch;
+    background: #685ff7;
+  }
+
+  .submit-button:hover {
+    background: #564be8;
+  }
+}
+
+@media (max-width: 480px) {
+  .home-nav__inner,
+  .banner-container,
+  .section-container {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .banner-title {
+    font-size: 32px;
+  }
+
+  .banner-stats {
+    gap: 16px;
+  }
+
+  .stat-number {
+    font-size: 22px;
+  }
+
+  .stat-label {
+    font-size: 12px;
+  }
+}

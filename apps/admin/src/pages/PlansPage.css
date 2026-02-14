@@ -1,0 +1,681 @@
+.plansPage {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.plansHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.plansHeaderHint {
+  font-size: 14px;
+  color: #6a7282;
+  margin: 0;
+}
+
+.plansHeaderActions {
+  display: flex;
+  gap: 12px;
+}
+
+.plansBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6.8px;
+  border: 0.56px solid #e5e5e5;
+  background: rgba(229, 229, 229, 0.3);
+  font-size: 14px;
+  color: #0a0a0a;
+  cursor: pointer;
+}
+
+.plansBtn img {
+  width: 16px;
+  height: 16px;
+}
+
+.plansBtn--primary {
+  height: 36px;
+  background: linear-gradient(180deg, #685ff7 0%, #564be8 100%);
+  border: none;
+  color: white;
+  box-shadow: 0px 10px 15px -3px rgba(173, 70, 255, 0.25), 0px 4px 6px -4px rgba(173, 70, 255, 0.25);
+}
+
+.plansBtn--small {
+  height: 36px;
+  padding: 0 12px;
+}
+
+.plansBtn--icon {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.plansControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.plansToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #f9fafb;
+  border: 0.56px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 4px 8px;
+  box-shadow: 0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -2px rgba(0, 0, 0, 0.1);
+}
+
+.plansToggleBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 25px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: #4a5565;
+  cursor: pointer;
+}
+
+.plansToggleBtn img {
+  width: 16px;
+  height: 16px;
+}
+
+.plansToggleBtn--active {
+  color: white;
+  background: linear-gradient(180deg, #685ff7 0%, #564be8 100%);
+  box-shadow: 0px 10px 15px -3px rgba(173, 70, 255, 0.3), 0px 4px 6px -4px rgba(173, 70, 255, 0.3);
+}
+
+.plansSearch {
+  position: relative;
+  width: 256px;
+}
+
+.plansSearch img {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  width: 16px;
+  height: 16px;
+}
+
+.plansSearch input {
+  width: 100%;
+  height: 36px;
+  border-radius: 6.8px;
+  border: 0.56px solid #e5e7eb;
+  background: rgba(229, 229, 229, 0.3);
+  padding: 0 12px 0 40px;
+  font-size: 14px;
+  color: #0a0a0a;
+}
+
+.plansStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+
+.plansStatCard {
+  background: white;
+  border-radius: 16.4px;
+  padding: 24px;
+  box-shadow: 0px 10px 15px -3px rgba(229, 231, 235, 0.5), 0px 4px 6px -4px rgba(229, 231, 235, 0.5);
+}
+
+.plansStatTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.plansStatIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16.4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.plansStatIcon img {
+  width: 24px;
+  height: 24px;
+}
+
+.plansStatIcon--blue {
+  background: linear-gradient(135deg, #2b7fff 0%, #155dfc 100%);
+}
+
+.plansStatIcon--purple {
+  background: linear-gradient(180deg, #685ff7 0%, #564be8 100%);
+}
+
+.plansStatIcon--green {
+  background: linear-gradient(135deg, #00bc7d 0%, #009966 100%);
+}
+
+.plansStatIcon--orange {
+  background: linear-gradient(135deg, #fe9a00 0%, #e17100 100%);
+}
+
+.plansStatBadge {
+  height: 24px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plansStatBadge img {
+  width: 12px;
+  height: 12px;
+}
+
+.plansStatBadge--blue {
+  background: #eff6ff;
+  color: #1447e6;
+}
+
+.plansStatBadge--purple {
+  background: #faf5ff;
+  color: #8200db;
+}
+
+.plansStatBadge--green {
+  background: #ecfdf5;
+  color: #007a55;
+}
+
+.plansStatBadge--orange {
+  background: #fffbeb;
+  color: #bb4d00;
+}
+
+.plansStatLabel {
+  font-size: 14px;
+  color: #4a5565;
+}
+
+.plansStatValue {
+  font-size: 30px;
+  font-weight: 700;
+  color: #101828;
+  margin-top: 6px;
+}
+
+.plansStatMeta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6a7282;
+}
+
+.plansGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.planCard {
+  position: relative;
+  background: white;
+  border-radius: 16.4px;
+  box-shadow: 0px 10px 15px -3px rgba(229, 231, 235, 0.5), 0px 4px 6px -4px rgba(229, 231, 235, 0.5);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.planCard--highlight {
+  box-shadow: 0px 0px 0px 2px white, 0px 0px 0px 4px #685ff7, 0px 10px 15px -3px rgba(229, 231, 235, 0.5), 0px 4px 6px -4px rgba(229, 231, 235, 0.5);
+}
+
+.planPopularBadge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, #685ff7 0%, #564be8 100%);
+  color: white;
+  border-radius: 6.8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.planPopularBadge img {
+  width: 12px;
+  height: 12px;
+}
+
+.planHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.planIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 16.4px;
+  background: #faf5ff;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.planName {
+  font-size: 20px;
+  color: #101828;
+}
+
+.planBadge {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #4a5565;
+  border: 0.56px solid #e5e7eb;
+  border-radius: 6.8px;
+  padding: 2px 8px;
+  display: inline-block;
+}
+
+.planStatus {
+  height: 21px;
+  border-radius: 6.8px;
+  padding: 0 8px;
+  background: #ecfdf5;
+  color: #007a55;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  border: 0.56px solid #a4f4cf;
+}
+
+.planDescription {
+  font-size: 16px;
+  color: #4a5565;
+}
+
+.planPriceBlock {
+  background: linear-gradient(162deg, #faf5ff 0%, #eff6ff 100%);
+  border-radius: 16.4px;
+  padding: 16px;
+}
+
+.planPrice {
+  font-size: 36px;
+  font-weight: 700;
+  color: #101828;
+}
+
+.planPrice span {
+  font-size: 16px;
+  font-weight: 400;
+  color: #6a7282;
+  margin-left: 4px;
+}
+
+.planSave {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #4a5565;
+}
+
+.planSave strong {
+  color: #009966;
+  font-weight: 600;
+}
+
+.planMiniStats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.planMiniStat {
+  background: #faf5ff;
+  border-radius: 16.4px;
+  padding: 12px;
+}
+
+.planMiniStat--amber {
+  background: #fffbeb;
+}
+
+.planMiniLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #4a5565;
+}
+
+.planMiniLabel img {
+  width: 16px;
+  height: 16px;
+}
+
+.planMiniValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: #101828;
+  margin-top: 6px;
+}
+
+.planFeatures {
+  border-top: 0.56px solid #f3f4f6;
+  padding-top: 12px;
+}
+
+.planFeaturesTitle {
+  font-size: 12px;
+  color: #6a7282;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.planFeatures ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planFeatures li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #364153;
+}
+
+.planFeatures li img {
+  width: 16px;
+  height: 16px;
+}
+
+.planFeatures li.is-muted {
+  color: #99a1af;
+}
+
+.planFeaturesMore {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #6a7282;
+}
+
+.planActions {
+  border-top: 0.56px solid #f3f4f6;
+  padding-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plansModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.plansModal {
+  position: relative;
+  width: 512px;
+  max-width: calc(100% - 48px);
+  background: white;
+  border-radius: 10px;
+  border: 0.56px solid #e5e5e5;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+  padding: 24px;
+}
+
+.plansModalClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.plansModalClose img {
+  width: 16px;
+  height: 16px;
+}
+
+.plansModalHeader h2 {
+  margin: 0;
+  font-size: 24px;
+  color: #0a0a0a;
+}
+
+.plansModalHeader p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #737373;
+}
+
+.plansModalBody {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.plansModalSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plansModalSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 0.56px solid #e5e5e5;
+}
+
+.plansModalSectionTitle h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #101828;
+}
+
+.plansModalStep {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #faf5ff;
+  color: #685ff7;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.plansModalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.plansModalGrid label,
+.plansModalFull {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  color: #364153;
+}
+
+.plansModalGrid input,
+.plansModalFull input,
+.plansModalFull textarea,
+.plansModalFeatureRow input {
+  height: 36px;
+  border-radius: 6.8px;
+  border: 0.56px solid #e5e7eb;
+  background: rgba(229, 229, 229, 0.3);
+  padding: 0 12px;
+  font-size: 14px;
+  color: #0a0a0a;
+}
+
+.plansModalFull textarea {
+  height: 80px;
+  padding: 8px 12px;
+}
+
+.plansModalToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #faf5ff;
+  border-radius: 16.4px;
+  padding: 16px;
+}
+
+.plansModalToggleInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.plansModalToggleInfo img {
+  width: 20px;
+  height: 20px;
+}
+
+.plansModalToggleTitle {
+  font-weight: 600;
+  color: #101828;
+}
+
+.plansModalToggleSub {
+  font-size: 12px;
+  color: #6a7282;
+}
+
+.plansToggleSwitch {
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(229, 229, 229, 0.8);
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.plansToggleSwitch span {
+  width: 16px;
+  height: 16px;
+  background: #0a0a0a;
+  border-radius: 999px;
+}
+
+.plansModalFeatureRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+}
+
+.plansModalFeatureList {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.plansModalFeatureItem {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #f3f5f9;
+  color: #20293a;
+  font-size: 13px;
+}
+
+.plansToggleSwitch.is-active {
+  background: #1d4ed8;
+}
+
+.plansModalFooter {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 1200px) {
+  .plansStats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .plansGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .plansHeaderRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .plansHeaderActions {
+    flex-wrap: wrap;
+  }
+
+  .plansControls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .plansSearch {
+    width: 100%;
+  }
+}

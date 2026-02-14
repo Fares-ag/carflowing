@@ -1,0 +1,533 @@
+.vfd {
+  display: flex;
+  flex-direction: column;
+  height: min(1631.5px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  background: white;
+  border-radius: 14px;
+}
+
+.vfdHeader {
+  padding: 21px 28px;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 21px;
+}
+
+.vfdTitle {
+  font-size: 21px;
+  font-weight: 700;
+  color: #101828;
+  line-height: 28px;
+}
+
+.vfdSubtitle {
+  margin-top: 3.5px;
+  font-size: 14px;
+  color: #4a5565;
+  line-height: 21px;
+}
+
+.vfdHeaderIconBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.vfdHeaderIconBtn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.vfdBody {
+  padding: 28px;
+  overflow: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 35px;
+}
+
+.vfdTopGrid {
+  display: grid;
+  grid-template-columns: 402.5px 1fr;
+  gap: 35px;
+}
+
+.vfdImageCard {
+  position: relative;
+  border-radius: 12.75px;
+  overflow: hidden;
+  height: 301.875px;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+  background: #f3f4f6;
+}
+
+.vfdImage {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), transparent 55%),
+    linear-gradient(135deg, #111827, #374151);
+}
+
+.vfdImage--bmw-x3-2024 {
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), transparent 55%),
+    linear-gradient(135deg, #111827, #0b5fff);
+}
+
+.vfdImage--audi-a4-2023 {
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), transparent 55%),
+    linear-gradient(135deg, #0f172a, #1f2937);
+}
+
+.vfdImage--mercedes-c-2023 {
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), transparent 55%),
+    linear-gradient(135deg, #111827, #3f3f46);
+}
+
+.vfdBadge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 7.5px 14px;
+  border-radius: 6.75px;
+  font-size: 12.25px;
+  font-weight: 600;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.vfd-badge--available {
+  background: rgba(220, 252, 231, 0.9);
+  border: 1px solid #b9f8cf;
+  color: #008236;
+}
+
+.vfd-badge--rented {
+  background: rgba(219, 234, 254, 0.9);
+  border: 1px solid #bedbff;
+  color: #1447e6;
+}
+
+.vfd-badge--maintenance {
+  background: rgba(254, 249, 194, 0.92);
+  border: 1px solid #fff085;
+  color: #a65f00;
+}
+
+.vfdRight {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.vfdSectionTitle {
+  font-size: 17.5px;
+  font-weight: 700;
+  color: #101828;
+  line-height: 24.5px;
+}
+
+.vfdDivider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 10.5px 0 21px 0;
+}
+
+.vfdInfoGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 21px;
+}
+
+.vfdInfoLabel {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #6a7282;
+  text-transform: uppercase;
+  letter-spacing: 0.6173px;
+  line-height: 14px;
+}
+
+.vfdInfoValue {
+  margin-top: 3.5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #101828;
+  line-height: 21px;
+}
+
+.vfdInfoValue--accent {
+  color: #685ff7;
+  font-weight: 700;
+}
+
+.vfdMetricGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.vfdMetricCard {
+  border-radius: 12.75px;
+  padding: 22px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.vfdMetricCard--blue {
+  border-color: #bedbff;
+  background: linear-gradient(153.58deg, rgba(239, 246, 255, 1) 0%, rgba(219, 234, 254, 1) 100%);
+}
+
+.vfdMetricCard--green {
+  border-color: #b9f8cf;
+  background: linear-gradient(153.58deg, rgba(240, 253, 244, 1) 0%, rgba(220, 252, 231, 1) 100%);
+}
+
+.vfdMetricCard--yellow {
+  border-color: #fff085;
+  background: linear-gradient(153.58deg, rgba(254, 252, 232, 1) 0%, rgba(254, 249, 194, 1) 100%);
+}
+
+.vfdMetricCard--purple {
+  border-color: #e9d4ff;
+  background: linear-gradient(153.58deg, rgba(250, 245, 255, 1) 0%, rgba(243, 232, 255, 1) 100%);
+}
+
+.vfdMetricLabel {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6173px;
+}
+
+.vfdMetricCard--blue .vfdMetricLabel {
+  color: #155dfc;
+}
+.vfdMetricCard--green .vfdMetricLabel {
+  color: #00a63e;
+}
+.vfdMetricCard--yellow .vfdMetricLabel {
+  color: #d08700;
+}
+.vfdMetricCard--purple .vfdMetricLabel {
+  color: #9810fa;
+}
+
+.vfdMetricValue {
+  margin-top: 7px;
+  font-size: 26.25px;
+  font-weight: 700;
+  line-height: 31.5px;
+}
+
+.vfdMetricCard--blue .vfdMetricValue {
+  color: #1447e6;
+}
+.vfdMetricCard--green .vfdMetricValue {
+  color: #008236;
+}
+.vfdMetricCard--yellow .vfdMetricValue {
+  color: #a65f00;
+}
+.vfdMetricCard--purple .vfdMetricValue {
+  color: #8200db;
+  font-size: 17.5px;
+  line-height: 24.5px;
+}
+
+.vfdMetricValue--small {
+  font-size: 17.5px;
+  line-height: 24.5px;
+}
+
+.vfdStar {
+  font-size: 24.5px;
+  vertical-align: -2px;
+}
+
+.vfdFeatureList {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10.5px;
+}
+
+.vfdFeatureItem {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8.75px;
+  padding: 11.5px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10.5px;
+  font-size: 12.25px;
+  font-weight: 500;
+  color: #1e2939;
+}
+
+.vfdDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #685ff7;
+  flex: 0 0 auto;
+}
+
+.vfdDescriptionCard {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12.75px;
+  padding: 22px;
+  font-size: 14px;
+  color: #364153;
+  line-height: 22.75px;
+}
+
+.vfdTabsBlock {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 29px;
+}
+
+.vfdTabs {
+  background: #ececf0;
+  border-radius: 12.75px;
+  height: 31.5px;
+  padding: 3.5px 3px 2.5px 3px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 840px;
+  max-width: 100%;
+}
+
+.vfdTab {
+  height: 25.5px;
+  border-radius: 12.75px;
+  border: 1px solid rgba(0, 0, 0, 0);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.25px;
+  font-weight: 500;
+  color: #0a0a0a;
+}
+
+.vfdTab.active {
+  background: white;
+}
+
+.vfdTabCard {
+  margin-top: 28px;
+  width: 840px;
+  max-width: 100%;
+  background: white;
+  border-radius: 12.75px;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+  padding: 21px;
+}
+
+.vfdTabCardTitle {
+  font-size: 15.75px;
+  font-weight: 600;
+  color: #0a0a0a;
+  line-height: 24.5px;
+  margin-bottom: 14px;
+}
+
+.vfdSpecGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 21px;
+}
+
+.vfdSpecLabel {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #6a7282;
+  text-transform: uppercase;
+  letter-spacing: 0.6173px;
+  line-height: 14px;
+}
+
+.vfdSpecValue {
+  margin-top: 3.5px;
+  font-size: 12.25px;
+  font-weight: 600;
+  color: #101828;
+  line-height: 17.5px;
+}
+
+.vfdMaintList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vfdMaintRow {
+  background: #f9fafb;
+  border-radius: 8.75px;
+  padding: 0 14px;
+  height: 70.25px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 21px;
+}
+
+.vfdMaintTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: #101828;
+  line-height: 21px;
+}
+
+.vfdMaintDate {
+  font-size: 12.25px;
+  color: #4a5565;
+  line-height: 17.5px;
+}
+
+.vfdMaintRight {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 3.5px;
+  align-items: flex-end;
+}
+
+.vfdMaintBadge {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6.75px;
+  height: 19.5px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  color: #0a0a0a;
+}
+
+.vfdMaintCost {
+  font-size: 12.25px;
+  font-weight: 600;
+  color: #101828;
+  line-height: 17.5px;
+}
+
+.vfdAnalyticsGrid {
+  margin-top: 28px;
+  width: 840px;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 21px;
+}
+
+.vfdUtilRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10.5px;
+}
+
+.vfdUtilLabel {
+  font-size: 12.25px;
+  color: #4a5565;
+}
+
+.vfdUtilValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0a0a0a;
+}
+
+.vfdBar {
+  margin-top: 10.5px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(104, 95, 247, 0.2);
+  overflow: hidden;
+}
+
+.vfdBarFill {
+  height: 7px;
+  background: #685ff7;
+}
+
+.vfdKv {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.vfdKvLabel {
+  font-size: 12.25px;
+  color: #4a5565;
+}
+
+.vfdKvValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0a0a0a;
+}
+
+.vfdFooter {
+  padding: 22px 28px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 21px;
+}
+
+.vfdFooterLeft,
+.vfdFooterRight {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.vfdFooterBtn {
+  height: 31.5px;
+  border-radius: 6.75px;
+  border: 1px solid #d1d5dc;
+  background: #f3f4f6;
+  padding: 0 12px;
+  font-size: 12.25px;
+  color: #364153;
+  cursor: pointer;
+}
+
+.vfdFooterBtn:hover {
+  background: #eceef2;
+}
+
+.vfdFooterBtn--primary {
+  background: #685ff7;
+  border-color: #685ff7;
+  color: white;
+}
+
+.vfdFooterBtn--primary:hover {
+  background: #5c55e6;
+}
+
+@media (max-width: 980px) {
+  .vfdTopGrid {
+    grid-template-columns: 1fr;
+  }
+  .vfdImageCard {
+    width: 100%;
+  }
+  .vfdSpecGrid {
+    grid-template-columns: 1fr;
+  }
+  .vfdAnalyticsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -1,0 +1,488 @@
+.messagesPage {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.messagesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.messagesHeader h2 {
+  margin: 0;
+  font-size: 30px;
+  color: #101828;
+}
+
+.messagesHeader p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #6a7282;
+}
+
+.messagesCompose {
+  height: 36px;
+  border-radius: 6.8px;
+  border: none;
+  background: #685ff7;
+  color: #fafafa;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.messagesCompose img {
+  width: 16px;
+  height: 16px;
+}
+
+.messagesStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.messagesStatCard {
+  background: white;
+  border-radius: 16.4px;
+  padding: 24px;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.messagesStatIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16.4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.messagesStatIcon img {
+  width: 24px;
+  height: 24px;
+}
+
+.messagesStatIcon--blue {
+  background: linear-gradient(135deg, #2b7fff 0%, #155dfc 100%);
+}
+
+.messagesStatIcon--orange {
+  background: linear-gradient(135deg, #ff6900 0%, #f54900 100%);
+}
+
+.messagesStatIcon--amber {
+  background: linear-gradient(135deg, #fe9a00 0%, #e17100 100%);
+}
+
+.messagesStatIcon--gray {
+  background: linear-gradient(135deg, #6a7282 0%, #4a5565 100%);
+}
+
+.messagesStatLabel {
+  font-size: 14px;
+  color: #4a5565;
+}
+
+.messagesStatValue {
+  font-size: 30px;
+  font-weight: 700;
+  color: #101828;
+}
+
+.messagesActivity {
+  background: white;
+  border-radius: 16.4px;
+  padding: 24px;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.messagesCardTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  color: #0a0a0a;
+}
+
+.messagesCardTitle img {
+  width: 20px;
+  height: 20px;
+}
+
+.messagesChart {
+  margin-top: 16px;
+  position: relative;
+  height: 250px;
+}
+
+.messagesChart img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.messagesChartLegend {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  font-size: 14px;
+  color: #4a5565;
+}
+
+.messagesLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.messagesLegendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.messagesLegendDot--received {
+  background: #685ff7;
+}
+
+.messagesLegendDot--sent {
+  background: #00bc7d;
+}
+
+.messagesSplit {
+  display: grid;
+  grid-template-columns: 262px 1fr;
+  gap: 24px;
+}
+
+.messagesSidebar {
+  background: white;
+  border-radius: 16.4px;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+  padding: 16px;
+}
+
+.messagesFolders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.messagesFolder {
+  height: 36px;
+  border-radius: 6.8px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #0a0a0a;
+  cursor: pointer;
+  position: relative;
+}
+
+.messagesFolder img {
+  width: 16px;
+  height: 16px;
+}
+
+.messagesFolder.is-active {
+  background: #685ff7;
+  color: #fafafa;
+}
+
+.messagesFolderBadge {
+  margin-left: auto;
+  background: #ff6900;
+  color: #fafafa;
+  font-size: 12px;
+  border-radius: 6.8px;
+  padding: 2px 8px;
+}
+
+.messagesSidebarDivider {
+  height: 1px;
+  background: #e5e5e5;
+  margin: 16px 0;
+}
+
+.messagesFilterLabel {
+  font-size: 12px;
+  color: #6a7282;
+  margin-bottom: 8px;
+}
+
+.messagesFilterSelect {
+  width: 100%;
+  height: 36px;
+  border-radius: 6.8px;
+  border: 0.56px solid #e5e5e5;
+  background: rgba(229, 229, 229, 0.3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.messagesFilterSelect select {
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+
+.messagesList {
+  background: white;
+  border-radius: 16.4px;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.messagesListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.messagesListTitle {
+  font-size: 16px;
+  text-transform: capitalize;
+  color: #0a0a0a;
+}
+
+.messagesSearch {
+  position: relative;
+  width: 256px;
+}
+
+.messagesSearch img {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  width: 16px;
+  height: 16px;
+}
+
+.messagesSearch input {
+  width: 100%;
+  height: 36px;
+  border-radius: 6.8px;
+  border: 0.56px solid #e5e5e5;
+  background: rgba(229, 229, 229, 0.3);
+  padding: 0 12px 0 40px;
+  font-size: 14px;
+}
+
+.messagesListBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.messagesItem {
+  border-radius: 10px;
+  border: 0.56px solid #e5e7eb;
+  padding: 16px;
+  display: flex;
+  gap: 16px;
+}
+
+.messagesItem.is-unread {
+  background: #eff6ff;
+  border-color: #bedbff;
+}
+
+.messagesAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #155dfc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.messagesItemContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.messagesItemHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.messagesItemName {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #101828;
+}
+
+.messagesTypeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0.56px solid #e5e5e5;
+  border-radius: 6.8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: #0a0a0a;
+  font-weight: 500;
+}
+
+.messagesTypeBadge img {
+  width: 12px;
+  height: 12px;
+}
+
+.messagesItemTime {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6a7282;
+}
+
+.messagesItemTime img {
+  width: 16px;
+  height: 16px;
+}
+
+.messagesUnreadDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #685ff7;
+  display: inline-block;
+}
+
+.messagesItemSubject {
+  font-size: 14px;
+  font-weight: 600;
+  color: #101828;
+}
+
+.messagesItemPreview {
+  font-size: 14px;
+  color: #6a7282;
+}
+
+.messagesModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.messagesModal {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  width: min(520px, 92vw);
+  box-shadow: 0px 18px 40px rgba(0, 0, 0, 0.15);
+  display: grid;
+  gap: 12px;
+  position: relative;
+}
+
+.messagesModal label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.messagesModal input,
+.messagesModal textarea {
+  border: 1px solid rgba(229, 231, 235, 1);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.messagesModalClose {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.messagesModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.messagesModalBtn {
+  border: 1px solid rgba(229, 231, 235, 1);
+  background: #f3f4f6;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.messagesModalBtn--primary {
+  background: #685ff7;
+  border-color: #685ff7;
+  color: #fff;
+}
+
+@media (max-width: 1200px) {
+  .messagesStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .messagesSplit {
+    grid-template-columns: 1fr;
+  }
+
+  .messagesSearch {
+    width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .messagesHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .messagesListHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -1,0 +1,64 @@
+.adminSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.adminSettingsCard {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.adminSettingsRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.adminSettingsRow label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.adminSettingsRow input {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.adminSettingsActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.adminSettingsButton {
+  border: none;
+  background: #111827;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.adminSettingsMessage {
+  font-size: 13px;
+  color: #2563eb;
+}
+
+.adminSettingsError {
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.adminSettingsLoading {
+  font-size: 13px;
+  color: #6b7280;
+}

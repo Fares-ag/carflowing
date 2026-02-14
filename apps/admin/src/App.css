@@ -1,0 +1,499 @@
+.adminWelcomeTitle {
+  font-size: 36px;
+  font-weight: 700;
+  color: #101828;
+  line-height: 40px;
+  letter-spacing: 0.3691px;
+}
+
+.adminWelcomeSub {
+  margin-top: 8px;
+  font-size: 16px;
+  color: #4a5565;
+  line-height: 24px;
+}
+
+.adminStats {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+
+.adminStatCard {
+  background: white;
+  border-radius: 16.4px;
+  padding: 24px;
+  box-shadow: 0px 10px 15px -3px rgba(229, 231, 235, 0.5), 0px 4px 6px -4px rgba(229, 231, 235, 0.5);
+}
+
+.adminStatTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  height: 48px;
+}
+
+.adminStatIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16.4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+  color: white;
+}
+
+.adminStatIcon--purple {
+  background: linear-gradient(135deg, #ad46ff 0%, #9810fa 100%);
+}
+.adminStatIcon--blue {
+  background: linear-gradient(135deg, #2b7fff 0%, #155dfc 100%);
+}
+.adminStatIcon--green {
+  background: linear-gradient(135deg, #00bc7d 0%, #009966 100%);
+}
+.adminStatIcon--orange {
+  background: linear-gradient(135deg, #fe9a00 0%, #e17100 100%);
+}
+
+.adminDelta {
+  height: 24px;
+  border-radius: 999px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.adminDelta--up {
+  background: #ecfdf5;
+  color: #007a55;
+}
+.adminDelta--down {
+  background: #fef2f2;
+  color: #c10007;
+}
+
+.adminStatLabel {
+  margin-top: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #4a5565;
+}
+
+.adminStatValue {
+  margin-top: 8px;
+  font-size: 30px;
+  font-weight: 700;
+  color: #101828;
+  line-height: 36px;
+}
+
+.adminStatMeta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6a7282;
+  line-height: 16px;
+}
+
+.adminMidGrid {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: 357px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.adminCard {
+  background: white;
+  border-radius: 16.4px;
+  box-shadow: 0px 10px 15px -3px rgba(229, 231, 235, 0.5), 0px 4px 6px -4px rgba(229, 231, 235, 0.5);
+  padding: 24px;
+}
+
+.adminCard--wide {
+  padding: 24px;
+}
+
+.adminCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.adminCardTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #101828;
+  line-height: 24px;
+}
+
+.adminCardSub {
+  font-size: 12px;
+  color: #6a7282;
+  line-height: 16px;
+}
+
+.adminSelectBtn {
+  height: 36px;
+  border-radius: 6.8px;
+  border: 1px solid #e5e7eb;
+  background: rgba(229, 229, 229, 0.3);
+  padding: 0 12.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.adminSelectBtn select {
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+
+.adminSelectBtn:hover {
+  background: rgba(229, 229, 229, 0.45);
+}
+
+.adminDonutWrap {
+  margin-top: 24px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  height: 280px;
+}
+
+.adminDonut {
+  width: 208px;
+  height: 208px;
+  border-radius: 999px;
+  background: conic-gradient(#685ff7 0 78%, rgba(104, 95, 247, 0.18) 78% 100%);
+  mask: radial-gradient(circle at center, transparent 58%, black 59%);
+}
+
+.adminDonutCenter {
+  position: absolute;
+  text-align: center;
+}
+
+.adminDonutHint {
+  font-size: 14px;
+  color: #6a7282;
+  font-weight: 500;
+}
+
+.adminDonutValue {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 48px;
+  background: linear-gradient(180deg, #685ff7 0%, #564be8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.adminDonutDelta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #009966;
+  font-weight: 600;
+}
+
+.adminLegendRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.adminLegend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #4a5565;
+  font-weight: 500;
+}
+
+.adminLegendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.adminLegendDot--purple {
+  background: #685ff7;
+}
+.adminLegendDot--dark {
+  background: #1f2937;
+}
+
+.adminChart {
+  margin-top: 24px;
+  height: 300px;
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: white;
+}
+
+.adminChartGrid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to right, rgba(229, 231, 235, 0.6) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(229, 231, 235, 0.6) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.55;
+}
+
+.adminChartLine {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 40px;
+  height: 180px;
+  border-radius: 12px;
+  opacity: 0.9;
+}
+
+.adminChartLine--purple {
+  background: linear-gradient(90deg, rgba(104, 95, 247, 0.18), rgba(104, 95, 247, 0.0));
+  clip-path: polygon(0% 68%, 10% 62%, 20% 66%, 30% 54%, 40% 48%, 50% 58%, 60% 44%, 70% 40%, 80% 52%, 90% 46%, 100% 60%, 100% 100%, 0% 100%);
+}
+
+.adminChartLine--dark {
+  background: linear-gradient(90deg, rgba(31, 41, 55, 0.18), rgba(31, 41, 55, 0));
+  clip-path: polygon(0% 76%, 10% 70%, 20% 72%, 30% 66%, 40% 62%, 50% 66%, 60% 60%, 70% 62%, 80% 64%, 90% 60%, 100% 66%, 100% 100%, 0% 100%);
+}
+
+.adminChartAxis {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 10px;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 0;
+  color: #9ca3af;
+  font-size: 12px;
+  text-align: center;
+}
+
+.adminTableCard {
+  margin-top: 32px;
+  background: white;
+  border-radius: 16.4px;
+  box-shadow: 0px 10px 15px -3px rgba(229, 231, 235, 0.5), 0px 4px 6px -4px rgba(229, 231, 235, 0.5);
+  overflow: hidden;
+}
+
+.adminTableHeader {
+  padding: 24px;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.adminTableTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #101828;
+  line-height: 28px;
+}
+
+.adminTableSub {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #6a7282;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adminLiveDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #00c950;
+  opacity: 0.85;
+}
+
+.adminTableActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adminTableWrap {
+  overflow: auto;
+}
+
+.adminTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+}
+
+.adminTable thead tr {
+  background: rgba(249, 250, 251, 0.5);
+}
+
+.adminTable th {
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-size: 12px;
+  color: #4a5565;
+  font-weight: 600;
+  text-align: left;
+  padding: 22px 24px;
+  border-bottom: 1px solid #f3f4f6;
+  white-space: nowrap;
+}
+
+.adminTable td {
+  padding: 22px 24px;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 14px;
+  color: #101828;
+  vertical-align: middle;
+}
+
+.adminCustomerCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.adminAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #8200db;
+  background: linear-gradient(135deg, rgba(243, 232, 255, 1) 0%, rgba(219, 234, 254, 1) 100%);
+}
+
+.adminCustomerName {
+  font-weight: 500;
+}
+
+.adminTdMuted {
+  color: #4a5565;
+  font-weight: 400;
+}
+
+.adminTdStrong {
+  font-weight: 600;
+}
+
+.adminBadge {
+  height: 21px;
+  border-radius: 6.8px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.adminBadge--blue {
+  background: #eff6ff;
+  border-color: #bedbff;
+  color: #1447e6;
+}
+.adminBadge--amber {
+  background: #fffbeb;
+  border-color: #fee685;
+  color: #bb4d00;
+}
+.adminBadge--red {
+  background: #fef2f2;
+  border-color: #ffc9c9;
+  color: #c10007;
+}
+.adminBadge--green {
+  background: #ecfdf5;
+  border-color: #a4f4cf;
+  color: #007a55;
+}
+
+.adminKebab {
+  width: 32px;
+  height: 32px;
+  border-radius: 6.8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  color: #4a5565;
+}
+
+.adminKebab:hover {
+  background: rgba(229, 231, 235, 0.35);
+}
+
+.adminPlaceholder {
+  margin-top: 16px;
+  background: white;
+  border-radius: 16.4px;
+  padding: 32px;
+  box-shadow: 0px 10px 15px -3px rgba(229, 231, 235, 0.5), 0px 4px 6px -4px rgba(229, 231, 235, 0.5);
+}
+
+.adminPlaceholderTitle {
+  font-size: 20px;
+  font-weight: 600;
+  color: #101828;
+}
+
+.adminPlaceholderSub {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #6a7282;
+}
+
+@media (max-width: 1200px) {
+  .adminStats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .adminMidGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .adminSidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .adminTopbar {
+    position: static;
+    left: auto;
+    height: auto;
+  }
+  .adminMain {
+    margin-left: 0;
+    width: 100%;
+    padding-top: 24px;
+  }
+}
+

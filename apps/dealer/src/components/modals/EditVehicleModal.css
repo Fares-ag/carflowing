@@ -1,0 +1,124 @@
+.editVehicleModal {
+  display: flex;
+  flex-direction: column;
+}
+
+.evHeader {
+  padding: 21px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.evTitle {
+  font-size: 21px;
+  font-weight: 600;
+  color: #0a0a0a;
+  line-height: 28px;
+}
+
+.evSubtitle {
+  margin-top: 14px;
+  font-size: 14px;
+  color: #717182;
+  line-height: 21px;
+}
+
+.evBody {
+  padding: 21px;
+}
+
+.evGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 21px;
+}
+
+.evField {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.evFieldFull {
+  margin-top: 21px;
+}
+
+.evLabel {
+  font-size: 12.25px;
+  font-weight: 500;
+  color: #0a0a0a;
+  line-height: 17.5px;
+}
+
+.evInput,
+.evSelect {
+  height: 38.5px;
+  border-radius: 6.75px;
+  border: 1px solid rgba(0, 0, 0, 0);
+  background: #f3f3f5;
+  padding: 0 10.5px;
+  font-size: 12.25px;
+  color: #0a0a0a;
+  outline: none;
+}
+
+.evSelect {
+  height: 31.5px;
+  padding-right: 10.5px;
+}
+
+.evTextarea {
+  height: 56px;
+  border-radius: 6.75px;
+  border: 1px solid rgba(0, 0, 0, 0);
+  background: #f3f3f5;
+  padding: 8px 11.5px;
+  font-size: 12.25px;
+  color: #0a0a0a;
+  outline: none;
+  resize: vertical;
+}
+
+.evFooter {
+  height: 67.5px;
+  background: #f9fafb;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 15px 21px 0 21px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10.5px;
+}
+
+.evBtn {
+  height: 38.5px;
+  border-radius: 6.75px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0 22px;
+  font-size: 12.25px;
+  cursor: pointer;
+}
+
+.evBtnGhost {
+  background: #f3f4f6;
+  color: #0a0a0a;
+}
+
+.evBtnGhost:hover {
+  background: #eceef2;
+}
+
+.evBtnPrimary {
+  background: #685ff7;
+  border-color: #685ff7;
+  color: white;
+}
+
+.evBtnPrimary:hover {
+  background: #5c55e6;
+}
+
+@media (max-width: 560px) {
+  .evGrid {
+    grid-template-columns: 1fr;
+  }
+}
+

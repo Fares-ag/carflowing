@@ -1,0 +1,3 @@
+C:\Users\fmahmoud\Downloads\carflow-frontend\apps\dealer\src\components\modals\Modal.css:2:  position: fixed;
+C:\Users\fmahmoud\Downloads\carflow-frontend\apps\dealer\src\components\modals\Modal.css:19:  position: fixed;
+C:\Users\fmahmoud\Downloads\carflow-frontend\apps\dealer\src\components\modals\Modal.css:27:  position: absolute;

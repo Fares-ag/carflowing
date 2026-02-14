@@ -1,0 +1,168 @@
+.notifications-page {
+  display: flex;
+  min-height: 100vh;
+  background: #f9fafb;
+}
+
+.notifications-content {
+  flex: 1;
+  margin-left: 224px;
+  padding-top: 57px;
+  min-height: 100vh;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 21px;
+  margin-bottom: 21px;
+}
+
+.page-title-section {
+  flex: 1;
+}
+
+.page-title {
+  font-size: 21px;
+  font-weight: 600;
+  color: #101828;
+  margin: 0 0 3.5px 0;
+  letter-spacing: -0.36px;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #4a5565;
+  margin: 0;
+  letter-spacing: -0.15px;
+}
+
+.mark-all-read-btn {
+  padding: 7px 15.26px;
+  height: 31.5px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6.75px;
+  font-size: 12.25px;
+  font-weight: 500;
+  color: #364153;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mark-all-read-btn:hover {
+  background: #f9fafb;
+  border-color: #6366f1;
+  color: #6366f1;
+}
+
+.notifications-card {
+  background: white;
+  border-radius: 12.75px;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+  margin: 0 21px 21px 21px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.notifications-list {
+  padding: 0;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 21px;
+  gap: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-bottom: 1px solid #f3f4f6;
+  position: relative;
+}
+
+.notification-item:last-child {
+  border-bottom: none;
+}
+
+.notification-item:hover {
+  background-color: #f9fafb;
+}
+
+.notification-item.read {
+  opacity: 0.7;
+}
+
+.notification-icon {
+  flex-shrink: 0;
+  width: 31.5px;
+  height: 31.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #0a0a0a;
+  margin: 0 0 3.5px 0;
+  letter-spacing: -0.15px;
+}
+
+.notification-description {
+  font-size: 14px;
+  color: #0a0a0a;
+  margin: 0 0 7px 0;
+  letter-spacing: -0.15px;
+}
+
+.notification-time {
+  font-size: 12.25px;
+  color: #4a5565;
+  margin: 0;
+  letter-spacing: -0.018px;
+}
+
+.unread-dot {
+  position: absolute;
+  top: 21px;
+  right: 21px;
+  width: 8px;
+  height: 8px;
+  background: #6366f1;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.empty-state {
+  padding: 60px 21px;
+  text-align: center;
+  color: #6a7282;
+  font-size: 14px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .notifications-content {
+    margin-left: 0;
+    padding-top: 0;
+  }
+
+  .page-header {
+    flex-direction: column;
+    gap: 14px;
+    align-items: stretch;
+  }
+
+  .mark-all-read-btn {
+    width: 100%;
+  }
+}

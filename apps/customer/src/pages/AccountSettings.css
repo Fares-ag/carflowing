@@ -1,0 +1,145 @@
+.account-settings-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.account-settings-container {
+  flex: 1;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 64px 120px;
+  width: 100%;
+}
+
+.account-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.back-button,
+.browse-cars-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  color: #333;
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.back-button:hover,
+.browse-cars-button:hover {
+  border-color: #007bff;
+  color: #007bff;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 32px;
+}
+
+.settings-title-section {
+  flex: 1;
+}
+
+.settings-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.settings-description {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+.back-to-site-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  color: #333;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-to-site-button:hover {
+  border-color: #007bff;
+  color: #007bff;
+}
+
+.settings-layout {
+  display: flex;
+  gap: 28px;
+}
+
+.settings-sidebar {
+  width: 230px;
+  flex-shrink: 0;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: white;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-nav-item:hover {
+  background: #f5f5f5;
+}
+
+.settings-nav-item.active {
+  background: #007bff;
+  color: white;
+}
+
+.nav-icon {
+  font-size: 14px;
+}
+
+.nav-label {
+  font-weight: 500;
+}
+
+.settings-main {
+  flex: 1;
+  background: white;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 22px;
+}
+

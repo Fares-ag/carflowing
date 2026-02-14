@@ -1,0 +1,607 @@
+.inventory-page {
+  min-height: 100vh;
+  background: #f9fafb;
+  display: flex;
+}
+
+.inventory-content {
+  margin-left: 224px;
+  margin-top: 54px;
+  flex: 1;
+  padding: 21px;
+  max-width: 1440px;
+  width: calc(100% - 224px);
+}
+
+.inventory-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 21px;
+  margin-bottom: 21px;
+}
+
+.inventory-title {
+  font-size: 21px;
+  font-weight: 600;
+  color: #101828;
+  margin: 0 0 3.5px 0;
+  line-height: 28px;
+}
+
+.inventory-subtitle {
+  font-size: 14px;
+  color: #4a5565;
+  margin: 0;
+  line-height: 21px;
+}
+
+.inventory-actions {
+  display: flex;
+  align-items: center;
+  gap: 10.5px;
+  padding-top: 14px;
+}
+
+.inv-btn {
+  height: 31.5px;
+  border-radius: 8.75px;
+  padding: 0 11.5px;
+  font-size: 14px;
+  line-height: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: white;
+  color: #0a0a0a;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  user-select: none;
+}
+
+.inv-btn:active {
+  transform: translateY(1px);
+}
+
+.inv-btn--ghost {
+  background: white;
+}
+
+.inv-btn--ghost:hover,
+.inv-btn--outline:hover {
+  background: #f9fafb;
+}
+
+.inv-btn--primary {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: white;
+}
+
+.inv-btn--primary:hover {
+  background: #5457e5;
+  border-color: #5457e5;
+}
+
+.inv-btn--outline {
+  background: white;
+}
+
+.inv-btn--icon {
+  width: 33.5px;
+  padding: 0;
+  justify-content: center;
+}
+
+.inv-btn__icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.inv-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 21px;
+  margin-bottom: 21px;
+}
+
+.inv-statCard {
+  background: white;
+  border-radius: 12.75px;
+  padding: 21px;
+  display: flex;
+  justify-content: space-between;
+  gap: 21px;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+.inv-statLabel {
+  font-size: 12.25px;
+  color: #4a5565;
+  line-height: 17.5px;
+  margin-bottom: 3.5px;
+}
+
+.inv-statValue {
+  font-size: 21px;
+  font-weight: 600;
+  color: #0a0a0a;
+  line-height: 28px;
+  margin-bottom: 3.5px;
+}
+
+.inv-statMeta {
+  font-size: 12.25px;
+  color: #6a7282;
+  line-height: 14px;
+}
+
+.inv-statIcon {
+  width: 52.5px;
+  height: 52.5px;
+  border-radius: 12.75px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.inv-statIcon--blue {
+  background: rgba(43, 127, 255, 0.12);
+  color: #2b7fff;
+}
+
+.inv-statIcon--green {
+  background: rgba(0, 201, 80, 0.12);
+  color: #00a63e;
+}
+
+.inv-statIcon--purple {
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
+}
+
+.inv-statIcon--red {
+  background: rgba(251, 44, 54, 0.12);
+  color: #fb2c36;
+}
+
+.inv-filtersCard {
+  background: white;
+  border-radius: 12.75px;
+  padding: 21px;
+  margin-bottom: 21px;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+.inv-filtersRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 21px;
+}
+
+.inv-search {
+  width: 464.5px;
+  height: 42px;
+  border-radius: 10.5px;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  padding: 0 10.5px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.inv-searchIcon {
+  width: 17.5px;
+  height: 17.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.inv-searchInput {
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  font-size: 14px;
+  color: #0a0a0a;
+}
+
+.inv-searchInput::placeholder {
+  color: #6a7282;
+}
+
+.inv-filterControls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  flex: 1;
+}
+
+.inv-selectBtn {
+  height: 31.5px;
+  min-width: 140px;
+  border-radius: 8.75px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: white;
+  color: #0a0a0a;
+  font-size: 14px;
+  padding: 0 12.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.inv-selectBtn select {
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+
+.inv-selectChevron {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.inv-iconBtn {
+  width: 35.5px;
+  height: 42px;
+  border-radius: 10.5px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: white;
+  cursor: pointer;
+}
+
+.inv-viewToggle {
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10.5px;
+  background: #f3f4f6;
+  height: 35px;
+  padding: 3.5px;
+  gap: 3.5px;
+}
+
+.inv-toggleBtn {
+  width: 31.5px;
+  height: 28px;
+  border-radius: 8.75px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4a5565;
+}
+
+.inv-toggleBtn.active {
+  background: white;
+  color: #0a0a0a;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.inv-resultsRow {
+  margin-top: 14px;
+  font-size: 12.25px;
+  color: #6a7282;
+  line-height: 17.5px;
+}
+
+.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 21px;
+}
+
+.inv-vehicleCard {
+  background: white;
+  border-radius: 12.75px;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.inv-vehicleImage {
+  position: relative;
+  height: 261.75px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: linear-gradient(135deg, #111827, #374151);
+}
+
+.inv-vehicleImage--audi-a4-2023 {
+  background: linear-gradient(135deg, #0f172a, #1f2937);
+}
+
+.inv-vehicleImage--bmw-x3-2024 {
+  background: linear-gradient(135deg, #111827, #0b5fff);
+}
+
+.inv-vehicleImage--mercedes-c-2023 {
+  background: linear-gradient(135deg, #111827, #3f3f46);
+}
+
+.inv-vehicleImageOverlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.16), transparent 55%);
+}
+
+.inv-statusBadge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-size: 12.25px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  line-height: 18px;
+  color: #0a0a0a;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.inv-statusBadge--available {
+  background: rgba(0, 201, 80, 0.14);
+  color: #0a0a0a;
+  border: 1px solid rgba(0, 201, 80, 0.22);
+}
+
+.inv-statusBadge--rented {
+  background: rgba(43, 127, 255, 0.14);
+  color: #0a0a0a;
+  border: 1px solid rgba(43, 127, 255, 0.22);
+}
+
+.inv-statusBadge--maintenance {
+  background: rgba(255, 179, 0, 0.18);
+  color: #0a0a0a;
+  border: 1px solid rgba(255, 179, 0, 0.28);
+}
+
+.inv-imageActions {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.inv-imgBtn {
+  height: 28px;
+  border-radius: 8.75px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+  font-size: 12.25px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.inv-imgBtn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.inv-vehicleBody {
+  padding: 21px;
+}
+
+.inv-vehicleName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0a0a0a;
+  line-height: 21px;
+}
+
+.inv-vehicleMeta {
+  font-size: 12.25px;
+  color: #4a5565;
+  line-height: 17.5px;
+  margin-top: 3.5px;
+}
+
+.inv-dot {
+  color: #9aa4b2;
+  margin: 0 3px;
+}
+
+.inv-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.inv-metric {
+  background: #f9fafb;
+  border-radius: 10.5px;
+  padding: 10.5px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.inv-metricLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.25px;
+  color: #4a5565;
+  line-height: 14px;
+}
+
+.inv-metricHint {
+  color: #6a7282;
+  font-size: 12px;
+}
+
+.inv-metricValue {
+  margin-top: 3.5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0a0a0a;
+  line-height: 21px;
+}
+
+.inv-star {
+  font-size: 12px;
+}
+
+.inv-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.inv-tags--compact {
+  margin-top: 0;
+}
+
+.inv-tag {
+  padding: 4.5px 8px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 12.25px;
+  color: #0a0a0a;
+  line-height: 14px;
+}
+
+.inv-tag--small {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.inv-actionsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 33.5px;
+  gap: 7px;
+  margin-top: 14px;
+  align-items: center;
+}
+
+.inv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.inv-listRow {
+  background: white;
+  border-radius: 12.75px;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+  padding: 21px;
+  display: flex;
+  gap: 21px;
+}
+
+.inv-thumb {
+  width: 112px;
+  height: 84px;
+  border-radius: 10.5px;
+  background: linear-gradient(135deg, #111827, #374151);
+}
+
+.inv-thumb--audi-a4-2023 {
+  background: linear-gradient(135deg, #0f172a, #1f2937);
+}
+.inv-thumb--bmw-x3-2024 {
+  background: linear-gradient(135deg, #111827, #0b5fff);
+}
+.inv-thumb--mercedes-c-2023 {
+  background: linear-gradient(135deg, #111827, #3f3f46);
+}
+
+.inv-listMain {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10.5px;
+}
+
+.inv-listTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.inv-listMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.inv-listMetricLabel {
+  font-size: 12.25px;
+  color: #6a7282;
+  line-height: 14px;
+}
+
+.inv-listMetricValue {
+  margin-top: 3.5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0a0a0a;
+  line-height: 21px;
+}
+
+.inv-listBottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+}
+
+.inv-rowActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+@media (max-width: 1200px) {
+  .inv-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .inv-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .inv-search {
+    width: 100%;
+    flex: 1;
+  }
+  .inv-filtersRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 860px) {
+  .inv-grid {
+    grid-template-columns: 1fr;
+  }
+  .inv-listMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .inventory-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+

@@ -1,0 +1,260 @@
+.adminAnalyticsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.adminAnalyticsStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.adminAnalyticsStatCard {
+  background: white;
+  border-radius: 16.4px;
+  border: 0.56px solid #e5e5e5;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.adminAnalyticsStatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #4a5565;
+}
+
+.adminAnalyticsStatHeader img {
+  width: 16px;
+  height: 16px;
+}
+
+.adminAnalyticsStatValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: #101828;
+}
+
+.adminAnalyticsStatChange {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.adminAnalyticsStatChange img {
+  width: 16px;
+  height: 16px;
+}
+
+.adminAnalyticsStatChange .is-up {
+  color: #00a63e;
+}
+
+.adminAnalyticsStatChange .is-down {
+  color: #e7000b;
+}
+
+.adminAnalyticsStatSub {
+  color: #6a7282;
+}
+
+.adminAnalyticsCharts {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.adminAnalyticsCard {
+  background: white;
+  border-radius: 16.4px;
+  border: 0.56px solid #e5e5e5;
+  padding: 24px;
+}
+
+.adminAnalyticsCardTitle {
+  font-size: 16px;
+  color: #0a0a0a;
+}
+
+.adminAnalyticsCardSub {
+  margin-top: 6px;
+  font-size: 16px;
+  color: #737373;
+}
+
+.adminAnalyticsTrendChart {
+  margin-top: 24px;
+  position: relative;
+  height: 300px;
+}
+
+.adminAnalyticsTrendChart img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.adminAnalyticsTrendLegend {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  color: #4a5565;
+}
+
+.adminAnalyticsLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adminAnalyticsLegendItem img {
+  width: 14px;
+  height: 14px;
+}
+
+.adminAnalyticsSplit {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.adminAnalyticsVehiclesChart,
+.adminAnalyticsCategoryChart {
+  margin-top: 24px;
+  position: relative;
+  height: 300px;
+}
+
+.adminAnalyticsVehiclesChart img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.adminAnalyticsCategoryChart {
+  display: grid;
+  place-items: center;
+}
+
+.adminAnalyticsDonut {
+  position: relative;
+  width: 300px;
+  height: 300px;
+}
+
+.adminAnalyticsDonut img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.adminAnalyticsCategoryLegend {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  color: #4a5565;
+  font-size: 14px;
+}
+
+.legendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.legendDot--purple {
+  background: #685ff7;
+}
+
+.legendDot--green {
+  background: #10b981;
+}
+
+.legendDot--amber {
+  background: #f59e0b;
+}
+
+.legendDot--red {
+  background: #ef4444;
+}
+
+.adminAnalyticsHighlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.adminAnalyticsHighlightCard {
+  background: white;
+  border-radius: 16.4px;
+  border: 0.56px solid #e5e5e5;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.adminAnalyticsHighlightTitle {
+  font-size: 16px;
+  color: #0a0a0a;
+}
+
+.adminAnalyticsHighlightBody {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.adminAnalyticsHighlightValue {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.adminAnalyticsHighlightValue.is-purple {
+  color: #685ff7;
+}
+
+.adminAnalyticsHighlightValue.is-green {
+  color: #00a63e;
+}
+
+.adminAnalyticsHighlightValue.is-blue {
+  color: #155dfc;
+}
+
+.adminAnalyticsHighlightSub {
+  margin-top: 4px;
+  font-size: 14px;
+  color: #6a7282;
+}
+
+.adminAnalyticsHighlightBody img {
+  width: 32px;
+  height: 32px;
+}
+
+@media (max-width: 1200px) {
+  .adminAnalyticsStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adminAnalyticsSplit {
+    grid-template-columns: 1fr;
+  }
+
+  .adminAnalyticsHighlights {
+    grid-template-columns: 1fr;
+  }
+}

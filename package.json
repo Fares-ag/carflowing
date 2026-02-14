@@ -1,0 +1,34 @@
+{
+  "name": "carflow-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:admin": "npm run dev --workspace=apps/admin",
+    "dev:customer": "npm run dev --workspace=apps/customer",
+    "dev:dealer": "npm run dev --workspace=apps/dealer",
+    "dev:backend": "npm run dev --workspace=apps/backend",
+    "build": "npm run build --workspaces --if-present",
+    "build:admin": "npm run build --workspace=apps/admin",
+    "build:customer": "npm run build --workspace=apps/customer",
+    "build:dealer": "npm run build --workspace=apps/dealer",
+    "build:backend": "npm run build --workspace=apps/backend",
+    "lint": "npm run lint --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.2.2"
+  },
+  "msw": {
+    "workerDirectory": [
+      "apps\\customer\\public",
+      "apps\\admin\\public",
+      "apps\\dealer\\public"
+    ]
+  }
+}

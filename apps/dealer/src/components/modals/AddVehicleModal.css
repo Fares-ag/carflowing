@@ -1,0 +1,578 @@
+.addVehicleModal {
+  display: flex;
+  flex-direction: column;
+  height: min(3247px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+}
+
+.avHeader {
+  padding: 21px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.avHeaderTitle {
+  font-size: 21px;
+  font-weight: 700;
+  color: #101828;
+  line-height: 28px;
+}
+
+.avHeaderSubtitle {
+  margin-top: 7px;
+  font-size: 12.25px;
+  color: #4a5565;
+  line-height: 17.5px;
+}
+
+.avBody {
+  padding: 21px;
+  overflow: auto;
+  flex: 1;
+}
+
+.avSection {
+  margin-bottom: 28px;
+}
+
+.avSectionHeading {
+  display: flex;
+  align-items: center;
+  gap: 10.5px;
+  margin-bottom: 14px;
+}
+
+.avSectionIcon {
+  width: 17.5px;
+  height: 17.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avSectionTitle {
+  font-size: 15.75px;
+  font-weight: 600;
+  color: #101828;
+  line-height: 24.5px;
+}
+
+.avSectionHint {
+  font-size: 12.25px;
+  color: #6a7282;
+}
+
+.avPhotoGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.avPhotoSlot {
+  border: 2px solid #e5e7eb;
+  border-radius: 8.75px;
+  padding: 2px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.avPhotoSlotInner {
+  height: 231px;
+  background: #f9fafb;
+  border-radius: 8.75px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10.5px;
+}
+
+.avPhotoPlus {
+  width: 42px;
+  height: 42px;
+  border-radius: 8.75px;
+  background: white;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #364153;
+}
+
+.avPhotoText {
+  font-size: 12.25px;
+  font-weight: 500;
+  color: #364153;
+}
+
+.avPhotoIndex {
+  font-size: 10.5px;
+  color: #6a7282;
+}
+
+.avTwoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  margin-bottom: 42px;
+}
+
+.avColHeader {
+  height: 39.5px;
+  display: flex;
+  align-items: center;
+  gap: 10.5px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 1px;
+  margin-bottom: 21px;
+}
+
+.avColHeaderIcon {
+  width: 17.5px;
+  height: 17.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avColHeaderTitle {
+  font-size: 15.75px;
+  font-weight: 600;
+  color: #101828;
+}
+
+.avColCenteredHeader {
+  border-bottom: 1px solid rgba(243, 244, 246, 0.8);
+  padding-bottom: 21px;
+  margin-bottom: 21px;
+  text-align: center;
+}
+
+.avBigIcon {
+  width: 49px;
+  height: 49px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12.75px;
+  background: rgba(104, 95, 247, 0.1);
+  color: #685ff7;
+  font-size: 20px;
+}
+
+.avCenteredTitle {
+  margin-top: 21px;
+  font-size: 21px;
+  font-weight: 700;
+  color: #101828;
+  line-height: 28px;
+}
+
+.avCenteredSubtitle {
+  margin-top: 14px;
+  font-size: 14px;
+  color: #4a5565;
+  line-height: 22.75px;
+}
+
+.avFields {
+  display: flex;
+  flex-direction: column;
+  gap: 17.5px;
+}
+
+.avField {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.avHalf {
+  width: 220px;
+}
+
+.avLabel {
+  font-size: 12.25px;
+  font-weight: 500;
+  color: #101828;
+}
+
+.avLabelCaps {
+  font-size: 12.25px;
+  font-weight: 700;
+  color: #101828;
+  letter-spacing: 0.2883px;
+  text-transform: uppercase;
+}
+
+.avInput {
+  height: 35px;
+  border-radius: 6.75px;
+  border: 1px solid rgba(0, 0, 0, 0);
+  background: #f3f3f5;
+  padding: 0 10.5px;
+  font-size: 12.25px;
+  color: #0a0a0a;
+  outline: none;
+}
+
+.avInputTall {
+  height: 49px;
+  border-radius: 12.75px;
+  border: 2px solid #e5e7eb;
+  background: #f3f3f5;
+  padding: 0 21px;
+  color: #99a1af;
+  font-weight: 500;
+}
+
+.avSelect {
+  height: 31.5px;
+  border-radius: 12.75px;
+  border: 2px solid #e5e7eb;
+  background: #f3f3f5;
+  padding: 0 12.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #717182;
+  cursor: pointer;
+}
+
+.avChevron {
+  opacity: 0.7;
+}
+
+.avRow2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+
+.avCurrencyWrap {
+  position: relative;
+}
+
+.avCurrency {
+  position: absolute;
+  left: 21px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  font-weight: 600;
+  color: #6a7282;
+}
+
+.avCurrencyInput {
+  padding-left: 70px;
+  color: #99a1af;
+}
+
+.avUnitWrap {
+  position: relative;
+}
+
+.avUnit {
+  position: absolute;
+  right: 21px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  font-weight: 600;
+  color: #6a7282;
+}
+
+.avBigSection {
+  margin-top: 42px;
+}
+
+.avBigSectionHeader {
+  border-bottom: 1px solid rgba(243, 244, 246, 0.8);
+  padding-bottom: 42px;
+  text-align: center;
+}
+
+.avBigSectionHeader--compact {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.avBigSectionIcon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(104, 95, 247, 0.1);
+  border-radius: 14px;
+  color: #685ff7;
+  font-size: 18px;
+}
+
+.avBigSectionTitle {
+  margin-top: 28px;
+  font-size: 26.25px;
+  font-weight: 700;
+  color: #101828;
+  line-height: 31.5px;
+}
+
+.avBigSectionSubtitle {
+  margin: 21px auto 0 auto;
+  max-width: 588px;
+  font-size: 15.75px;
+  color: #4a5565;
+  line-height: 25.594px;
+}
+
+.avFeaturesGrid {
+  margin-top: 42px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 21px;
+}
+
+.avFeatureChip {
+  height: 58.906px;
+  border: 2px solid #f3f4f6;
+  border-radius: 14px;
+  padding: 2px 19.5px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: white;
+  cursor: pointer;
+  user-select: none;
+}
+
+.avFeatureChip input {
+  width: 17.5px;
+  height: 17.5px;
+  accent-color: #685ff7;
+}
+
+.avFeatureLabel {
+  font-size: 12.25px;
+  font-weight: 600;
+  color: #1e2939;
+}
+
+.avDescSection {
+  margin-top: 42px;
+  text-align: center;
+}
+
+.avTextarea {
+  margin-top: 42px;
+  width: 784px;
+  max-width: 100%;
+  height: 98.5px;
+  border-radius: 14px;
+  border: 2px solid #e5e7eb;
+  background: #f3f3f5;
+  padding: 21px;
+  resize: vertical;
+  font-size: 12.25px;
+  font-weight: 500;
+  color: #99a1af;
+  line-height: 17.5px;
+  outline: none;
+}
+
+.avPreviewSection {
+  margin-top: 42px;
+}
+
+.avPreviewInner {
+  border-radius: 12px;
+  padding: 2px;
+  background: linear-gradient(26.72deg, rgba(104, 95, 247, 1) 0%, rgba(139, 126, 247, 1) 50%, rgba(167, 153, 247, 1) 100%);
+}
+
+.avPreviewHeader {
+  text-align: center;
+  padding: 42px 42px 0 42px;
+}
+
+.avPreviewIcon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  border-radius: 14px;
+  background: rgba(104, 95, 247, 0.1);
+  color: #685ff7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avPreviewTitle {
+  margin-top: 21px;
+  font-size: 21px;
+  font-weight: 700;
+  color: #101828;
+}
+
+.avPreviewSubtitle {
+  margin-top: 14px;
+  font-size: 14px;
+  color: #4a5565;
+}
+
+.avPreviewCards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 35px;
+  padding: 35px 42px 42px 42px;
+  background: white;
+  border-radius: 10px;
+}
+
+.avPreviewCard {
+  background: rgba(249, 250, 251, 0.5);
+  border-radius: 14px;
+  padding: 21px;
+  text-align: center;
+}
+
+.avPreviewCardIcon {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto;
+  border-radius: 12.75px;
+  background: rgba(104, 95, 247, 0.1);
+  color: #685ff7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avPreviewCardLabel {
+  margin-top: 14px;
+  font-size: 12.25px;
+  font-weight: 600;
+  color: #4a5565;
+  text-transform: uppercase;
+  letter-spacing: 0.2883px;
+}
+
+.avPreviewCardValue {
+  margin-top: 14px;
+  font-size: 15.75px;
+  font-weight: 700;
+  color: #101828;
+}
+
+.avPreviewCardValue--accent {
+  color: #685ff7;
+  font-size: 17.5px;
+}
+
+.avPreviewCardMeta {
+  margin-top: 10.5px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #364153;
+}
+
+.avPreviewCardSub {
+  margin-top: 10.5px;
+  font-size: 12.25px;
+  color: #4a5565;
+}
+
+.avFooter {
+  border-top: 1px solid rgba(243, 244, 246, 0.8);
+  background: linear-gradient(to right, rgba(249, 250, 251, 0.3), white);
+  padding: 43px 28px 0 28px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 21px;
+}
+
+.avFooterNoteTop {
+  font-size: 12.25px;
+  font-weight: 600;
+  color: #6a7282;
+  letter-spacing: 0.2883px;
+  text-transform: uppercase;
+}
+
+.avFooterNoteBottom {
+  margin-top: 3.5px;
+  font-size: 10.5px;
+  color: #99a1af;
+}
+
+.avFooterActions {
+  display: flex;
+  align-items: center;
+  gap: 21px;
+}
+
+.avFooterBtn {
+  height: 32px;
+  border-radius: 12.75px;
+  border: 2px solid #d1d5dc;
+  background: #f3f4f6;
+  padding: 0 22px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #364153;
+  cursor: pointer;
+}
+
+.avFooterBtn--primary {
+  height: 31.5px;
+  border: none;
+  background: #685ff7;
+  color: white;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.avFooterBtn--primary:hover {
+  background: #5c55e6;
+}
+
+.avFooterBtn--ghost:hover {
+  background: #eceef2;
+}
+
+@media (max-width: 1100px) {
+  .avTwoCol {
+    grid-template-columns: 1fr;
+  }
+  .avFeaturesGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .avPreviewCards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .avPhotoGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .avRow2 {
+    grid-template-columns: 1fr;
+  }
+  .avHalf {
+    width: 100%;
+  }
+  .avFooter {
+    height: auto;
+    padding: 21px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .avFooterActions {
+    justify-content: flex-end;
+  }
+}
+

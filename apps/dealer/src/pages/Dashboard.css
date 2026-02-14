@@ -1,0 +1,250 @@
+.dashboard-page {
+  min-height: 100vh;
+  background: #f9fafb;
+  display: flex;
+}
+
+.dashboard-content {
+  margin-left: 224px;
+  margin-top: 54px;
+  flex: 1;
+  padding: 21px;
+  max-width: 1440px;
+  width: calc(100% - 224px);
+}
+
+.page-header {
+  margin-bottom: 21px;
+}
+
+.page-title {
+  font-size: 21px;
+  font-weight: 600;
+  color: #101828;
+  margin: 0 0 3.5px 0;
+  line-height: 28px;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #4a5565;
+  margin: 0;
+  line-height: 21px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 21px;
+  margin-bottom: 21px;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 12.75px;
+  padding: 21px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+.stat-info {
+  flex: 1;
+}
+
+.stat-label {
+  font-size: 12.25px;
+  color: #4a5565;
+  margin-bottom: 3.5px;
+  line-height: 17.5px;
+}
+
+.stat-value {
+  font-size: 21px;
+  font-weight: 600;
+  color: #0a0a0a;
+  margin-bottom: 3.5px;
+  line-height: 28px;
+}
+
+.stat-change {
+  font-size: 12.25px;
+  line-height: 17.5px;
+}
+
+.stat-change.positive {
+  color: #00a63e;
+}
+
+.stat-change.neutral {
+  color: #6a7282;
+}
+
+.stat-icon {
+  font-size: 42px;
+  opacity: 0.8;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.revenue-chart-card {
+  background: white;
+  border-radius: 12.75px;
+  padding: 21px;
+  margin-bottom: 21px;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+.card-header {
+  margin-bottom: 5.25px;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #0a0a0a;
+  margin: 0 0 5.25px 0;
+  line-height: 14px;
+}
+
+.card-description {
+  font-size: 14px;
+  color: #717182;
+  margin: 0;
+  line-height: 21px;
+}
+
+.chart-container {
+  margin-top: 41.25px;
+  height: 280px;
+}
+
+.bottom-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 21px;
+}
+
+.recent-bookings-card,
+.vehicle-status-card {
+  background: white;
+  border-radius: 12.75px;
+  padding: 21px;
+  box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+.bookings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 26.25px;
+}
+
+.booking-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10.5px;
+  background: #f9fafb;
+  border-radius: 8.75px;
+}
+
+.booking-info {
+  flex: 1;
+}
+
+.booking-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #0a0a0a;
+  margin-bottom: 2px;
+  line-height: 21px;
+}
+
+.booking-details {
+  font-size: 12.25px;
+  color: #4a5565;
+  line-height: 17.5px;
+}
+
+.booking-badge {
+  padding: 2.75px 8px;
+  border-radius: 6.75px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 14px;
+}
+
+.booking-badge.confirmed {
+  background: #685ff7;
+  color: white;
+}
+
+.booking-badge.completed {
+  background: #eceef2;
+  color: #685ff7;
+}
+
+.booking-badge.active {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #0a0a0a;
+}
+
+.vehicles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 26.25px;
+}
+
+.vehicle-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 21px;
+}
+
+.vehicle-info {
+  display: flex;
+  align-items: center;
+  gap: 10.5px;
+}
+
+.status-dot {
+  width: 10.5px;
+  height: 10.5px;
+  border-radius: 50%;
+}
+
+.status-dot.available {
+  background: #00c950;
+}
+
+.status-dot.rented {
+  background: #2b7fff;
+}
+
+.status-dot.maintenance {
+  background: #fb2c36;
+}
+
+.vehicle-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #0a0a0a;
+  line-height: 21px;
+}
+
+.vehicle-badge {
+  padding: 2.75px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6.75px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #0a0a0a;
+  line-height: 14px;
+}

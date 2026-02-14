@@ -1,0 +1,215 @@
+.adminAddCarOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 60;
+}
+
+.adminAddCarModal {
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 0.56px solid #e5e5e5;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  padding: 24px;
+  position: relative;
+}
+
+.adminAddCarClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.adminAddCarHeader h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #0a0a0a;
+}
+
+.adminAddCarHeader p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #737373;
+}
+
+.adminAddCarTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adminAddCarTitleIcon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4f46e5;
+}
+
+.adminAddCarBody {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.adminAddCarSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.adminAddCarSectionTitle h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #0a0a0a;
+}
+
+.adminAddCarSectionIcon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4f46e5;
+}
+
+.adminAddCarDivider {
+  height: 1px;
+  background: #e5e5e5;
+}
+
+.adminAddCarGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.adminAddCarGrid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.adminAddCarGrid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.adminAddCarSection label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: #364153;
+}
+
+.adminAddCarSection input,
+.adminAddCarSection textarea,
+.adminAddCarSection select {
+  height: 38px;
+  border-radius: 6.8px;
+  border: 0.56px solid #e5e5e5;
+  background: rgba(229, 229, 229, 0.3);
+  padding: 0 12px;
+  font-size: 14px;
+  color: #0a0a0a;
+}
+
+.adminAddCarSection textarea {
+  height: auto;
+  padding: 8px 12px;
+  resize: vertical;
+}
+
+.adminAddCarSection input::placeholder,
+.adminAddCarSection textarea::placeholder {
+  color: #737373;
+}
+
+.adminAddCarSelect {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.adminAddCarSelect select {
+  width: 100%;
+  appearance: none;
+}
+
+.adminAddCarSelect svg {
+  position: absolute;
+  right: 12px;
+  pointer-events: none;
+  color: #9aa3af;
+}
+
+.adminAddCarUpload {
+  width: 100%;
+  border-radius: 6.8px;
+  border: 1.68px solid #e5e5e5;
+  background: rgba(229, 229, 229, 0.3);
+  height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #4a5565;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.adminAddCarUploadHint {
+  font-size: 12px;
+  color: #99a1af;
+}
+
+.adminAddCarFooter {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.adminAddCarBtn {
+  height: 36px;
+  border-radius: 6.8px;
+  font-size: 14px;
+  border: 0.56px solid #e5e5e5;
+  background: rgba(229, 229, 229, 0.3);
+  color: #0a0a0a;
+  padding: 0 16px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adminAddCarBtn--primary {
+  background: #685ff7;
+  border-color: #685ff7;
+  color: #fafafa;
+}
+
+.adminAddCarBtn--primary:hover {
+  background: #5c55e6;
+  border-color: #5c55e6;
+}
+
+@media (max-width: 640px) {
+  .adminAddCarGrid--three,
+  .adminAddCarGrid--two {
+    grid-template-columns: 1fr;
+  }
+}

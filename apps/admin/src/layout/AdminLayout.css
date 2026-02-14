@@ -1,0 +1,249 @@
+.adminDash {
+  min-height: 100vh;
+  background: linear-gradient(132.78deg, #f9fafb 0%, rgba(250, 245, 255, 0.3) 50%, #f9fafb 100%);
+  display: flex;
+}
+
+.adminSidebar {
+  width: 256px;
+  border-right: 1px solid rgba(229, 231, 235, 1);
+  background: white;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+}
+
+.adminSidebarInner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.adminBrand {
+  padding: 24px 16px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.adminBrand img {
+  height: 32px;
+  width: auto;
+  display: block;
+}
+
+.adminNav {
+  padding: 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  overflow: auto;
+}
+
+.adminNavItem {
+  height: 44px;
+  border-radius: 16.4px;
+  border: none;
+  background: transparent;
+  color: #4a5565;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+}
+
+.adminNavItem:hover {
+  background: rgba(229, 231, 235, 0.35);
+}
+
+.adminNavItem--active {
+  background: linear-gradient(180deg, #685ff7 0%, #564be8 100%);
+  color: white;
+  box-shadow: 0px 10px 15px -3px rgba(173, 70, 255, 0.25), 0px 4px 6px -4px rgba(173, 70, 255, 0.25);
+}
+
+.adminNavIcon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.adminSidebarBottom {
+  border-top: 1px solid rgba(229, 231, 235, 1);
+  padding: 16.5px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.adminNavItem--danger {
+  color: #e7000b;
+}
+
+.adminTopbar {
+  position: fixed;
+  left: 256px;
+  right: 0;
+  top: 0;
+  height: 86.5px;
+  padding: 16px 32px;
+  border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.1), 0px 1px 2px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  z-index: 5;
+}
+
+.adminTopbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.adminTopbarRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.adminTopbarTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #101828;
+  line-height: 32px;
+}
+
+.adminTopbarSub {
+  font-size: 14px;
+  color: #6a7282;
+  line-height: 20px;
+}
+
+.adminIconBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 6.8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.adminIconBtn:hover {
+  background: rgba(229, 231, 235, 0.35);
+}
+
+.adminIconBtn--dot {
+  position: relative;
+}
+
+.adminIconBtn--dot::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #fb2c36;
+  top: 8px;
+  right: 10px;
+  box-shadow: 0 0 0 2px white;
+}
+
+.adminPillBtn {
+  height: 32px;
+  border-radius: 6.8px;
+  border: 1px solid rgba(229, 229, 229, 1);
+  background: rgba(229, 229, 229, 0.3);
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #0a0a0a;
+  cursor: pointer;
+}
+
+.adminPillBtn:hover {
+  background: rgba(229, 229, 229, 0.45);
+}
+
+.adminPillBtn--primary {
+  background: #685ff7;
+  border-color: #685ff7;
+  color: white;
+}
+
+.adminPillBtn--primary:hover {
+  background: #5c55e6;
+}
+
+.adminMain {
+  margin-left: 256px;
+  padding: 32px;
+  padding-top: calc(86.5px + 32px);
+  width: calc(100% - 256px);
+  max-width: 1440px;
+}
+
+.adminDash--collapsed .adminSidebar {
+  width: 88px;
+}
+
+.adminDash--collapsed .adminTopbar {
+  left: 88px;
+}
+
+.adminDash--collapsed .adminMain {
+  margin-left: 88px;
+  width: calc(100% - 88px);
+}
+
+.adminDash--collapsed .adminBrand {
+  justify-content: center;
+}
+
+.adminDash--collapsed .adminNavItem {
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+  font-size: 0;
+  line-height: 0;
+}
+
+.adminDash--collapsed .adminNavIcon {
+  width: 24px;
+  height: 24px;
+}
+
+@media (max-width: 900px) {
+  .adminSidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .adminTopbar {
+    position: static;
+    left: auto;
+    height: auto;
+  }
+  .adminMain {
+    margin-left: 0;
+    width: 100%;
+    padding-top: 24px;
+  }
+}
+
