@@ -214,7 +214,8 @@ create table if not exists booking_requests (
   vehicle_id uuid not null references vehicles(id) on delete cascade,
   status booking_request_status not null default 'pending',
   created_at timestamptz not null default now(),
-  note text
+  note text,
+  decline_reason text
 );
 
 create table if not exists favorites (

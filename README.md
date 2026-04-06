@@ -112,21 +112,13 @@ The project uses **MCP (Model Context Protocol)** for Figma design integration. 
 
 The platform uses **Supabase** for auth, database, storage, and realtime.
 
-### Setup
+### Quick Setup
 
 1. Create a Supabase project at [supabase.com](https://supabase.com).
+2. Copy `.env.example` to `.env` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+3. Run SQL in order: `schema.sql` → `trigger.sql` → `rls.sql` → `seed.sql` (after creating auth users).
 
-2. Copy `.env.example` to `.env` in the project root and set:
-   - `VITE_SUPABASE_URL` - Your Supabase project URL
-   - `VITE_SUPABASE_ANON_KEY` - Your Supabase anon (public) key
-   - `VITE_USE_MOCK_API` - Set to `false` to use Supabase (default). Set to `true` to use MSW mocks for local dev without Supabase.
-
-3. Run the schema and RLS migrations in the Supabase SQL editor:
-   - `supabase/schema.sql` - Tables, enums, storage buckets
-   - `supabase/rls.sql` - Row Level Security policies
-   - `supabase/seed.sql` - Optional seed data (after creating auth users)
-
-4. Create auth users (admin, dealer, customer) in Supabase Auth, then run seed.sql to link profiles.
+📖 **Full guide:** [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)
 
 ### Edge Functions
 

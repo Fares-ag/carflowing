@@ -1,4 +1,4 @@
-import { Bolt, MapPin, Settings2, Star, Users, X } from 'lucide-react'
+import { Bolt, Droplets, MapPin, Settings2, Star, Users, X } from 'lucide-react'
 import './CarCard.css'
 
 interface CarCardProps {
@@ -6,8 +6,8 @@ interface CarCardProps {
   name: string
   type: string
   price: number
-  rating: number
-  reviews: number
+  rating?: number
+  reviews?: number
   seats: number
   transmission: string
   fuelType: string
@@ -39,6 +39,17 @@ export function CarCard({
   pricePeriod = 'month',
   location,
 }: CarCardProps) {
+  const showRating = rating != null && rating > 0
+  const fuelLabel =
+    fuelType === 'gas'
+      ? 'Petrol'
+      : fuelType === 'diesel'
+        ? 'Diesel'
+        : fuelType === 'hybrid'
+          ? 'Hybrid'
+          : fuelType === 'electric'
+            ? 'Electric'
+            : fuelType
   return (
     <div className="car-card">
       <div className="car-card-image">
@@ -62,10 +73,12 @@ export function CarCard({
                 <span>electric</span>
               </div>
             )}
-            <div className="feature-item">
-              <Star size={11} />
-              <span>{rating}</span>
-            </div>
+            {showRating && (
+              <div className="feature-item">
+                <Star size={11} />
+                <span>{rating}</span>
+              </div>
+            )}
           </div>
         </div>
         
@@ -86,6 +99,10 @@ export function CarCard({
           <div className="spec-item">
             <Settings2 size={14} />
             <span>{transmission}</span>
+          </div>
+          <div className="spec-item">
+            <Droplets size={14} />
+            <span>{fuelLabel}</span>
           </div>
         </div>
         

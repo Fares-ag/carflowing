@@ -1,9 +1,15 @@
-.customerLogin {
+.customerAuthPage {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8f9fc;
+}
+
+.customerLogin {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f8f9fc;
   padding: 24px;
 }
 
@@ -62,6 +68,18 @@
   font-size: 13px;
 }
 
+.customerLoginForgot {
+  align-self: flex-start;
+  font-size: 13px;
+  color: #6366f1;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.customerLoginForgot:hover {
+  text-decoration: underline;
+}
+
 .customerLoginButton {
   margin-top: 8px;
   padding: 12px 16px;
@@ -77,4 +95,31 @@
 .customerLoginButton:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.customerLoginFooter {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.customerLoginFooter a {
+  color: #6366f1;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.customerLoginFooter a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .customerLogin {
+    padding: 16px;
+  }
+
+  .customerLoginCard {
+    padding: 24px 18px;
+  }
 }

@@ -5,7 +5,7 @@
 }
 
 .adminSidebar {
-  width: 256px;
+  width: var(--admin-shell-sidebar-width);
   border-right: 1px solid rgba(229, 231, 235, 1);
   background: white;
   position: fixed;
@@ -92,11 +92,11 @@
 
 .adminTopbar {
   position: fixed;
-  left: 256px;
+  left: var(--admin-shell-sidebar-width);
   right: 0;
   top: 0;
-  height: 86.5px;
-  padding: 16px 32px;
+  height: var(--admin-shell-topbar-height);
+  padding: 16px var(--admin-shell-content-padding);
   border-bottom: 1px solid rgba(229, 231, 235, 0.5);
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(8px);
@@ -190,24 +190,25 @@
 }
 
 .adminMain {
-  margin-left: 256px;
-  padding: 32px;
-  padding-top: calc(86.5px + 32px);
-  width: calc(100% - 256px);
+  margin-left: var(--admin-shell-sidebar-width);
+  padding: var(--admin-shell-content-padding);
+  padding-top: calc(var(--admin-shell-topbar-height) + var(--admin-shell-content-padding));
+  width: calc(100% - var(--admin-shell-sidebar-width));
+  box-sizing: border-box;
   max-width: 1440px;
 }
 
 .adminDash--collapsed .adminSidebar {
-  width: 88px;
+  width: var(--admin-shell-sidebar-collapsed-width);
 }
 
 .adminDash--collapsed .adminTopbar {
-  left: 88px;
+  left: var(--admin-shell-sidebar-collapsed-width);
 }
 
 .adminDash--collapsed .adminMain {
-  margin-left: 88px;
-  width: calc(100% - 88px);
+  margin-left: var(--admin-shell-sidebar-collapsed-width);
+  width: calc(100% - var(--admin-shell-sidebar-collapsed-width));
 }
 
 .adminDash--collapsed .adminBrand {

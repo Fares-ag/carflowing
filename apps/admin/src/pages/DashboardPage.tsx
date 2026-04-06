@@ -12,24 +12,34 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { CalendarCheck, DollarSign, TrendingDown, TrendingUp, Users, Car } from 'lucide-react'
+import { CalendarCheck, DollarSign, Users, Car } from 'lucide-react'
 import type { AdminDashboardData } from '../services/adminService'
 import { getAdminDashboard } from '../services/adminService'
+import { getCurrentUser } from '../services/authService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { InfoModal } from '../components/InfoModal'
 import './DashboardPage.css'
 
 export function DashboardPage() {
   const [dashboard, setDashboard] = useState<AdminDashboardData | null>(null)
-  const [dailyRange, setDailyRange] = useState('today')
-  const [trendYear, setTrendYear] = useState('2025')
+  const [userName, setUserName] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [bookingQuery, setBookingQuery] = useState('')
-  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'Active' | 'Pending' | 'Cancelled'>('all')
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'Active' | 'Pending' | 'Completed' | 'Cancelled'>('all')
   const [showBookingSearch, setShowBookingSearch] = useState(false)
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
 
   useEffect(() => {
-    getAdminDashboard().then(setDashboard)
+    setIsLoading(true)
+    setError(null)
+    getAdminDashboard()
+      .then(setDashboard)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load dashboard'))
+      .finally(() => setIsLoading(false))
+  }, [])
+  useEffect(() => {
+    getCurrentUser().then((u) => setUserName(u?.name ?? null))
   }, [])
 
   const kpis = useMemo(() => {
@@ -37,19 +47,20 @@ export function DashboardPage() {
     return {
       activeCustomers: kpiMap.get('Active Users') ?? 0,
       totalRevenue: kpiMap.get('Total Revenue') ?? 0,
-      totalCars: kpiMap.get('Total Rentals') ?? 0,
+      totalCars: kpiMap.get('Total Cars') ?? kpiMap.get('Total Vehicles') ?? 0,
       totalBookings: kpiMap.get('Total Rentals') ?? 0,
     }
   }, [dashboard])
 
-  const bookingStatusData = useMemo(
-    () => [
-      { name: 'Active', value: Math.max(1, kpis.totalBookings - 80) },
-      { name: 'Scheduled', value: 60 },
-      { name: 'Completed', value: 120 },
-    ],
-    [kpis.totalBookings]
-  )
+  const bookingStatusData = useMemo(() => {
+    const counts = dashboard?.bookingStatusCounts ?? { active: 0, reserved: 0, completed: 0, cancelled: 0 }
+    return [
+      { name: 'Active', value: Math.max(0, counts.active) },
+      { name: 'Pending', value: Math.max(0, counts.reserved) },
+      { name: 'Completed', value: Math.max(0, counts.completed) },
+      { name: 'Cancelled', value: Math.max(0, counts.cancelled) },
+    ].filter((d) => d.value > 0)
+  }, [dashboard])
 
   const trendData = useMemo(() => {
     const rentalsTrend = dashboard?.rentalsTrend ?? []
@@ -62,18 +73,24 @@ export function DashboardPage() {
   }, [dashboard])
 
   const recentBookings = useMemo(() => {
-    return (dashboard?.recentRentals ?? []).map((rental, index) => ({
-      id: `B-2025-${String(index + 1).padStart(3, '0')}`,
-      customer: `Customer ${index + 1}`,
-      initials: `C${index + 1}`,
-      vehicle: `Vehicle ${index + 1}`,
-      pickup: rental.startDate,
-      ret: rental.endDate,
-      location: 'Doha',
-      amount: formatCurrency(rental.totalAmount),
-      status: rental.status === 'active' ? 'Active' : rental.status === 'reserved' ? 'Pending' : 'Cancelled',
-      tone: rental.status === 'active' ? 'blue' : rental.status === 'reserved' ? 'amber' : 'red',
-    }))
+    const rentals = dashboard?.recentRentals ?? []
+    return rentals.map((rental) => {
+      const customerName = rental.customerName ?? 'Unknown customer'
+      const vehicleName = rental.vehicleName ?? 'Unknown vehicle'
+      const initials = customerName.slice(0, 2).toUpperCase() || '?'
+      return {
+        id: rental.id.slice(0, 8),
+        customer: customerName,
+        initials,
+        vehicle: vehicleName,
+        pickup: rental.startDate,
+        ret: rental.endDate,
+        location: '—',
+        amount: formatCurrency(rental.totalAmount),
+        status: rental.status === 'active' ? 'Active' : rental.status === 'reserved' ? 'Pending' : rental.status === 'completed' ? 'Completed' : 'Cancelled',
+        tone: rental.status === 'active' ? 'blue' : rental.status === 'reserved' ? 'amber' : rental.status === 'completed' ? 'green' : 'red',
+      }
+    })
   }, [dashboard])
 
   const filteredBookings = useMemo(() => {
@@ -102,7 +119,7 @@ export function DashboardPage() {
     const headers = Object.keys(rows[0] ?? {})
     const csv = [
       headers.join(','),
-      ...rows.map(row => headers.map(header => `"${row[header] ?? ''}"`).join(',')),
+      ...rows.map(row => headers.map(header => `"${(row as Record<string, string>)[header] ?? ''}"`).join(',')),
     ].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -114,15 +131,36 @@ export function DashboardPage() {
   }
 
   const cycleStatusFilter = () => {
-    const options: Array<'all' | 'Active' | 'Pending' | 'Cancelled'> = ['all', 'Active', 'Pending', 'Cancelled']
+    const options: Array<'all' | 'Active' | 'Pending' | 'Completed' | 'Cancelled'> = ['all', 'Active', 'Pending', 'Completed', 'Cancelled']
     const nextIndex = (options.indexOf(bookingStatusFilter) + 1) % options.length
     setBookingStatusFilter(options[nextIndex])
+  }
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Dashboard" subtitle="Overview of your Carflow platform">
+        <div className="adminWelcome">
+          <div className="adminWelcomeTitle">Loading...</div>
+        </div>
+      </AdminLayout>
+    )
+  }
+
+  if (error) {
+    return (
+      <AdminLayout title="Dashboard" subtitle="Overview of your Carflow platform">
+        <div className="adminWelcome">
+          <div className="adminWelcomeTitle">Error</div>
+          <div className="adminWelcomeSub">{error}</div>
+        </div>
+      </AdminLayout>
+    )
   }
 
   return (
     <AdminLayout title="Dashboard" subtitle="Overview of your Carflow platform">
       <div className="adminWelcome">
-        <div className="adminWelcomeTitle">Welcome back, Admin!</div>
+        <div className="adminWelcomeTitle">Welcome back, {userName ?? 'Admin'}!</div>
         <div className="adminWelcomeSub">Here&apos;s what&apos;s happening with Carflow today.</div>
       </div>
 
@@ -132,14 +170,9 @@ export function DashboardPage() {
             <div className="adminStatIcon adminStatIcon--purple">
               <Users size={18} />
             </div>
-            <div className="adminDelta adminDelta--down">
-              <TrendingDown size={14} />
-              -3.05%
-            </div>
           </div>
           <div className="adminStatLabel">Active Customers</div>
           <div className="adminStatValue">{kpis.activeCustomers.toLocaleString('en-US')}</div>
-          <div className="adminStatMeta">vs last month</div>
         </div>
 
         <div className="adminStatCard">
@@ -147,14 +180,9 @@ export function DashboardPage() {
             <div className="adminStatIcon adminStatIcon--blue">
               <DollarSign size={18} />
             </div>
-            <div className="adminDelta adminDelta--up">
-              <TrendingUp size={14} />
-              +22%
-            </div>
           </div>
           <div className="adminStatLabel">Total Revenue</div>
           <div className="adminStatValue">{formatCurrency(kpis.totalRevenue)}</div>
-          <div className="adminStatMeta">vs last month</div>
         </div>
 
         <div className="adminStatCard">
@@ -162,14 +190,9 @@ export function DashboardPage() {
             <div className="adminStatIcon adminStatIcon--green">
               <Car size={18} />
             </div>
-            <div className="adminDelta adminDelta--down">
-              <TrendingDown size={14} />
-              -5%
-            </div>
           </div>
-          <div className="adminStatLabel">Total Cars</div>
-          <div className="adminStatValue">{kpis.totalCars.toLocaleString('en-US')}</div>
-          <div className="adminStatMeta">vs last month</div>
+          <div className="adminStatLabel">Active Dealers</div>
+          <div className="adminStatValue">{dashboard?.kpis.find(k => k.label === 'Active Dealers')?.value ?? 0}</div>
         </div>
 
         <div className="adminStatCard">
@@ -177,14 +200,9 @@ export function DashboardPage() {
             <div className="adminStatIcon adminStatIcon--orange">
               <CalendarCheck size={18} />
             </div>
-            <div className="adminDelta adminDelta--up">
-              <TrendingUp size={14} />
-              +22%
-            </div>
           </div>
           <div className="adminStatLabel">Total Bookings</div>
           <div className="adminStatValue">{kpis.totalBookings.toLocaleString('en-US')}</div>
-          <div className="adminStatMeta">vs last month</div>
         </div>
       </section>
 
@@ -192,31 +210,20 @@ export function DashboardPage() {
         <div className="adminCard">
           <div className="adminCardHeader">
             <div>
-              <div className="adminCardTitle">Daily Bookings</div>
-              <div className="adminCardSub">Real-time overview</div>
+              <div className="adminCardTitle">Booking Status</div>
+              <div className="adminCardSub">All-time overview</div>
             </div>
-            <label className="adminSelectBtn">
-              <select
-                aria-label="Daily range"
-                value={dailyRange}
-                onChange={(event) => setDailyRange(event.target.value)}
-              >
-                <option value="today">Today</option>
-                <option value="week">Last 7 days</option>
-                <option value="month">Last 30 days</option>
-              </select>
-            </label>
           </div>
 
           <div className="adminDonutWrap">
             <div className="adminDonut">
               <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
-                  <Pie data={bookingStatusData} dataKey="value" innerRadius={55} outerRadius={80}>
-                    {bookingStatusData.map((_, index) => (
+                  <Pie data={bookingStatusData.length > 0 ? bookingStatusData : [{ name: 'No data', value: 1 }]} dataKey="value" innerRadius={55} outerRadius={80}>
+                    {(bookingStatusData.length > 0 ? bookingStatusData : [{ name: 'No data', value: 1 }]).map((_, index) => (
                       <Cell
                         key={`slice-${index}`}
-                        fill={['#6366f1', '#22c55e', '#f59e0b'][index % 3]}
+                        fill={bookingStatusData.length > 0 ? ['#6366f1', '#22c55e', '#f59e0b', '#ef4444'][index % 4] : '#e5e7eb'}
                       />
                     ))}
                   </Pie>
@@ -225,9 +232,9 @@ export function DashboardPage() {
               </ResponsiveContainer>
             </div>
             <div className="adminDonutCenter">
-              <div className="adminDonutHint">Total Today</div>
-              <div className="adminDonutValue">{bookingStatusData.reduce((sum, item) => sum + item.value, 0)}</div>
-              <div className="adminDonutDelta">+12% from yesterday</div>
+              <div className="adminDonutHint">Total</div>
+              <div className="adminDonutValue">{bookingStatusData.reduce((sum, item) => sum + item.value, 0) || 0}</div>
+              <div className="adminDonutDelta">{dashboard?.todayBookingsCount ?? 0} today</div>
             </div>
           </div>
         </div>
@@ -241,31 +248,12 @@ export function DashboardPage() {
             <div className="adminLegendRow">
               <div className="adminLegend">
                 <span className="adminLegendDot adminLegendDot--purple" aria-hidden="true" />
-                Economy Cars
+                Rentals
               </div>
               <div className="adminLegend">
                 <span className="adminLegendDot adminLegendDot--dark" aria-hidden="true" />
-                Luxury Cars
+                Revenue
               </div>
-              <label className="adminSelectBtn">
-                <select
-                  aria-label="Select year"
-                  value={trendYear}
-                  onChange={(event) => setTrendYear(event.target.value)}
-                >
-                  <option value="2025">2025</option>
-                  <option value="2024">2024</option>
-                  <option value="2023">2023</option>
-                </select>
-              </label>
-              <button
-                className="adminIconBtn"
-                type="button"
-                aria-label="More"
-                onClick={() => setInfoModal({ title: 'Chart Options', message: 'Chart options coming soon.' })}
-              >
-                ⋯
-              </button>
             </div>
           </div>
 
@@ -289,7 +277,7 @@ export function DashboardPage() {
           <div>
             <div className="adminTableTitle">Recent Bookings</div>
             <div className="adminTableSub">
-              <span className="adminLiveDot" aria-hidden="true" /> +3 new bookings today
+              <span className="adminLiveDot" aria-hidden="true" /> {dashboard?.todayBookingsCount ?? 0} new today
             </div>
           </div>
           <div className="adminTableActions">
@@ -380,4 +368,3 @@ export function DashboardPage() {
     </AdminLayout>
   )
 }
-

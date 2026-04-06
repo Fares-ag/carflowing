@@ -1,42 +1,61 @@
 import { Link } from 'react-router-dom'
-import { useEffect, useMemo, useState, useRef } from 'react'
-import { listFavorites, listRentals } from '../services/customerService'
-import { getCurrentUser } from '../services/authService'
+import { useState, useRef } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { uploadAvatar } from '@carflow/shared'
+import { listFavorites, listRentalsWithDetails } from '../services/customerService'
+import { getProfileAvatar, getUserId, updateProfileAvatar } from '../services/authService'
+import { useAuth } from '../contexts/AuthContext'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
-import { InfoModal } from '../components/shared/InfoModal'
+import { toast } from '../hooks/useToast'
 import { ArrowLeft, BadgeCheck, ClipboardList, CreditCard, Heart, Settings, Star, Car, Search } from 'lucide-react'
 import './Dashboard.css'
 
 export function Dashboard() {
-  const [activeRentals, setActiveRentals] = useState(0)
-  const [totalRentals, setTotalRentals] = useState(0)
-  const [favoriteCount, setFavoriteCount] = useState(0)
-  const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [user, setUser] = useState<{ name: string } | null>(null)
+  const { session } = useAuth()
+  const queryClient = useQueryClient()
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    let active = true
-    getCurrentUser()
-      .then((currentUser) => {
-        if (!active) return
-        setUser(currentUser ? { name: currentUser.name } : null)
-      })
-      .catch(() => {
-        if (!active) return
-        setUser(null)
-      })
-    listRentals({ pageSize: 50 }).then((data) => {
-      setTotalRentals(data.items.length)
-      setActiveRentals(data.items.filter(rental => rental.status === 'active').length)
-    })
-    listFavorites({ pageSize: 50 }).then((data) => setFavoriteCount(data.items.length))
-    return () => {
-      active = false
-    }
-  }, [])
+  const { data: avatarUrl } = useQuery({
+    queryKey: ['profile', 'avatar'],
+    queryFn: getProfileAvatar,
+  })
+
+  const { data: rentalsData, isLoading: rentalsLoading, error: rentalsError } = useQuery({
+    queryKey: ['rentals', 'details'],
+    queryFn: () => listRentalsWithDetails({ pageSize: 50 }),
+  })
+
+  const { data: favoritesData, isLoading: favoritesLoading, error: favoritesError } = useQuery({
+    queryKey: ['favorites'],
+    queryFn: () => listFavorites({ pageSize: 50 }),
+  })
+
+  const isLoading = rentalsLoading || favoritesLoading
+  const error = rentalsError || favoritesError
+
+  const items = rentalsData?.items ?? []
+  const activeRentals = items.filter((r) => r.status === 'active' || r.status === 'reserved').length
+  const totalRentals = items.length
+  const favoriteCount = favoritesData?.items?.length ?? 0
+  const activeList = items.filter((r) => r.status === 'active' || r.status === 'reserved')
+  const first = activeList[0]
+  const currentRental = first
+    ? (() => {
+        const start = new Date(first.startDate)
+        const end = new Date(first.endDate)
+        const now = new Date()
+        const days = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)))
+        return {
+          car: first.vehicle?.name ?? 'Unknown vehicle',
+          pickup: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          return: end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          remaining: `${days} days remaining`,
+          total: first.totalAmount,
+        }
+      })()
+    : null
 
   return (
     <div className="dashboard-page">
@@ -61,44 +80,63 @@ export function Dashboard() {
                 <button
                   className="change-photo-button"
                   type="button"
+                  disabled={uploadingAvatar}
                   onClick={() => photoInputRef.current?.click()}
                 >
                   <Star size={14} />
-                  Change Photo
+                  {uploadingAvatar ? 'Uploading...' : 'Change Photo'}
                 </button>
                 <input
                   ref={photoInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
                   hidden
-                  onChange={(event) => {
-                    if (event.target.files?.length) {
-                      const file = event.target.files[0]
-                      setAvatarUrl(URL.createObjectURL(file))
-                      setInfoModal({
-                        title: 'Profile Updated',
-                        message: 'Profile photo updated.',
-                      })
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0]
+                    event.target.value = ''
+                    if (!file) return
+                    setUploadingAvatar(true)
+                    try {
+                      const userId = await getUserId()
+                      if (!userId) throw new Error('Not authenticated')
+                      const url = await uploadAvatar(file, userId)
+                      await updateProfileAvatar(url)
+                      queryClient.invalidateQueries({ queryKey: ['profile', 'avatar'] })
+                      toast.success('Profile photo updated.')
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : 'Could not update photo.')
+                    } finally {
+                      setUploadingAvatar(false)
                     }
                   }}
                 />
               </div>
               <div className="profile-info">
-                <h1 className="profile-name">Welcome back, {user?.name ?? 'Customer'}!</h1>
+                <h1 className="profile-name">Welcome back, {session?.name ?? 'Customer'}!</h1>
                 <p className="profile-description">Manage your rentals and account settings from your dashboard</p>
                 <div className="profile-badges">
-                <span className="badge">
-                  <Star size={12} />
-                  Premium Member
-                </span>
-                <span className="badge">
-                  <BadgeCheck size={12} />
-                  Verified Account
-                </span>
+                {session?.email_confirmed_at && (
+                  <span className="badge">
+                    <BadgeCheck size={12} />
+                    Verified Account
+                  </span>
+                )}
                 </div>
               </div>
             </div>
           </div>
+
+          {isLoading && (
+            <div className="dashboard-loading">
+              <p>Loading your dashboard...</p>
+            </div>
+          )}
+
+          {error && !isLoading && (
+            <div className="dashboard-error">
+              <p>Something went wrong loading your data. Please try refreshing the page.</p>
+            </div>
+          )}
 
           {/* Stats Section */}
           <div className="stats-section">
@@ -132,29 +170,31 @@ export function Dashboard() {
           </div>
 
           {/* Current Rental */}
-          <div className="current-rental-card">
-            <div className="card-header">
-              <div className="card-dot"></div>
-              <h3 className="card-title">Current Rental</h3>
-            </div>
-            <div className="rental-content">
-              <div className="rental-icon">
-                <Car size={18} />
+          {currentRental && (
+            <div className="current-rental-card">
+              <div className="card-header">
+                <div className="card-dot"></div>
+                <h3 className="card-title">Current Rental</h3>
               </div>
-              <div className="rental-details">
-                <h4 className="rental-car-name">BMW X5 xDrive40i</h4>
-                <p className="rental-dates">Pickup: Dec 15, 2024 • Return: Dec 22, 2024</p>
-                <div className="rental-remaining">
-                  <span className="remaining-dot"></span>
-                  <span>5 days remaining</span>
+              <div className="rental-content">
+                <div className="rental-icon">
+                  <Car size={18} />
+                </div>
+                <div className="rental-details">
+                  <h4 className="rental-car-name">{currentRental.car}</h4>
+                  <p className="rental-dates">Pickup: {currentRental.pickup} • Return: {currentRental.return}</p>
+                  <div className="rental-remaining">
+                    <span className="remaining-dot"></span>
+                    <span>{currentRental.remaining}</span>
+                  </div>
+                </div>
+                <div className="rental-price">
+                  <div className="price-amount">QAR {currentRental.total.toLocaleString()}</div>
+                  <div className="price-label">Total cost</div>
                 </div>
               </div>
-              <div className="rental-price">
-                <div className="price-amount">QAR 7,000</div>
-                <div className="price-label">Total cost</div>
-              </div>
             </div>
-          </div>
+          )}
 
           {/* Quick Actions */}
           <div className="quick-actions-section">
@@ -208,13 +248,6 @@ export function Dashboard() {
       </div>
 
       <Footer />
-
-      <InfoModal
-        open={!!infoModal}
-        title={infoModal?.title ?? ''}
-        message={infoModal?.message ?? ''}
-        onClose={() => setInfoModal(null)}
-      />
     </div>
   )
 }

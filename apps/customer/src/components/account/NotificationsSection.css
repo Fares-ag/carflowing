@@ -9,6 +9,29 @@
   margin: 0 0 24px 0;
 }
 
+.notifications-local-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+  background: #e7f1ff;
+  border: 1px solid #b8d4f0;
+  border-radius: 6px;
+  color: #1a4480;
+}
+
+.notifications-local-banner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.notifications-local-banner p {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
 .notifications-content {
   display: flex;
   flex-direction: column;

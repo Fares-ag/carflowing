@@ -139,7 +139,7 @@
 
 .carsStatsRow {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 
@@ -392,6 +392,74 @@
 
 .carsActionBtn:hover {
   background: rgba(229, 229, 229, 0.35);
+}
+
+.carsActionBtn--danger:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.carsTableCard--vehicles {
+  margin-top: 8px;
+}
+
+.carsVehicleCell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.carsVehicleThumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.carsVehicleThumbPlaceholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+}
+
+.carsVehicleStatus {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.carsVehicleStatus--available {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.carsVehicleStatus--rented {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.carsVehicleStatus--maintenance {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.carsVehicleStatus--inactive {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.carsEmpty {
+  padding: 32px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
 }
 
 @media (max-width: 1200px) {

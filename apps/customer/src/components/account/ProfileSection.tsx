@@ -1,23 +1,52 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Image, Pencil } from 'lucide-react'
+import { uploadAvatar, supabase } from '@carflow/shared'
+import { getProfileAvatar, getUserId, updateProfileAvatar } from '../../services/authService'
+import { useAuth } from '../../contexts/AuthContext'
 import './ProfileSection.css'
 
 export default function ProfileSection() {
+  const { session } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [avatarError, setAvatarError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
   const [formData, setFormData] = useState({
-    fullName: 'Ahmed Al-Mahmoud',
-    email: 'lkjjh@gmail.com',
-    phone: '+974 5555 1234',
-    dateOfBirth: '',
-    address: 'West Bay, Doha, Qatar',
-    city: 'Doha',
-    country: 'Qatar',
-    bio: 'Regular car rental customer who loves exploring Qatar',
+    fullName: '',
+    email: '',
+    phone: '',
   })
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  useEffect(() => {
+    if (!session) {
+      setAvatarUrl(null)
+      setFormData({ fullName: '', email: '', phone: '' })
+      return
+    }
+
+    setFormData({
+      fullName: session.name || '',
+      email: session.email || '',
+      phone: '',
+    })
+
+    getProfileAvatar().then(setAvatarUrl).catch((err) => console.error('Failed to load avatar:', err))
+    supabase
+      .from('profiles')
+      .select('phone')
+      .eq('id', session.userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setFormData((prev) => ({ ...prev, phone: data?.phone || '' }))
+      })
+      .catch((err) => console.error('Failed to load phone:', err))
+  }, [session?.userId, session?.name, session?.email])
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -46,7 +75,7 @@ export default function ProfileSection() {
           <div className="photo-actions">
             <button
               className="change-photo-button"
-              disabled={!isEditing}
+              disabled={!isEditing || uploading}
               onClick={() => fileInputRef.current?.click()}
             >
               <Image size={14} />
@@ -55,16 +84,31 @@ export default function ProfileSection() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               hidden
-              onChange={(event) => {
-                if (event.target.files?.length) {
-                  const file = event.target.files[0]
-                  setAvatarUrl(URL.createObjectURL(file))
+              onChange={async (event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (!file) return
+                setAvatarError(null)
+                setUploading(true)
+                try {
+                  const userId = await getUserId()
+                  if (!userId) throw new Error('Not authenticated')
+                  const url = await uploadAvatar(file, userId)
+                  await updateProfileAvatar(url)
+                  setAvatarUrl(url)
+                } catch (err) {
+                  setAvatarError(err instanceof Error ? err.message : 'Upload failed')
+                } finally {
+                  setUploading(false)
                 }
               }}
             />
-            <p className="photo-hint">JPG, PNG, GIF or WebP. Max size 2MB.</p>
+            {avatarError && <p className="photo-error">{avatarError}</p>}
+            <p className="photo-hint">
+              {uploading ? 'Uploading...' : 'JPG, PNG, GIF or WebP. Max size 2MB.'}
+            </p>
             {!isEditing && (
               <p className="edit-hint">Enable edit mode to change photo</p>
             )}
@@ -92,10 +136,13 @@ export default function ProfileSection() {
                 type="email"
                 name="email"
                 value={formData.email}
-                onChange={handleChange}
-                disabled={!isEditing}
+                disabled
                 className="form-input"
+                aria-describedby="profile-email-hint"
               />
+              <p id="profile-email-hint" className="field-readonly-note">
+                Email changes require verification — contact support.
+              </p>
             </div>
           </div>
 
@@ -111,75 +158,37 @@ export default function ProfileSection() {
                 className="form-input"
               />
             </div>
-            <div className="form-group">
-              <label>Date of Birth</label>
-              <input
-                type="date"
-                name="dateOfBirth"
-                value={formData.dateOfBirth}
-                onChange={handleChange}
-                disabled={!isEditing}
-                className="form-input"
-              />
-            </div>
-          </div>
-
-          <div className="form-group full-width">
-            <label>Address</label>
-            <input
-              type="text"
-              name="address"
-              value={formData.address}
-              onChange={handleChange}
-              disabled={!isEditing}
-              className="form-input"
-            />
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>City</label>
-              <input
-                type="text"
-                name="city"
-                value={formData.city}
-                onChange={handleChange}
-                disabled={!isEditing}
-                className="form-input"
-              />
-            </div>
-            <div className="form-group">
-              <label>Country</label>
-              <select
-                name="country"
-                value={formData.country}
-                onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                disabled={!isEditing}
-                className="form-input"
-              >
-                <option value="Qatar">Qatar</option>
-                <option value="UAE">UAE</option>
-                <option value="Saudi Arabia">Saudi Arabia</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="form-group full-width">
-            <label>Bio</label>
-            <textarea
-              name="bio"
-              value={formData.bio}
-              onChange={handleChange}
-              disabled={!isEditing}
-              className="form-textarea"
-              rows={3}
-            />
           </div>
 
           {isEditing && (
             <div className="form-actions">
-              <button className="save-button" onClick={() => setIsEditing(false)}>
-                Save Changes
+              {saveError && <p className="photo-error">{saveError}</p>}
+              <button
+                className="save-button"
+                disabled={saving}
+                onClick={async () => {
+                  setSaveError(null)
+                  setSaving(true)
+                  try {
+                    const userId = await getUserId()
+                    if (!userId) throw new Error('Not authenticated')
+                    const { error } = await supabase
+                      .from('profiles')
+                      .update({
+                        name: formData.fullName.trim(),
+                        phone: formData.phone.trim() || null,
+                      })
+                      .eq('id', userId)
+                    if (error) throw new Error(error.message)
+                    setIsEditing(false)
+                  } catch (err) {
+                    setSaveError(err instanceof Error ? err.message : 'Failed to save')
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           )}
@@ -188,4 +197,3 @@ export default function ProfileSection() {
     </div>
   )
 }
-

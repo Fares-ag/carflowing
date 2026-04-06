@@ -1,9 +1,10 @@
-import { memo, useEffect, useState } from 'react'
+import { memo } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CarflowLogo } from '@carflow/shared'
-import { getCurrentUser, logout } from '../services/authService'
+import { useAuth } from '../contexts/AuthContext'
 import {
   Bell,
+  CalendarCheck,
   CreditCard,
   LayoutDashboard,
   LineChart,
@@ -26,6 +27,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   { path: '/analytics', icon: 'analytics', label: 'Analytics' },
   { path: '/inventory', icon: 'inventory', label: 'Inventory' },
+  { path: '/requests', icon: 'requests', label: 'Booking Requests' },
   { path: '/leads', icon: 'leads', label: 'Leads' },
   { path: '/notifications', icon: 'notifications', label: 'Notifications' },
   { path: '/subscription', icon: 'subscription', label: 'Subscription' },
@@ -35,24 +37,9 @@ const NAV_ITEMS: readonly NavItem[] = [
 export const Sidebar = memo(function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null)
+  const { session, logout } = useAuth()
+  const user = session ? { name: session.name, email: session.email } : null
 
-  useEffect(() => {
-    let active = true
-    getCurrentUser()
-      .then((currentUser) => {
-        if (!active) return
-        setUser(currentUser ? { name: currentUser.name, email: currentUser.email } : null)
-      })
-      .catch(() => {
-        if (!active) return
-        setUser(null)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
-  
   const isActive = (path: string) => {
     return location.pathname === path
   }
@@ -81,6 +68,7 @@ export const Sidebar = memo(function Sidebar() {
               {icon === 'dashboard' ? <LayoutDashboard size={16} /> : null}
               {icon === 'analytics' ? <LineChart size={16} /> : null}
               {icon === 'inventory' ? <Wrench size={16} /> : null}
+              {icon === 'requests' ? <CalendarCheck size={16} /> : null}
               {icon === 'leads' ? <Users size={16} /> : null}
               {icon === 'notifications' ? <Bell size={16} /> : null}
               {icon === 'subscription' ? <CreditCard size={16} /> : null}
@@ -105,8 +93,7 @@ export const Sidebar = memo(function Sidebar() {
           className="nav-item logout"
           type="button"
           onClick={async () => {
-            await logout()
-            navigate('/login')
+            await logout().then(() => navigate('/login'))
           }}
         >
           <span className="nav-icon">
@@ -116,14 +103,19 @@ export const Sidebar = memo(function Sidebar() {
         </button>
         <div className="user-info">
           <div className="user-details">
-            <div className="user-name">{user?.name ?? 'Dealer Account'}</div>
-            <div className="user-email">{user?.email ?? 'dealer@example.com'}</div>
+            <div className="user-name">{user?.name ?? 'Account'}</div>
+            <div className="user-email">{user?.email ?? '—'}</div>
           </div>
-          <button className="user-edit" type="button">
+          <button
+            className="user-edit"
+            type="button"
+            aria-label="Open settings"
+            onClick={() => navigate('/settings')}
+          >
             <Settings size={14} />
           </button>
           <div className="user-avatar">
-            {(user?.name ?? 'Dealer Account')
+            {(user?.name ?? 'Account')
               .split(' ')
               .map(part => part[0])
               .join('')

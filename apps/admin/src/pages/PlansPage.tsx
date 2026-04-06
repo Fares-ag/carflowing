@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { Plan } from '@carflow/shared'
+import { toast } from 'sonner'
+import type { Plan, PlanTier } from '@carflow/shared'
 import { formatCurrency } from '@carflow/shared'
-import { createPlan, listPlans, updatePlan } from '../services/adminService'
+import { createPlan, deletePlan, getPlanStats, listPlans, updatePlan } from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { InfoModal } from '../components/InfoModal'
 import {
   Check,
   Download,
   LineChart,
-  MoreHorizontal,
   Pencil,
   Plus,
   Search,
@@ -23,6 +23,7 @@ import './PlansPage.css'
 export function PlansPage() {
   const navigate = useNavigate()
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null)
   const [plans, setPlans] = useState<Plan[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [planAudience, setPlanAudience] = useState<'dealer' | 'customer'>('dealer')
@@ -33,9 +34,13 @@ export function PlansPage() {
   const [featureList, setFeatureList] = useState<string[]>([])
   const [isPopular, setIsPopular] = useState(false)
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [planStats, setPlanStats] = useState<Awaited<ReturnType<typeof getPlanStats>> | null>(null)
 
   const refreshPlans = () => {
-    listPlans().then(setPlans)
+    Promise.all([listPlans(), getPlanStats()]).then(([plansData, stats]) => {
+      setPlans(plansData)
+      setPlanStats(stats)
+    })
   }
 
   const openEditPlan = (planId: string) => {
@@ -46,6 +51,7 @@ export function PlansPage() {
     setPlanYearly(String(plan.priceYearly))
     setFeatureList(plan.features)
     setIsPopular(plan.tier === 'professional')
+    setEditingPlanId(planId)
     setShowCreateModal(true)
   }
 
@@ -54,8 +60,11 @@ export function PlansPage() {
   }, [])
 
   const planCards = useMemo(() => {
-    return plans.map((plan, index) => {
-      const subscribers = 30 + index * 40
+    const subByPlan = planStats?.subscriberCountByPlanId ?? {}
+    const revByPlan = planStats?.revenueByPlanId ?? {}
+    return plans.map((plan) => {
+      const subscribers = subByPlan[plan.id] ?? 0
+      const revenue = revByPlan[plan.id] ?? 0
       const description =
         plan.tier === 'starter'
           ? 'Perfect for small dealerships getting started'
@@ -73,7 +82,7 @@ export function PlansPage() {
         yearly: `${formatCurrency(plan.priceYearly)}/year`,
         save: '(Save 17%)',
         subscribers: String(subscribers),
-        revenue: `${(plan.priceMonthly * subscribers / 1000).toFixed(1)}K`,
+        revenue: revenue >= 1000 ? `${(revenue / 1000).toFixed(1)}K` : String(revenue),
         features: [
           ...plan.features.map(label => ({ label, enabled: true })),
           { label: 'Custom branding', enabled: plan.tier !== 'starter' },
@@ -84,7 +93,7 @@ export function PlansPage() {
         popular: plan.tier === 'professional',
       }
     })
-  }, [plans])
+  }, [plans, planStats])
 
   const filteredCards = useMemo(() => {
     let base = planCards
@@ -121,16 +130,21 @@ export function PlansPage() {
   const stats = useMemo(() => {
     const total = filteredCards.length
     const active = filteredCards.filter(plan => plan.status === 'Active').length
-    const subscribers = filteredCards.reduce((sum, plan) => sum + Number(plan.subscribers), 0)
-    const revenue = filteredCards.reduce((sum, plan) => sum + Number(plan.revenue.replace(/[^\d.]/g, '')), 0)
+    const subscribers = planStats?.totalSubscribers ?? filteredCards.reduce((sum, plan) => sum + Number(plan.subscribers), 0)
+    const revenue = planStats?.totalRevenue ?? filteredCards.reduce((sum, plan) => {
+      const r = plan.revenue.replace(/[^\d.]/g, '')
+      return sum + (r.endsWith('K') ? parseFloat(r) * 1000 : parseFloat(r || '0'))
+    }, 0)
+    const growthRate = planStats?.growthRate ?? 0
 
     return {
       total,
       active,
       subscribers,
       revenue,
+      growthRate,
     }
-  }, [filteredCards])
+  }, [filteredCards, planStats])
 
   return (
     <AdminLayout title="Plans" subtitle="Subscription plans management">
@@ -146,7 +160,19 @@ export function PlansPage() {
               <Download size={16} />
               Export
             </button>
-            <button className="plansBtn plansBtn--primary" type="button" onClick={() => setShowCreateModal(true)}>
+            <button
+              className="plansBtn plansBtn--primary"
+              type="button"
+              onClick={() => {
+                setEditingPlanId(null)
+                setPlanName('')
+                setPlanMonthly('')
+                setPlanYearly('')
+                setFeatureList([])
+                setIsPopular(false)
+                setShowCreateModal(true)
+              }}
+            >
               <Plus size={16} />
               Create Plan
             </button>
@@ -200,10 +226,6 @@ export function PlansPage() {
               <div className="plansStatIcon plansStatIcon--purple">
                 <Users size={18} />
               </div>
-              <div className="plansStatBadge plansStatBadge--purple">
-                <TrendingUp size={14} />
-                +12%
-              </div>
             </div>
             <div className="plansStatLabel">Total Subscribers</div>
             <div className="plansStatValue">{stats.subscribers}</div>
@@ -214,13 +236,9 @@ export function PlansPage() {
               <div className="plansStatIcon plansStatIcon--green">
                 <LineChart size={18} />
               </div>
-              <div className="plansStatBadge plansStatBadge--green">
-                <TrendingUp size={14} />
-                +18%
-              </div>
             </div>
             <div className="plansStatLabel">Monthly Revenue</div>
-            <div className="plansStatValue">{formatCurrency(stats.revenue * 1000)}</div>
+            <div className="plansStatValue">{formatCurrency(stats.revenue)}</div>
             <div className="plansStatMeta">From subscriptions</div>
           </div>
           <div className="plansStatCard">
@@ -228,13 +246,9 @@ export function PlansPage() {
               <div className="plansStatIcon plansStatIcon--orange">
                 <TrendingUp size={18} />
               </div>
-              <div className="plansStatBadge plansStatBadge--orange">
-                <TrendingUp size={14} />
-                +24%
-              </div>
             </div>
             <div className="plansStatLabel">Growth Rate</div>
-            <div className="plansStatValue">24%</div>
+            <div className="plansStatValue">{stats.growthRate}%</div>
             <div className="plansStatMeta">Month over month</div>
           </div>
         </div>
@@ -242,7 +256,7 @@ export function PlansPage() {
         <div className="plansGrid">
           {filteredCards.map((plan) => (
             <div
-              key={plan.name}
+              key={plan.id}
               className={`planCard ${plan.popular ? 'planCard--highlight' : ''}`}
             >
               {plan.popular && (
@@ -322,16 +336,23 @@ export function PlansPage() {
                   {plan.status === 'Active' ? 'Deactivate' : 'Activate'}
                 </button>
                 <button
-                  className="plansBtn plansBtn--icon"
+                  className="plansBtn plansBtn--ghost plansBtn--danger"
                   type="button"
-                  onClick={() =>
-                    setInfoModal({
-                      title: 'Plan Actions',
-                      message: `Plan actions for ${plan.name}`,
-                    })
-                  }
+                  onClick={() => {
+                    if (window.confirm(`Delete plan "${plan.name}"?`)) {
+                      deletePlan(plan.id)
+                        .then(() => refreshPlans())
+                        .catch((err) =>
+                          setInfoModal({
+                            title: 'Error',
+                            message: err instanceof Error ? err.message : 'Failed to delete plan',
+                          })
+                        )
+                    }
+                  }}
                 >
-                  <MoreHorizontal size={16} />
+                  <X size={16} />
+                  Delete
                 </button>
               </div>
             </div>
@@ -352,8 +373,8 @@ export function PlansPage() {
             </button>
 
             <div className="plansModalHeader">
-              <h2>Create New Dealer Plan</h2>
-              <p>Set up a new subscription plan with pricing and features</p>
+              <h2>{editingPlanId ? 'Edit Plan' : 'Create New Dealer Plan'}</h2>
+              <p>{editingPlanId ? 'Update plan details' : 'Set up a new subscription plan with pricing and features'}</p>
             </div>
 
             <div className="plansModalBody">
@@ -363,25 +384,14 @@ export function PlansPage() {
                   <h3>Basic Information</h3>
                 </div>
 
-                <div className="plansModalGrid">
-                  <label>
-                    Plan Name *
+                <label className="plansModalFull">
+                  Plan Name *
                   <input
                     type="text"
                     placeholder="e.g., Professional"
                     value={planName}
                     onChange={(event) => setPlanName(event.target.value)}
                   />
-                  </label>
-                  <label>
-                    Badge (Optional)
-                    <input type="text" placeholder="e.g., Best Value" />
-                  </label>
-                </div>
-
-                <label className="plansModalFull">
-                  Description *
-                  <textarea placeholder="Describe the plan benefits..." rows={3} />
                 </label>
 
                 <div className="plansModalGrid">
@@ -470,32 +480,41 @@ export function PlansPage() {
                 onClick={() => {
                   const monthly = Number(planMonthly) || 0
                   const yearly = Number(planYearly) || 0
-                  const tier = isPopular
+                  const tier: PlanTier = isPopular
                     ? 'professional'
                     : monthly <= 50
                     ? 'starter'
                     : monthly <= 150
                     ? 'professional'
                     : 'enterprise'
-                  createPlan({
+                  const planData = {
                     name: planName.trim() || 'New Plan',
                     tier,
-                    status: 'active',
+                    status: 'active' as const,
                     priceMonthly: monthly || 49,
                     priceYearly: yearly || 499,
                     features: featureList.length ? featureList : ['Standard access'],
-                  }).then(() => {
-                    setPlanName('')
-                    setPlanMonthly('')
-                    setPlanYearly('')
-                    setFeatureList([])
-                    setIsPopular(false)
-                    setShowCreateModal(false)
-                    refreshPlans()
-                  })
+                  }
+                  const action = editingPlanId
+                    ? updatePlan(editingPlanId, planData)
+                    : createPlan(planData)
+                  action
+                    .then(() => {
+                      setEditingPlanId(null)
+                      setPlanName('')
+                      setPlanMonthly('')
+                      setPlanYearly('')
+                      setFeatureList([])
+                      setIsPopular(false)
+                      setShowCreateModal(false)
+                      refreshPlans()
+                    })
+                    .catch((err) =>
+                      toast.error(err instanceof Error ? err.message : 'Failed to save plan')
+                    )
                 }}
               >
-                Create Plan
+                {editingPlanId ? 'Save Changes' : 'Create Plan'}
               </button>
             </div>
           </div>

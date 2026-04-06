@@ -1,22 +1,33 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { User } from '@carflow/shared'
-import { listCustomers } from '../services/adminService'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { CustomerStats, CustomerWithStats } from '../services/adminService'
+import { formatCurrency } from '@carflow/shared'
+import { toast } from 'sonner'
+import {
+  getCustomerDetails,
+  getCustomerStats,
+  listCustomersWithStats,
+  updateCustomerProfile,
+  updateCustomerStatus,
+  updateCustomerVerification,
+} from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { InfoModal } from '../components/InfoModal'
 import {
+  Ban,
   Calendar,
   CheckCircle2,
   ChevronDown,
   Download,
   Eye,
   Mail,
-  MoreHorizontal,
   Pencil,
   Phone,
   Search,
+  UserCheck,
   UserRound,
   UserX,
   Users,
+  X,
 } from 'lucide-react'
 import './CustomersPage.css'
 
@@ -44,59 +55,126 @@ const downloadCsv = (filename: string, rows: Array<Record<string, string>>) => {
 }
 
 export function CustomersPage() {
-  const [users, setUsers] = useState<User[]>([])
+  const [customers, setCustomers] = useState<CustomerWithStats[]>([])
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(20)
+  const [total, setTotal] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [viewCustomer, setViewCustomer] = useState<CustomerWithStats | null>(null)
+  const [editCustomer, setEditCustomer] = useState<CustomerWithStats | null>(null)
+  const [editForm, setEditForm] = useState({ name: '', phone: '', verification: 'verified' as 'verified' | 'unverified' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [customerStatsData, setCustomerStatsData] = useState<CustomerStats | null>(null)
+
+  const refresh = useCallback(() => {
+    listCustomersWithStats({ page, pageSize })
+      .then((data) => {
+        setCustomers(data.items)
+        setTotal(data.total)
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load customers'))
+  }, [page, pageSize])
 
   useEffect(() => {
-    listCustomers({ pageSize: 12 }).then((data) => setUsers(data.items))
+    refresh()
+  }, [refresh])
+
+  useEffect(() => {
+    getCustomerStats()
+      .then(setCustomerStatsData)
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load customer stats'))
   }, [])
 
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
   const customerRows = useMemo(() => {
-    return users.map((user, index) => ({
-      id: `U${String(index + 1).padStart(3, '0')}`,
-      name: user.name,
-      initials: getInitials(user.name),
-      email: user.email,
-      phone: user.phone ?? '+974 5555 0000',
-      joinDate: new Date(user.createdAt).toLocaleDateString('en-US', {
+    return customers.map((c) => ({
+      ...c,
+      id: c.id,
+      displayId: `C-${c.id.slice(0, 8)}`,
+      initials: getInitials(c.name),
+      joinDate: new Date(c.createdAt).toLocaleDateString('en-US', {
         month: 'short',
         day: '2-digit',
         year: 'numeric',
       }),
-      rentals: String(2 + index * 2),
-      spent: `QAR ${(4200 + index * 850).toLocaleString('en-US')}`,
-      verification: index % 4 === 0 ? 'unverified' : 'verified',
-      status: index % 5 === 0 ? 'suspended' : 'active',
+      rentals: String(c.rentalsCount),
+      spent: formatCurrency(c.totalSpent),
+      verification: c.verification,
+      status: c.accountStatus,
     }))
-  }, [users])
+  }, [customers])
 
   const filteredRows = useMemo(() => {
     const normalizedStatus = statusFilter.toLowerCase()
     const base = normalizedStatus === 'all'
       ? customerRows
-      : customerRows.filter(row => row.status.toLowerCase() === normalizedStatus)
+      : customerRows.filter(row => row.status?.toLowerCase() === normalizedStatus)
     if (!searchQuery.trim()) return base
     const query = searchQuery.toLowerCase()
     return base.filter(row =>
-      [row.name, row.email].some(value => value.toLowerCase().includes(query))
+      [row.name, row.email].some(value => value?.toLowerCase().includes(query))
     )
   }, [customerRows, searchQuery, statusFilter])
 
   const stats = useMemo(() => {
-    const total = customerRows.length
-    const active = customerRows.filter(row => row.status === 'active').length
-    const verified = customerRows.filter(row => row.verification === 'verified').length
-    const suspended = customerRows.filter(row => row.status === 'suspended').length
-
     return [
-      { label: 'Total Users', value: String(total), icon: <Users size={18} />, tone: 'dark' },
-      { label: 'Active Users', value: String(active), icon: <UserRound size={18} />, tone: 'green' },
-      { label: 'Verified', value: String(verified), icon: <CheckCircle2 size={18} />, tone: 'blue' },
-      { label: 'Suspended', value: String(suspended), icon: <UserX size={18} />, tone: 'red' },
+      { label: 'Total Customers', value: String(customerStatsData?.total ?? total), icon: <Users size={18} />, tone: 'dark' },
+      { label: 'Active', value: String(customerStatsData?.active ?? 0), icon: <UserRound size={18} />, tone: 'green' },
+      { label: 'Suspended', value: String(customerStatsData?.suspended ?? 0), icon: <UserX size={18} />, tone: 'red' },
+      { label: 'New This Month', value: String(customerStatsData?.newThisMonth ?? 0), icon: <CheckCircle2 size={18} />, tone: 'blue' },
     ] as const
-  }, [customerRows])
+  }, [customerStatsData, total])
+
+  const handleView = useCallback((user: typeof customerRows[0]) => {
+    getCustomerDetails(user.id).then((detail) => {
+      if (detail) setViewCustomer(detail)
+      else setInfoModal({ title: 'Error', message: 'Customer not found' })
+    })
+  }, [])
+
+  const handleEdit = useCallback((user: typeof customerRows[0]) => {
+    setEditCustomer(user)
+    setEditForm({
+      name: user.name,
+      phone: user.phone ?? '',
+      verification: user.verification,
+    })
+    setError(null)
+  }, [])
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editCustomer) return
+    setSaving(true)
+    setError(null)
+    try {
+      await updateCustomerProfile(editCustomer.id, { name: editForm.name, phone: editForm.phone || undefined })
+      await updateCustomerVerification(editCustomer.id, editForm.verification)
+      refresh()
+      setEditCustomer(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update')
+    } finally {
+      setSaving(false)
+    }
+  }, [editCustomer, editForm, refresh])
+
+  const handleToggleStatus = useCallback(async (user: typeof customerRows[0]) => {
+    const newStatus = user.status === 'active' ? 'suspended' : 'active'
+    if (!window.confirm(`${newStatus === 'suspended' ? 'Suspend' : 'Activate'} ${user.name}?`)) return
+    try {
+      await updateCustomerStatus(user.id, newStatus)
+      refresh()
+    } catch (e) {
+      setInfoModal({
+        title: 'Error',
+        message: e instanceof Error ? e.message : 'Failed to update status',
+      })
+    }
+  }, [refresh])
 
   return (
     <AdminLayout title="Customers" subtitle="Customer database and management">
@@ -147,12 +225,14 @@ export function CustomersPage() {
                 downloadCsv(
                   'customers.csv',
                   filteredRows.map(row => ({
-                    id: row.id,
+                    id: row.displayId,
                     name: row.name,
                     email: row.email,
-                    phone: row.phone,
+                    phone: row.phone ?? '',
                     joinDate: row.joinDate,
-                    status: row.status,
+                    status: row.status ?? 'active',
+                    rentals: row.rentals,
+                    spent: row.spent,
                   }))
                 )
               }}
@@ -178,14 +258,14 @@ export function CustomersPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((user) => (
-                <tr key={user.id}>
+              {filteredRows.map((row) => (
+                <tr key={row.id}>
                   <td>
                     <div className="customersUser">
-                      <span className="customersAvatar">{user.initials}</span>
+                      <span className="customersAvatar">{row.initials}</span>
                       <div>
-                        <div className="customersUserName">{user.name}</div>
-                        <div className="customersUserId">{user.id}</div>
+                        <div className="customersUserName">{row.name}</div>
+                        <div className="customersUserId">{row.displayId}</div>
                       </div>
                     </div>
                   </td>
@@ -193,65 +273,185 @@ export function CustomersPage() {
                     <div className="customersContact">
                       <div>
                         <Mail size={14} />
-                        {user.email}
+                        {row.email}
                       </div>
                       <div>
                         <Phone size={14} />
-                        {user.phone}
+                        {row.phone ?? '—'}
                       </div>
                     </div>
                   </td>
                   <td>
                     <div className="customersJoinDate">
                       <Calendar size={14} />
-                      {user.joinDate}
+                      {row.joinDate}
                     </div>
                   </td>
-                  <td>{user.rentals}</td>
-                  <td>{user.spent}</td>
+                  <td>{row.rentals}</td>
+                  <td>{row.spent}</td>
                   <td>
-                    <span className={`customersBadge customersBadge--${user.verification}`}>
-                      {user.verification === 'verified' ? <CheckCircle2 size={14} /> : <UserX size={14} />}
-                      {user.verification === 'verified' ? 'Verified' : 'Unverified'}
+                    <span className={`customersBadge customersBadge--${row.verification}`}>
+                      {row.verification === 'verified' ? <CheckCircle2 size={14} /> : <UserX size={14} />}
+                      {row.verification === 'verified' ? 'Verified' : 'Unverified'}
                     </span>
                   </td>
                   <td>
-                    <span className={`customersStatus customersStatus--${user.status}`}>
-                      {user.status === 'active' ? 'Active' : 'Suspended'}
+                    <span className={`customersStatus customersStatus--${row.status}`}>
+                      {row.status === 'active' ? 'Active' : 'Suspended'}
                     </span>
                   </td>
                   <td className="customersRowActions">
                     <button
                       className="customersIconButton"
                       type="button"
-                      onClick={() =>
-                        setInfoModal({
-                          title: user.name,
-                          message: `Email: ${user.email}\nStatus: ${user.status}`,
-                        })
-                      }
+                      onClick={() => handleView(row)}
+                      title="View details"
                     >
                       <Eye size={16} />
                     </button>
                     <button
                       className="customersIconButton"
                       type="button"
-                      onClick={() =>
-                        setInfoModal({
-                          title: 'Customer Action',
-                          message: `Action for ${user.name}`,
-                        })
-                      }
+                      onClick={() => handleEdit(row)}
+                      title="Edit"
                     >
-                      {user.id === 'U001' ? <Pencil size={16} /> : <MoreHorizontal size={16} />}
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      className="customersIconButton"
+                      type="button"
+                      onClick={() => handleToggleStatus(row)}
+                      title={row.status === 'active' ? 'Suspend' : 'Activate'}
+                    >
+                      {row.status === 'active' ? (
+                        <Ban size={16} />
+                      ) : (
+                        <UserCheck size={16} />
+                      )}
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <div className="customersPagination" role="navigation" aria-label="Customer list pages">
+            <button
+              type="button"
+              className="customersPaginationBtn"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </button>
+            <span className="customersPaginationStatus">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="customersPaginationBtn"
+              disabled={total === 0 || page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* View modal */}
+      {viewCustomer && (
+        <div className="adminInfoModalOverlay" role="dialog" aria-modal="true" aria-labelledby="view-customer-title">
+          <div className="adminInfoModal customersDetailModal">
+            <button
+              className="adminInfoModalClose"
+              type="button"
+              onClick={() => setViewCustomer(null)}
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+            <h3 id="view-customer-title" className="adminInfoModalTitle">
+              {viewCustomer.name}
+            </h3>
+            <div className="customersDetailContent">
+              <p><strong>Email:</strong> {viewCustomer.email}</p>
+              <p><strong>Phone:</strong> {viewCustomer.phone ?? '—'}</p>
+              <p><strong>Account Status:</strong> {viewCustomer.accountStatus}</p>
+              <p><strong>Verification:</strong> {viewCustomer.verification}</p>
+              <p><strong>Total Rentals:</strong> {viewCustomer.rentalsCount}</p>
+              <p><strong>Total Spent:</strong> {formatCurrency(viewCustomer.totalSpent)}</p>
+              <p><strong>Joined:</strong> {new Date(viewCustomer.createdAt).toLocaleDateString()}</p>
+            </div>
+            <div className="adminInfoModalActions">
+              <button className="adminInfoModalBtn" type="button" onClick={() => setViewCustomer(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editCustomer && (
+        <div className="adminInfoModalOverlay" role="dialog" aria-modal="true" aria-labelledby="edit-customer-title">
+          <div className="adminInfoModal customersEditModal">
+            <button
+              className="adminInfoModalClose"
+              type="button"
+              onClick={() => setEditCustomer(null)}
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+            <h3 id="edit-customer-title" className="adminInfoModalTitle">
+              Edit {editCustomer.name}
+            </h3>
+            <div className="customersEditForm">
+              <label>
+                Name
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                />
+              </label>
+              <label>
+                Phone
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                />
+              </label>
+              <label>
+                Verification
+                <select
+                  value={editForm.verification}
+                  onChange={(e) => setEditForm((f) => ({ ...f, verification: e.target.value as 'verified' | 'unverified' }))}
+                >
+                  <option value="verified">Verified</option>
+                  <option value="unverified">Unverified</option>
+                </select>
+              </label>
+              {error && <p className="customersEditError">{error}</p>}
+            </div>
+            <div className="adminInfoModalActions">
+              <button className="adminInfoModalBtn" type="button" onClick={() => setEditCustomer(null)}>
+                Cancel
+              </button>
+              <button
+                className="adminInfoModalBtn adminInfoModalBtn--primary"
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={saving}
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <InfoModal
         open={!!infoModal}
         title={infoModal?.title ?? ''}

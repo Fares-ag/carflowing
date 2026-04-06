@@ -122,6 +122,23 @@
   height: 100%;
 }
 
+.complaintsChartEmpty,
+.complaintsLegendEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  font-size: 14px;
+  color: #6a7282;
+  text-align: center;
+  padding: 16px;
+}
+
+.complaintsLegendEmpty {
+  min-height: auto;
+  grid-column: 1 / -1;
+}
+
 .complaintsLegend {
   margin-top: 16px;
   display: grid;
@@ -343,6 +360,13 @@
   text-transform: capitalize;
 }
 
+.complaintsBadge--open {
+  background: #ffedd4;
+  border-color: #ffd6a7;
+  color: #9f2d00;
+  text-transform: capitalize;
+}
+
 .complaintsBadge--in-progress {
   background: #dbeafe;
   border-color: #bedbff;
@@ -387,4 +411,154 @@
   .complaintsFilters {
     grid-template-columns: 1fr;
   }
+}
+
+.complaintsLoadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
+  background: white;
+  border-radius: 16.4px;
+  box-shadow: 0px 10px 15px -3px rgba(0, 0, 0, 0.1), 0px 4px 6px -4px rgba(0, 0, 0, 0.1);
+  color: #4a5565;
+  font-size: 14px;
+}
+
+.complaintsLoadingSpinner {
+  animation: complaintsSpin 0.85s linear infinite;
+  color: #685ff7;
+}
+
+@keyframes complaintsSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.complaintsErrorBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 14px;
+}
+
+.complaintsRetryBtn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: #685ff7;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.complaintsRetryBtn:hover {
+  filter: brightness(1.05);
+}
+
+tbody tr.complaintsTableRow--clickable {
+  cursor: pointer;
+}
+
+tbody tr.complaintsTableRow--clickable:hover {
+  background: #f8fafc;
+}
+
+.complaintsDetailOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+.complaintsDetailModal {
+  position: relative;
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 28px;
+  width: min(520px, 100%);
+  max-height: min(90vh, 640px);
+  overflow-y: auto;
+  box-shadow: 0px 18px 40px rgba(0, 0, 0, 0.15);
+}
+
+.complaintsDetailClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #6a7282;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.complaintsDetailClose:hover {
+  background: #f3f4f6;
+  color: #101828;
+}
+
+.complaintsDetailTitle {
+  margin: 0 36px 20px 0;
+  font-size: 18px;
+  color: #101828;
+}
+
+.complaintsDetailList {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.complaintsDetailList dt {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #6a7282;
+}
+
+.complaintsDetailList dd {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #101828;
+  line-height: 1.45;
+}
+
+.complaintsDetailFull dd {
+  white-space: pre-wrap;
+}
+
+.complaintsDetailDone {
+  margin-top: 20px;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  background: #685ff7;
+  color: #fafafa;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.complaintsDetailDone:hover {
+  filter: brightness(1.05);
 }

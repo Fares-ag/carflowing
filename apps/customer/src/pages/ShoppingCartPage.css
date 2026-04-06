@@ -95,6 +95,12 @@
   font-size: 14px;
 }
 
+.cart-card__image-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .cart-card__badge {
   position: absolute;
   top: 8px;

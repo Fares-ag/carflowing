@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
 import './InfoModal.css'
 
@@ -6,9 +7,10 @@ type InfoModalProps = {
   title: string
   message: string
   onClose: () => void
+  children?: ReactNode
 }
 
-export function InfoModal({ open, title, message, onClose }: InfoModalProps) {
+export function InfoModal({ open, title, message, onClose, children }: InfoModalProps) {
   if (!open) return null
 
   return (
@@ -19,6 +21,7 @@ export function InfoModal({ open, title, message, onClose }: InfoModalProps) {
         </button>
         <h3 className="customerInfoModalTitle">{title}</h3>
         <p className="customerInfoModalMessage">{message}</p>
+        {children}
         <div className="customerInfoModalActions">
           <button className="customerInfoModalBtn" type="button" onClick={onClose}>
             Close

@@ -1,0 +1,153 @@
+.car-detail-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8f9fc;
+}
+
+.car-detail-main {
+  flex: 1;
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.car-detail-back {
+  display: inline-block;
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #4f46e5;
+  text-decoration: none;
+}
+
+.car-detail-back:hover {
+  text-decoration: underline;
+}
+
+.car-detail-state {
+  font-size: 15px;
+  color: #64748b;
+  text-align: center;
+  padding: 48px 16px;
+}
+
+.car-detail-state--error {
+  color: #b91c1c;
+}
+
+.car-detail-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .car-detail-layout {
+    grid-template-columns: 1.1fr 1fr;
+    gap: 40px;
+  }
+}
+
+.car-detail-media {
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
+}
+
+.car-detail-image {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  display: block;
+}
+
+.car-detail-image--placeholder {
+  background: linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 100%);
+  min-height: 280px;
+}
+
+.car-detail-panel {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  padding: 28px 24px 32px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
+}
+
+.car-detail-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.car-detail-subtitle {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: #64748b;
+}
+
+.car-detail-specs {
+  margin: 24px 0 28px;
+  display: grid;
+  gap: 14px;
+}
+
+.car-detail-spec {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.car-detail-spec:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.car-detail-spec dt {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.car-detail-spec dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  text-align: right;
+}
+
+.car-detail-configure {
+  width: 100%;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.35);
+}
+
+.car-detail-configure:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.4);
+}
+
+.car-detail-configure:active {
+  transform: translateY(0);
+}

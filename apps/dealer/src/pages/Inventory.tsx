@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import type { VehicleCategory } from '@carflow/shared'
 import { createVehicle, listInventory, updateVehicle } from '../services/dealerService'
 import { Sidebar } from '../components/Sidebar'
 import { Header } from '../components/Header'
@@ -18,32 +19,37 @@ import {
   MoreHorizontal,
   Pencil,
   Search,
-  SlidersHorizontal,
-  Star,
   Timer,
   Wrench,
 } from 'lucide-react'
 import './Inventory.css'
 
 type VehicleStatus = 'Available' | 'Rented' | 'Maintenance'
-type VehicleCategory = 'Sedan' | 'SUV'
 
-interface Vehicle {
+interface InventoryVehicleRow {
   id: string
   name: string
+  make: string
+  model: string
   category: VehicleCategory
   year: number
-  licensePlate: string
   status: VehicleStatus
   dailyRateQar: number
-  totalBookings: number
-  totalRevenueQar: number
-  rating: number
-  tags: string[]
+  mileage: number
+  fuelType: 'gas' | 'diesel' | 'electric' | 'hybrid'
+  transmission: 'automatic' | 'manual'
+  seats: number
+  imageUrl?: string
 }
 
 function formatQar(value: number) {
   return `QAR ${value.toLocaleString()}`
+}
+
+function formatCategoryLabel(category: VehicleCategory): string {
+  if (category === 'suv') return 'SUV'
+  if (category === 'ev') return 'EV'
+  return category.charAt(0).toUpperCase() + category.slice(1)
 }
 
 export const Inventory = memo(function Inventory() {
@@ -52,7 +58,7 @@ export const Inventory = memo(function Inventory() {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [viewingId, setViewingId] = useState<string | null>(null)
-  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [vehicles, setVehicles] = useState<InventoryVehicleRow[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -60,18 +66,25 @@ export const Inventory = memo(function Inventory() {
 
   const refreshInventory = useCallback(() => {
     listInventory({ pageSize: 12 }).then((data) => {
-      const mapped = data.items.map((vehicle, index) => ({
+      const mapped = data.items.map((vehicle) => ({
         id: vehicle.id,
         name: vehicle.name,
-        category: vehicle.category === 'suv' ? 'SUV' : 'Sedan',
+        make: vehicle.make ?? '',
+        model: vehicle.model ?? '',
+        category: vehicle.category,
         year: vehicle.year,
-        licensePlate: String(100000 + index),
-        status: vehicle.status === 'available' ? 'Available' : vehicle.status === 'rented' ? 'Rented' : 'Maintenance',
+        status:
+          vehicle.status === 'available'
+            ? ('Available' as const)
+            : vehicle.status === 'rented'
+              ? ('Rented' as const)
+              : ('Maintenance' as const),
         dailyRateQar: vehicle.pricePerDay,
-        totalBookings: 6 + index * 3,
-        totalRevenueQar: vehicle.pricePerDay * (6 + index * 2),
-        rating: 4.6 + index * 0.1,
-        tags: ['Premium Interior', 'Navigation', 'GPS', '+2 more'],
+        mileage: vehicle.mileage ?? 0,
+        fuelType: vehicle.fuelType ?? 'gas',
+        transmission: vehicle.transmission ?? 'automatic',
+        seats: vehicle.seats ?? 5,
+        imageUrl: vehicle.imageUrl,
       }))
       setVehicles(mapped)
     })
@@ -96,13 +109,16 @@ export const Inventory = memo(function Inventory() {
     let list = vehicles.filter(vehicle => {
       const statusOk = statusNormalized === 'all' || vehicle.status.toLowerCase() === statusNormalized
       const categoryOk = categoryNormalized === 'all' || vehicle.category.toLowerCase() === categoryNormalized
-      const searchOk = !query || [vehicle.name, vehicle.licensePlate].some(value => value.toLowerCase().includes(query))
+      const searchOk =
+        !query ||
+        [vehicle.name, vehicle.make, vehicle.model, vehicle.id].some((value) =>
+          String(value).toLowerCase().includes(query)
+        )
       return statusOk && categoryOk && searchOk
     })
 
     list = [...list].sort((a, b) => {
       if (sortBy === 'rate') return b.dailyRateQar - a.dailyRateQar
-      if (sortBy === 'rating') return b.rating - a.rating
       return a.name.localeCompare(b.name)
     })
 
@@ -122,17 +138,18 @@ export const Inventory = memo(function Inventory() {
   const editInitialValues: EditVehicleValues = useMemo(() => {
     const v = editingVehicle
     return {
-      vehicleName: v?.name ?? 'BMW X3 2024',
-      fuelType: 'Petrol',
-      category: v?.category === 'SUV' ? 'SUV' : 'Sedan',
-      transmission: 'Automatic',
-      dailyRate: String(v?.dailyRateQar ?? 300),
-      seatingCapacity: '5 Seats',
-      year: String(v?.year ?? 2024),
-      color: 'Midnight Black',
-      status: (v?.status ?? 'Available') as any,
-      licensePlate: v?.licensePlate ?? '123456',
-      description: 'Luxury SUV with premium features and excellent performance.',
+      vehicleName: v?.name ?? '',
+      make: v?.make ?? '',
+      model: v?.model ?? '',
+      fuelType: v?.fuelType ?? 'gas',
+      category: v?.category ?? 'sedan',
+      transmission: v?.transmission ?? 'automatic',
+      dailyRate: String(v?.dailyRateQar ?? 0),
+      seatingCapacity: String(v?.seats ?? 5),
+      year: String(v?.year ?? new Date().getFullYear()),
+      mileage: String(v?.mileage ?? 0),
+      status: (v?.status ?? 'Available') as EditVehicleValues['status'],
+      imageUrl: v?.imageUrl,
     }
   }, [editingVehicle])
 
@@ -153,17 +170,20 @@ export const Inventory = memo(function Inventory() {
               className="inv-btn inv-btn--ghost"
               type="button"
               onClick={() => {
-                const rows = filteredVehicles.map(vehicle => ({
+                const rows = filteredVehicles.map((vehicle) => ({
                   id: vehicle.id,
                   name: vehicle.name,
-                  category: vehicle.category,
+                  category: formatCategoryLabel(vehicle.category),
                   status: vehicle.status,
                   rate: formatQar(vehicle.dailyRateQar),
                 }))
-                const headers = Object.keys(rows[0] ?? {})
+                type CsvRow = (typeof rows)[number]
+                const headers: (keyof CsvRow)[] = ['id', 'name', 'category', 'status', 'rate']
                 const csv = [
                   headers.join(','),
-                  ...rows.map(row => headers.map(header => `"${row[header] ?? ''}"`).join(',')),
+                  ...rows.map((row) =>
+                    headers.map((header) => `"${String(row[header] ?? '')}"`).join(',')
+                  ),
                 ].join('\n')
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
                 const link = document.createElement('a')
@@ -203,7 +223,7 @@ export const Inventory = memo(function Inventory() {
             <div className="inv-statText">
               <div className="inv-statLabel">Total Vehicles</div>
               <div className="inv-statValue">{stats.total}</div>
-              <div className="inv-statMeta">+2 this month</div>
+              <div className="inv-statMeta"></div>
             </div>
             <div className="inv-statIcon inv-statIcon--blue" aria-hidden="true">
               <Car size={18} />
@@ -213,7 +233,7 @@ export const Inventory = memo(function Inventory() {
             <div className="inv-statText">
               <div className="inv-statLabel">Available</div>
               <div className="inv-statValue">{stats.available}</div>
-              <div className="inv-statMeta">67% utilization</div>
+              <div className="inv-statMeta"></div>
             </div>
             <div className="inv-statIcon inv-statIcon--green" aria-hidden="true">
               <CheckCircle2 size={18} />
@@ -223,7 +243,7 @@ export const Inventory = memo(function Inventory() {
             <div className="inv-statText">
               <div className="inv-statLabel">Currently Rented</div>
               <div className="inv-statValue">{stats.rented}</div>
-              <div className="inv-statMeta">+15% vs last month</div>
+              <div className="inv-statMeta"></div>
             </div>
             <div className="inv-statIcon inv-statIcon--purple" aria-hidden="true">
               <Timer size={18} />
@@ -233,7 +253,7 @@ export const Inventory = memo(function Inventory() {
             <div className="inv-statText">
               <div className="inv-statLabel">Under Maintenance</div>
               <div className="inv-statValue">{stats.maintenance}</div>
-              <div className="inv-statMeta">Avg 2.3 days</div>
+              <div className="inv-statMeta"></div>
             </div>
             <div className="inv-statIcon inv-statIcon--red" aria-hidden="true">
               <Wrench size={18} />
@@ -249,7 +269,7 @@ export const Inventory = memo(function Inventory() {
               </span>
               <input
                 className="inv-searchInput"
-                placeholder="Search vehicles by name, license plate..."
+                placeholder="Search vehicles by name, make, model, or ID..."
                 aria-label="Search vehicles"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
@@ -277,8 +297,12 @@ export const Inventory = memo(function Inventory() {
                   onChange={(event) => setCategoryFilter(event.target.value)}
                 >
                   <option value="all">All Categories</option>
-                  <option value="Sedan">Sedan</option>
-                  <option value="SUV">SUV</option>
+                  <option value="sedan">Sedan</option>
+                  <option value="suv">SUV</option>
+                  <option value="truck">Truck</option>
+                  <option value="luxury">Luxury</option>
+                  <option value="ev">EV</option>
+                  <option value="other">Other</option>
                 </select>
                 <span className="inv-selectChevron">▾</span>
               </label>
@@ -290,14 +314,9 @@ export const Inventory = memo(function Inventory() {
                 >
                   <option value="name">Name</option>
                   <option value="rate">Daily Rate</option>
-                  <option value="rating">Rating</option>
                 </select>
                 <span className="inv-selectChevron">▾</span>
               </label>
-
-              <button className="inv-iconBtn" type="button" aria-label="More filters">
-                <SlidersHorizontal size={14} />
-              </button>
 
               <div className="inv-viewToggle" role="group" aria-label="View toggle">
                 <button
@@ -330,6 +349,9 @@ export const Inventory = memo(function Inventory() {
             {filteredVehicles.map(vehicle => (
               <article key={vehicle.id} className="inv-vehicleCard">
                 <div className={`inv-vehicleImage inv-vehicleImage--${vehicle.id}`}>
+                  {vehicle.imageUrl ? (
+                    <img src={vehicle.imageUrl} alt={vehicle.name} className="inv-vehicleImageImg" />
+                  ) : null}
                   <div className="inv-vehicleImageOverlay" />
                   <div className={`inv-statusBadge inv-statusBadge--${vehicle.status.toLowerCase()}`}>
                     {vehicle.status}
@@ -350,8 +372,8 @@ export const Inventory = memo(function Inventory() {
                   <div className="inv-vehicleTop">
                     <div className="inv-vehicleName">{vehicle.name}</div>
                     <div className="inv-vehicleMeta">
-                      {vehicle.category} <span className="inv-dot">•</span> {vehicle.year}{' '}
-                      <span className="inv-dot">•</span> {vehicle.licensePlate}
+                      {formatCategoryLabel(vehicle.category)} <span className="inv-dot">•</span> {vehicle.year}{' '}
+                      <span className="inv-dot">•</span> {[vehicle.make, vehicle.model].filter(Boolean).join(' ') || '—'}
                     </div>
                   </div>
 
@@ -362,37 +384,6 @@ export const Inventory = memo(function Inventory() {
                       </div>
                       <div className="inv-metricValue">{formatQar(vehicle.dailyRateQar)}</div>
                     </div>
-                    <div className="inv-metric">
-                      <div className="inv-metricLabel">
-                        Total Bookings <span className="inv-metricHint"><Info size={12} /></span>
-                      </div>
-                      <div className="inv-metricValue">{vehicle.totalBookings}</div>
-                    </div>
-                    <div className="inv-metric">
-                      <div className="inv-metricLabel">
-                        Total Revenue <span className="inv-metricHint"><Info size={12} /></span>
-                      </div>
-                      <div className="inv-metricValue">{formatQar(vehicle.totalRevenueQar)}</div>
-                    </div>
-                    <div className="inv-metric">
-                      <div className="inv-metricLabel">
-                        Rating <span className="inv-metricHint"><Info size={12} /></span>
-                      </div>
-                      <div className="inv-metricValue">
-                        <span className="inv-star" aria-hidden="true">
-                          <Star size={14} />
-                        </span>{' '}
-                        {vehicle.rating.toFixed(1)}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="inv-tags">
-                    {vehicle.tags.map(tag => (
-                      <span key={tag} className="inv-tag">
-                        {tag}
-                      </span>
-                    ))}
                   </div>
 
                   <div className="inv-actionsRow">
@@ -422,7 +413,11 @@ export const Inventory = memo(function Inventory() {
             {filteredVehicles.map(vehicle => (
               <article key={vehicle.id} className="inv-listRow">
                 <div className="inv-listMedia">
-                  <div className={`inv-thumb inv-thumb--${vehicle.id}`} />
+                  {vehicle.imageUrl ? (
+                    <img src={vehicle.imageUrl} alt={vehicle.name} className="inv-thumb inv-thumbImg" />
+                  ) : (
+                    <div className={`inv-thumb inv-thumb--${vehicle.id}`} />
+                  )}
                 </div>
 
                 <div className="inv-listMain">
@@ -430,8 +425,8 @@ export const Inventory = memo(function Inventory() {
                     <div>
                       <div className="inv-vehicleName">{vehicle.name}</div>
                       <div className="inv-vehicleMeta">
-                        {vehicle.category} <span className="inv-dot">•</span> {vehicle.year}{' '}
-                        <span className="inv-dot">•</span> {vehicle.licensePlate}
+                        {formatCategoryLabel(vehicle.category)} <span className="inv-dot">•</span> {vehicle.year}{' '}
+                        <span className="inv-dot">•</span> {[vehicle.make, vehicle.model].filter(Boolean).join(' ') || '—'}
                       </div>
                     </div>
                     <div className={`inv-statusBadge inv-statusBadge--${vehicle.status.toLowerCase()}`}>
@@ -444,33 +439,9 @@ export const Inventory = memo(function Inventory() {
                       <div className="inv-listMetricLabel">Daily Rate</div>
                       <div className="inv-listMetricValue">{formatQar(vehicle.dailyRateQar)}</div>
                     </div>
-                    <div className="inv-listMetric">
-                      <div className="inv-listMetricLabel">Bookings</div>
-                      <div className="inv-listMetricValue">{vehicle.totalBookings}</div>
-                    </div>
-                    <div className="inv-listMetric">
-                      <div className="inv-listMetricLabel">Revenue</div>
-                      <div className="inv-listMetricValue">{formatQar(vehicle.totalRevenueQar)}</div>
-                    </div>
-                    <div className="inv-listMetric">
-                      <div className="inv-listMetricLabel">Rating</div>
-                      <div className="inv-listMetricValue">
-                        <span className="inv-star" aria-hidden="true">
-                        <Star size={14} />
-                        </span>{' '}
-                        {vehicle.rating.toFixed(1)}
-                      </div>
-                    </div>
                   </div>
 
                   <div className="inv-listBottom">
-                    <div className="inv-tags inv-tags--compact">
-                      {vehicle.tags.slice(0, 4).map(tag => (
-                        <span key={tag} className="inv-tag inv-tag--small">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
                     <div className="inv-rowActions">
                       <button className="inv-btn inv-btn--outline" type="button" onClick={() => setViewingId(vehicle.id)}>
                         <Eye size={14} />
@@ -502,25 +473,27 @@ export const Inventory = memo(function Inventory() {
         onClose={() => setIsAddOpen(false)}
         onCreate={(values) => {
           createVehicle({
-            dealerId: 'dealer_1',
             name: values.name,
-            make: values.name.split(' ')[0] ?? 'Brand',
-            model: values.name.split(' ').slice(1).join(' ') || 'Model',
+            make: values.make,
+            model: values.model,
             year: values.year,
-            category: values.category === 'SUV' ? 'suv' : 'sedan',
+            category: values.category.toLowerCase() as VehicleCategory,
             status:
               values.status === 'Available'
                 ? 'available'
                 : values.status === 'Rented'
-                ? 'rented'
-                : 'maintenance',
+                  ? 'rented'
+                  : 'maintenance',
             pricePerDay: values.dailyRateQar,
-            mileage: 0,
-            transmission: 'automatic',
-            fuelType: 'gas',
-            seats: 5,
+            mileage: values.mileage ?? 0,
+            transmission: values.transmission ?? 'automatic',
+            fuelType: values.fuelType ?? 'gas',
+            seats: values.seats ?? 5,
+            imageUrl: values.imageUrl,
           }).then(() => {
             refreshInventory()
+          }).catch((err) => {
+            alert(err instanceof Error ? err.message : 'Failed to add vehicle')
           })
         }}
       />
@@ -533,6 +506,27 @@ export const Inventory = memo(function Inventory() {
             setViewingId(null)
             setEditingId(viewingVehicle.id)
           }}
+          onDuplicateVehicle={(v) => {
+            createVehicle({
+              name: `${v.name} (copy)`,
+              make: v.make,
+              model: v.model,
+              year: v.year,
+              category: v.category,
+              status: 'available',
+              pricePerDay: v.dailyRateQar,
+              mileage: v.mileage,
+              transmission: v.transmission,
+              fuelType: v.fuelType,
+              seats: v.seats,
+              imageUrl: v.imageUrl,
+            }).then(() => {
+              refreshInventory()
+              setViewingId(null)
+            }).catch((err) => {
+              alert(err instanceof Error ? err.message : 'Failed to duplicate vehicle')
+            })
+          }}
         />
       )}
       <EditVehicleModal
@@ -543,17 +537,26 @@ export const Inventory = memo(function Inventory() {
           if (!editingId) return
           updateVehicle(editingId, {
             name: values.vehicleName,
-            category: values.category === 'SUV' ? 'suv' : 'sedan',
-            year: Number(values.year) || 2024,
-            pricePerDay: Number(values.dailyRate) || 300,
+            make: values.make,
+            model: values.model,
+            category: values.category,
+            year: Number(values.year) || new Date().getFullYear(),
+            pricePerDay: Number(values.dailyRate) || 0,
+            mileage: Number(String(values.mileage).replace(/\D/g, '')) || 0,
+            transmission: values.transmission,
+            fuelType: values.fuelType,
+            seats: Number(values.seatingCapacity) || 5,
             status:
               values.status === 'Available'
                 ? 'available'
                 : values.status === 'Rented'
-                ? 'rented'
-                : 'maintenance',
+                  ? 'rented'
+                  : 'maintenance',
+            imageUrl: values.imageUrl,
           }).then(() => {
             refreshInventory()
+          }).catch((err) => {
+            alert(err instanceof Error ? err.message : 'Failed to update vehicle')
           })
         }}
       />

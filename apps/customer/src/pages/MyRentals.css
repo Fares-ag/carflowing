@@ -183,6 +183,11 @@
   color: #0c5460;
 }
 
+.status-badge.cancelled {
+  background: #e9ecef;
+  color: #495057;
+}
+
 .balance-badge {
   background: #f8d7da;
   color: #721c24;
@@ -337,6 +342,12 @@
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
+  text-decoration: none;
+  color: inherit;
+  display: inline-block;
+  box-sizing: border-box;
+  font-family: inherit;
+  text-align: center;
 }
 
 .action-btn:hover {

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dealer } from '@carflow/shared'
-import { listDealers, updateDealerStatus } from '../services/adminService'
+import { toast } from 'sonner'
+import { createDealer, listDealers, updateDealerStatus } from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { InfoModal } from '../components/InfoModal'
 import {
@@ -9,14 +10,16 @@ import {
   Eye,
   Mail,
   MapPin,
-  Pencil,
   Phone,
+  Power,
   Search,
   Star,
   UserCheck,
+  UserPlus,
   Users,
   Wallet,
   Clock,
+  X,
 } from 'lucide-react'
 import './DealersPage.css'
 
@@ -43,35 +46,89 @@ const STATUS_CLASS: Record<string, string> = {
 
 export function DealersPage() {
   const [dealers, setDealers] = useState<Dealer[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(20)
+  const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const [addName, setAddName] = useState('')
+  const [addOwnerEmail, setAddOwnerEmail] = useState('')
+  const [addContactEmail, setAddContactEmail] = useState('')
+  const [addContactPhone, setAddContactPhone] = useState('')
+  const [addAddress, setAddAddress] = useState('')
+  const [addError, setAddError] = useState('')
+  const [addSubmitting, setAddSubmitting] = useState(false)
 
-  const refreshDealers = () => {
-    listDealers({ pageSize: 10 }).then((data) => setDealers(data.items))
+  const refreshDealers = useCallback(() => {
+    setIsLoading(true)
+    listDealers({ page, pageSize })
+      .then((data) => {
+        setDealers(data.items)
+        setTotal(data.total)
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load dealers'))
+      .finally(() => setIsLoading(false))
+  }, [page, pageSize])
+
+  const closeAddModal = () => {
+    setAddOpen(false)
+    setAddError('')
+    setAddSubmitting(false)
+  }
+
+  const handleCreateDealer = async (event: FormEvent) => {
+    event.preventDefault()
+    setAddError('')
+    setAddSubmitting(true)
+    try {
+      await createDealer({
+        name: addName,
+        ownerEmail: addOwnerEmail,
+        contactEmail: addContactEmail,
+        contactPhone: addContactPhone || undefined,
+        address: addAddress || undefined,
+      })
+      setAddName('')
+      setAddOwnerEmail('')
+      setAddContactEmail('')
+      setAddContactPhone('')
+      setAddAddress('')
+      closeAddModal()
+      refreshDealers()
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : 'Unable to create dealer')
+    } finally {
+      setAddSubmitting(false)
+    }
   }
 
   useEffect(() => {
     refreshDealers()
-  }, [])
+  }, [refreshDealers])
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const dealerRows = useMemo(() => {
-    return dealers.map((dealer, index) => {
+    return dealers.map((dealer) => {
       const pending = dealer.status === 'pending'
       return {
-        id: `D${String(index + 1).padStart(3, '0')}`,
+        id: dealer.id.slice(0, 8).toUpperCase(),
         sourceId: dealer.id,
         name: dealer.name,
-        contact: `Contact ${index + 1}`,
+        logoUrl: dealer.logoUrl,
+        contact: dealer.contactEmail,
         email: dealer.contactEmail,
-        phone: dealer.contactPhone ?? '+974 4444 0000',
-        location: pending ? 'Al Sadd, Doha' : 'West Bay, Doha',
+        phone: dealer.contactPhone ?? '',
+        location: dealer.address?.trim() || '—',
         fleetSize: `${dealer.vehiclesCount} cars`,
         activeRentals: String(dealer.activeRentals),
         revenue: `QAR ${dealer.totalRevenue.toLocaleString('en-US')}`,
-        rating: dealer.rating.toFixed(1),
-        reviews: `(${120 + index * 6})`,
+        ratingValue: dealer.rating,
         status: dealer.status === 'suspended' ? 'Suspended' : pending ? 'Pending Approval' : 'Active',
+        rawStatus: dealer.status,
       }
     })
   }, [dealers])
@@ -94,7 +151,7 @@ export function DealersPage() {
   }, [dealerRows])
 
   const stats = useMemo(() => {
-    const total = dealerRows.length
+    const totalCount = dealerRows.length
     const active = dealerRows.filter(row => row.status === 'Active').length
     const pending = dealerRows.filter(row => row.status === 'Pending Approval').length
     const revenue = dealerRows.reduce((sum, row) => {
@@ -103,12 +160,21 @@ export function DealersPage() {
     }, 0)
 
     return {
-      total,
+      total: totalCount,
       active,
       pending,
       revenue,
     }
   }, [dealerRows])
+
+  const handleToggleStatus = (row: typeof dealerRows[0]) => {
+    const nextStatus = row.status === 'Active' ? 'suspended' : 'active'
+    const action = nextStatus === 'suspended' ? 'suspend' : 'activate'
+    if (!window.confirm(`Are you sure you want to ${action} this dealer "${row.name}"?`)) return
+    updateDealerStatus(row.sourceId, nextStatus)
+      .then(() => refreshDealers())
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to update dealer status'))
+  }
 
   return (
     <AdminLayout title="Dealers" subtitle="Dealer accounts and approvals">
@@ -152,6 +218,17 @@ export function DealersPage() {
             <div className="dealersControlSubtitle">Manage and monitor all registered dealers</div>
           </div>
           <div className="dealersControlRow">
+            <button
+              type="button"
+              className="dealersAddBtn"
+              onClick={() => {
+                setAddOpen(true)
+                setAddError('')
+              }}
+            >
+              <UserPlus size={16} />
+              Add Dealer
+            </button>
             <div className="dealersSearch">
               <Search size={16} className="dealersSearchIcon" />
               <input
@@ -199,98 +276,133 @@ export function DealersPage() {
         </div>
 
         <div className="dealersTableCard">
-          <div className="dealersTableWrap">
-            <table className="dealersTable">
-              <thead>
-                <tr>
-                  <th>Dealer</th>
-                  <th>Contact</th>
-                  <th>Location</th>
-                  <th>Fleet Size</th>
-                  <th>Active Rentals</th>
-                  <th>Revenue</th>
-                  <th>Rating</th>
-                  <th>Status</th>
-                  <th className="dealersTableActionsHead">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <div className="dealersDealerCell">
-                        <div className="dealersAvatar">
-                          <Users size={16} />
-                        </div>
-                        <div>
-                          <div className="dealersDealerName">{row.name}</div>
-                          <div className="dealersDealerId">{row.id}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="dealersContactCell">
-                        <div className="dealersContactName">{row.contact}</div>
-                        <div className="dealersContactMeta">
-                          <Mail size={14} />
-                          {row.email}
-                        </div>
-                        <div className="dealersContactMeta">
-                          <Phone size={14} />
-                          {row.phone}
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="dealersLocation">
-                        <MapPin size={14} />
-                        {row.location}
-                      </div>
-                    </td>
-                    <td>{row.fleetSize}</td>
-                    <td>{row.activeRentals}</td>
-                    <td>{row.revenue}</td>
-                    <td>
-                      <div className="dealersRating">
-                        <Star size={14} />
-                        <span>{row.rating}</span>
-                        <span className="dealersRatingCount">{row.reviews}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={STATUS_CLASS[row.status]}>{row.status}</span>
-                    </td>
-                    <td>
-                      <div className="dealersActions">
-                        <button
-                          type="button"
-                          className="dealersActionBtn"
-                          onClick={() =>
-                            setInfoModal({
-                              title: row.name,
-                              message: `Location: ${row.location}\nStatus: ${row.status}`,
-                            })
-                          }
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          className="dealersActionBtn"
-                          onClick={() => {
-                            const nextStatus = row.status === 'Active' ? 'suspended' : 'active'
-                            updateDealerStatus(row.sourceId, nextStatus).then(() => refreshDealers())
-                          }}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {isLoading ? (
+            <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
+          ) : (
+            <>
+              <div className="dealersTableWrap">
+                <table className="dealersTable">
+                  <thead>
+                    <tr>
+                      <th>Dealer</th>
+                      <th>Contact</th>
+                      <th>Location</th>
+                      <th>Fleet Size</th>
+                      <th>Active Rentals</th>
+                      <th>Revenue</th>
+                      <th>Rating</th>
+                      <th>Status</th>
+                      <th className="dealersTableActionsHead">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRows.map((row) => (
+                      <tr key={row.sourceId}>
+                        <td>
+                          <div className="dealersDealerCell">
+                            <div className="dealersAvatar">
+                              {row.logoUrl ? (
+                                <img src={row.logoUrl} alt="" className="dealersAvatarImg" />
+                              ) : (
+                                <Users size={16} />
+                              )}
+                            </div>
+                            <div>
+                              <div className="dealersDealerName">{row.name}</div>
+                              <div className="dealersDealerId">{row.id}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="dealersContactCell">
+                            <div className="dealersContactName">{row.contact}</div>
+                            <div className="dealersContactMeta">
+                              <Mail size={14} />
+                              {row.email}
+                            </div>
+                            {row.phone ? (
+                              <div className="dealersContactMeta">
+                                <Phone size={14} />
+                                {row.phone}
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="dealersLocation">
+                            <MapPin size={14} />
+                            {row.location}
+                          </div>
+                        </td>
+                        <td>{row.fleetSize}</td>
+                        <td>{row.activeRentals}</td>
+                        <td>{row.revenue}</td>
+                        <td>
+                          {row.ratingValue > 0 ? (
+                            <div className="dealersRating">
+                              <Star size={14} />
+                              <span>{row.ratingValue.toFixed(1)}</span>
+                            </div>
+                          ) : (
+                            <span className="dealersRating dealersRating--empty">—</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className={STATUS_CLASS[row.status]}>{row.status}</span>
+                        </td>
+                        <td>
+                          <div className="dealersActions">
+                            <button
+                              type="button"
+                              className="dealersActionBtn"
+                              title="View details"
+                              onClick={() =>
+                                setInfoModal({
+                                  title: row.name,
+                                  message: `Location: ${row.location}\nStatus: ${row.status}`,
+                                })
+                              }
+                            >
+                              <Eye size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className="dealersActionBtn"
+                              title={row.status === 'Active' ? 'Suspend dealer' : 'Activate dealer'}
+                              onClick={() => handleToggleStatus(row)}
+                            >
+                              <Power size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="customersPagination" role="navigation" aria-label="Dealer list pages">
+                <button
+                  type="button"
+                  className="customersPaginationBtn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+                <span className="customersPaginationStatus">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="customersPaginationBtn"
+                  disabled={total === 0 || page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
       <InfoModal
@@ -299,6 +411,89 @@ export function DealersPage() {
         message={infoModal?.message ?? ''}
         onClose={() => setInfoModal(null)}
       />
+
+      {addOpen ? (
+        <div className="dealersAddOverlay" role="dialog" aria-modal="true" aria-labelledby="dealersAddTitle">
+          <div className="dealersAddModal">
+            <button
+              type="button"
+              className="dealersAddClose"
+              onClick={closeAddModal}
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+            <h3 id="dealersAddTitle" className="dealersAddTitle">
+              Add dealer
+            </h3>
+            <p className="dealersAddHint">
+              Look up the owner by the email they used to sign up. Their role will be set to dealer.
+            </p>
+            <form className="dealersAddForm" onSubmit={handleCreateDealer}>
+              <label className="dealersAddLabel">
+                Name
+                <input
+                  className="dealersAddInput"
+                  value={addName}
+                  onChange={(e) => setAddName(e.target.value)}
+                  placeholder="Dealership name"
+                  required
+                />
+              </label>
+              <label className="dealersAddLabel">
+                Owner email
+                <input
+                  className="dealersAddInput"
+                  type="email"
+                  value={addOwnerEmail}
+                  onChange={(e) => setAddOwnerEmail(e.target.value)}
+                  placeholder="owner@example.com"
+                  required
+                />
+              </label>
+              <label className="dealersAddLabel">
+                Contact email
+                <input
+                  className="dealersAddInput"
+                  type="email"
+                  value={addContactEmail}
+                  onChange={(e) => setAddContactEmail(e.target.value)}
+                  placeholder="contact@dealership.com"
+                  required
+                />
+              </label>
+              <label className="dealersAddLabel">
+                Contact phone
+                <input
+                  className="dealersAddInput"
+                  type="tel"
+                  value={addContactPhone}
+                  onChange={(e) => setAddContactPhone(e.target.value)}
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="dealersAddLabel">
+                Address
+                <input
+                  className="dealersAddInput"
+                  value={addAddress}
+                  onChange={(e) => setAddAddress(e.target.value)}
+                  placeholder="Optional"
+                />
+              </label>
+              {addError ? <div className="dealersAddError">{addError}</div> : null}
+              <div className="dealersAddActions">
+                <button type="button" className="dealersAddCancel" onClick={closeAddModal}>
+                  Cancel
+                </button>
+                <button type="submit" className="dealersAddSubmit" disabled={addSubmitting}>
+                  {addSubmitting ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </AdminLayout>
   )
 }

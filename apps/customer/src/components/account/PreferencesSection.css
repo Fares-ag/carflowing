@@ -9,6 +9,29 @@
   margin: 0 0 24px 0;
 }
 
+.preferences-local-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #374151;
+}
+
+.preferences-local-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.preferences-local-note p {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
 .preferences-content {
   display: flex;
   flex-direction: column;

@@ -21,72 +21,88 @@ const parseListParams = (request: Request) => {
 }
 
 const buildDealerDashboard = () => {
+  const db = getDb()
+  const totalRevenue = db.payments.reduce((sum, p) => sum + p.amount, 0)
   const kpis: KpiMetric[] = [
-    { label: 'Revenue', value: 128450, changePct: 8.4 },
-    { label: 'Active Rentals', value: 12, changePct: 4.2 },
-    { label: 'Available Vehicles', value: 42, changePct: -2.1 },
-    { label: 'Leads', value: 18, changePct: 6.3 },
+    { label: 'Total Revenue', value: totalRevenue },
+    { label: 'Total Rentals', value: db.rentals.length },
+    { label: 'Active Vehicles', value: db.vehicles.length },
+    { label: 'Active Leads', value: db.leads.length },
   ]
 
-  const revenueTrend: TimeSeriesPoint[] = [
-    { date: '2025-10', value: 18200 },
-    { date: '2025-11', value: 20800 },
-    { date: '2025-12', value: 24200 },
-    { date: '2026-01', value: 17600 },
-  ]
+  const revenueTrend: TimeSeriesPoint[] = db.payments.slice(0, 6).map((p, i) => ({
+    date: `2025-${String(10 + i).padStart(2, '0')}`,
+    value: p.amount,
+  }))
 
-  const bookingTrend: TimeSeriesPoint[] = [
-    { date: '2025-10', value: 32 },
-    { date: '2025-11', value: 38 },
-    { date: '2025-12', value: 41 },
-    { date: '2026-01', value: 29 },
-  ]
+  const bookingTrend: TimeSeriesPoint[] = db.rentals.slice(0, 4).map((r, i) => ({
+    date: `2025-${String(10 + i).padStart(2, '0')}`,
+    value: 1,
+  }))
 
-  return { kpis, revenueTrend, bookingTrend }
+  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const revenueChartData = db.payments.slice(0, 6).map((p, i) => ({
+    month: `${MONTH_NAMES[(9 + i) % 12]} 2025`,
+    revenue: p.amount,
+  }))
+
+  const recentRentals = db.rentals.slice(0, 5).map((r) => {
+    const vehicle = db.vehicles.find((v) => v.id === r.vehicleId)
+    const customer = db.users.find((u) => u.id === r.customerId)
+    return {
+      id: r.id,
+      customerName: customer?.name ?? 'Customer',
+      vehicleName: vehicle?.name ?? 'Unknown',
+      status: r.status,
+      createdAt: r.createdAt,
+    }
+  })
+
+  const vehiclesWithStatus = db.vehicles.map((v) => ({
+    id: v.id,
+    name: v.name,
+    status: v.status ?? 'available',
+  }))
+
+  return { kpis, revenueTrend, bookingTrend, revenueChartData, recentRentals, vehiclesWithStatus }
 }
 
-const buildDealerAnalytics = () => ({
-  revenueTrend: [
-    { month: 'Jan', revenue: 45000, profit: 32000 },
-    { month: 'Feb', revenue: 52000, profit: 38000 },
-    { month: 'Mar', revenue: 48000, profit: 35000 },
-    { month: 'Apr', revenue: 65000, profit: 48000 },
-    { month: 'May', revenue: 70000, profit: 52000 },
-    { month: 'Jun', revenue: 85000, profit: 63000 },
-  ],
-  customerDemographics: [
-    { name: '25-34', value: 35 },
-    { name: '35-44', value: 28 },
-    { name: '45-54', value: 20 },
-    { name: '18-24', value: 12 },
-    { name: '55+', value: 5 },
-  ],
-  revenueBooking: [
-    { month: 'Jan', revenue: 32000, bookings: 45 },
-    { month: 'Feb', revenue: 35000, bookings: 50 },
-    { month: 'Mar', revenue: 34000, bookings: 48 },
-    { month: 'Apr', revenue: 39000, bookings: 55 },
-    { month: 'May', revenue: 41000, bookings: 58 },
-    { month: 'Jun', revenue: 42000, bookings: 60 },
-  ],
-  bookingTime: [
-    { time: '6AM', bookings: 7 },
-    { time: '8AM', bookings: 12 },
-    { time: '10AM', bookings: 18 },
-    { time: '12PM', bookings: 24 },
-    { time: '2PM', bookings: 21 },
-    { time: '4PM', bookings: 28 },
-    { time: '6PM', bookings: 15 },
-    { time: '8PM', bookings: 9 },
-    { time: '10PM', bookings: 5 },
-  ],
-  utilization: [
-    { category: 'SUV', utilization: 85 },
-    { category: 'Sedan', utilization: 70 },
-    { category: 'Hatchback', utilization: 55 },
-    { category: 'Coupe', utilization: 45 },
-  ],
-})
+const buildDealerAnalytics = () => {
+  const db = getDb()
+  const totalRevenue = db.payments.reduce((sum, p) => sum + p.amount, 0)
+  const activeRentals = db.rentals.filter((r) => r.status === 'active' || r.status === 'reserved').length
+  const uniqueCustomers = new Set(db.rentals.map((r) => r.customerId)).size
+  const totalVehicles = db.vehicles.length
+  const rentedCount = db.rentals.filter((r) => r.status === 'active').length
+  const fleetUtilization = totalVehicles > 0 ? Math.round((rentedCount / totalVehicles) * 100) : 0
+  const revenueTrend = db.payments.map((p, i) => ({
+    month: `Month ${i + 1}`,
+    revenue: p.amount,
+    profit: Math.round(p.amount * 0.2),
+    createdAt: p.createdAt,
+  }))
+  const utilization = db.vehicles.reduce((acc: Array<{ category: string; utilization: number }>, v) => {
+    const existing = acc.find((x) => x.category === (v.category ?? 'other'))
+    if (existing) existing.utilization += fleetUtilization
+    else acc.push({ category: v.category ?? 'other', utilization: fleetUtilization })
+    return acc
+  }, [])
+  return {
+    totalRevenue,
+    activeBookings: activeRentals,
+    newCustomersThisMonth: uniqueCustomers,
+    fleetUtilization,
+    revenueTrend,
+    customerDemographics: [] as Array<{ name: string; value: number }>,
+    revenueBooking: db.rentals.slice(0, 6).map((r) => ({
+      month: r.createdAt,
+      revenue: 0,
+      bookings: 1,
+    })),
+    bookingTime: [] as Array<{ time: string; bookings: number }>,
+    utilization: utilization.length > 0 ? utilization : [],
+  }
+}
 
 export const handlers = [
   http.post('/api/auth/login', async ({ request }) => {

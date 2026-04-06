@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Complaint } from '@carflow/shared'
+import { toast } from 'sonner'
+import type { ComplaintWithCustomer } from '../services/adminService'
 import { listComplaints, updateComplaintStatus } from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import {
@@ -8,9 +9,10 @@ import {
   BellRing,
   ChevronDown,
   Filter,
+  Loader2,
   Search,
-  UserRound,
   Users,
+  X,
 } from 'lucide-react'
 import {
   Cell,
@@ -25,47 +27,93 @@ import {
 } from 'recharts'
 import './ComplaintsPage.css'
 
-const CATEGORY_LEGEND = [
-  { label: 'Customer-Dealer', value: '24', color: '#ef4444' },
-  { label: 'Website', value: '18', color: '#f59e0b' },
-  { label: 'Plans', value: '12', color: '#685ff7' },
-  { label: 'Payments', value: '22', color: '#10b981' },
-  { label: 'Car Quality', value: '15', color: '#3b82f6' },
-  { label: 'Technical', value: '9', color: '#8b5cf6' }
-] as const
+const CHART_COLORS = [
+  '#ef4444',
+  '#f59e0b',
+  '#685ff7',
+  '#10b981',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+  '#14b8a6',
+]
+
+function initialsFrom(name: string | null | undefined, email: string | null | undefined): string {
+  const n = (name ?? '').trim()
+  if (n) {
+    return n
+      .split(/\s+/)
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase()
+  }
+  const e = (email ?? '').trim()
+  if (e) return e.slice(0, 2).toUpperCase()
+  return '?'
+}
+
+function complaintDisplayId(id: string): string {
+  return `CMP-${id.replace(/-/g, '').slice(0, 10).toUpperCase()}`
+}
+
+function formatComplaintDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+  } catch {
+    return iso
+  }
+}
 
 export function ComplaintsPage() {
-  const [complaints, setComplaints] = useState<Complaint[]>([])
+  const [complaints, setComplaints] = useState<ComplaintWithCustomer[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null)
 
-  const refreshComplaints = () => {
-    listComplaints({ pageSize: 20 }).then((data) => setComplaints(data.items))
+  const selectedComplaint = useMemo(
+    () => complaints.find((c) => c.id === selectedComplaintId) ?? null,
+    [complaints, selectedComplaintId]
+  )
+
+  const refreshComplaints = async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const data = await listComplaints({ pageSize: 500 })
+      setComplaints(data.items)
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Failed to load complaints')
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
-    refreshComplaints()
+    void refreshComplaints()
   }, [])
 
   const complaintRows = useMemo(() => {
-    return complaints.map((complaint, index) => {
-      const isDealer = index % 3 === 0
-      const name = isDealer ? `Dealer ${index + 1}` : `Customer ${index + 1}`
-      const initials = name
-        .split(' ')
-        .map(part => part[0])
-        .join('')
-        .slice(0, 2)
+    return complaints.map((complaint) => {
+      const name = complaint.customerName?.trim() || 'Unknown'
+      const email = complaint.customerEmail?.trim() || '—'
+      const initials = initialsFrom(complaint.customerName, complaint.customerEmail)
 
       return {
-        id: `CMP-2025-${String(index + 1).padStart(3, '0')}`,
+        id: complaint.id,
+        displayId: complaintDisplayId(complaint.id),
         sourceId: complaint.id,
         initials,
         name,
-        email: `${name.toLowerCase().replace(' ', '.')}@email.com`,
-        type: isDealer ? 'dealer' : 'customer',
+        email,
+        type: 'customer' as const,
         category: complaint.category,
         subject: complaint.subject,
         priority: complaint.priority,
@@ -87,7 +135,9 @@ export function ComplaintsPage() {
     if (!searchQuery.trim()) return base
     const query = searchQuery.toLowerCase()
     return base.filter(row =>
-      [row.name, row.email, row.category, row.subject].some(value => value.toLowerCase().includes(query))
+      [row.name, row.email, row.category, row.subject, row.displayId].some(value =>
+        value.toLowerCase().includes(query)
+      )
     )
   }, [complaintRows, searchQuery, statusFilter, priorityFilter, categoryFilter])
 
@@ -108,7 +158,7 @@ export function ComplaintsPage() {
 
   const stats = useMemo(() => {
     const total = filteredRows.length
-    const pending = filteredRows.filter(row => row.status === 'open' || row.status === 'pending').length
+    const pending = filteredRows.filter(row => row.status === 'open').length
     const inProgress = filteredRows.filter(row => row.status === 'in progress').length
     const resolved = filteredRows.filter(row => row.status === 'resolved').length
     const urgent = filteredRows.filter(row => row.priority === 'urgent').length
@@ -122,22 +172,44 @@ export function ComplaintsPage() {
     ] as const
   }, [filteredRows])
 
-  const categoryData = useMemo(
-    () => CATEGORY_LEGEND.map(item => ({ name: item.label, value: Number(item.value) })),
-    []
+  const categoryChartData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const c of complaints) {
+      const key = (c.category ?? '').trim() || 'Uncategorized'
+      counts[key] = (counts[key] ?? 0) + 1
+    }
+    return Object.entries(counts)
+      .map(([name, value], index) => ({
+        name,
+        value,
+        color: CHART_COLORS[index % CHART_COLORS.length],
+      }))
+      .sort((a, b) => b.value - a.value)
+  }, [complaints])
+
+  const categoryPieData = useMemo(
+    () => categoryChartData.map(({ name, value }) => ({ name, value })),
+    [categoryChartData]
   )
 
-  const trendData = useMemo(
-    () => [
-      { month: 'Aug', value: 12 },
-      { month: 'Sep', value: 18 },
-      { month: 'Oct', value: 26 },
-      { month: 'Nov', value: 21 },
-      { month: 'Dec', value: 29 },
-      { month: 'Jan', value: 24 },
-    ],
-    []
-  )
+  const trendData = useMemo(() => {
+    const months = 6
+    const monthFmt = new Intl.DateTimeFormat('en', { month: 'short' })
+    const now = new Date()
+    const buckets: Array<{ month: string; sortKey: string; value: number }> = []
+    for (let i = months - 1; i >= 0; i -= 1) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      buckets.push({ month: monthFmt.format(d), sortKey, value: 0 })
+    }
+    for (const c of complaints) {
+      const d = new Date(c.createdAt)
+      const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const b = buckets.find((x) => x.sortKey === sortKey)
+      if (b) b.value += 1
+    }
+    return buckets.map(({ month, value }) => ({ month, value }))
+  }, [complaints])
 
   return (
     <AdminLayout title="Complaints" subtitle="Customer and dealer complaints">
@@ -161,6 +233,22 @@ export function ComplaintsPage() {
           ))}
         </div>
 
+        {loadError && (
+          <div className="complaintsErrorBanner" role="alert">
+            <span>{loadError}</span>
+            <button type="button" className="complaintsRetryBtn" onClick={() => void refreshComplaints()}>
+              Retry
+            </button>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="complaintsLoadingState">
+            <Loader2 className="complaintsLoadingSpinner" size={32} aria-hidden />
+            <p>Loading complaints…</p>
+          </div>
+        ) : (
+          <>
         <div className="complaintsCharts">
           <div className="complaintsCard">
             <div className="complaintsCardTitle">
@@ -169,26 +257,37 @@ export function ComplaintsPage() {
             </div>
             <div className="complaintsChartWrap">
               <div className="complaintsDonut">
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie data={categoryData} dataKey="value" innerRadius={60} outerRadius={90}>
-                      {categoryData.map((entry, index) => (
-                        <Cell key={entry.name} fill={CATEGORY_LEGEND[index]?.color ?? '#6b7280'} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+                {categoryPieData.length === 0 ? (
+                  <div className="complaintsChartEmpty">No complaints loaded yet.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie data={categoryPieData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90}>
+                        {categoryPieData.map((entry, index) => (
+                          <Cell
+                            key={entry.name}
+                            fill={categoryChartData[index]?.color ?? '#6b7280'}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
             <div className="complaintsLegend">
-              {CATEGORY_LEGEND.map((item) => (
-                <div key={item.label} className="complaintsLegendItem">
-                  <span className="complaintsLegendDot" style={{ backgroundColor: item.color }} />
-                  <span className="complaintsLegendLabel">{item.label}</span>
-                  <span className="complaintsLegendValue">{item.value}</span>
-                </div>
-              ))}
+              {categoryChartData.length === 0 ? (
+                <div className="complaintsLegendEmpty">Categories will appear here once complaints exist.</div>
+              ) : (
+                categoryChartData.map((item) => (
+                  <div key={item.name} className="complaintsLegendItem">
+                    <span className="complaintsLegendDot" style={{ backgroundColor: item.color }} />
+                    <span className="complaintsLegendLabel">{item.name}</span>
+                    <span className="complaintsLegendValue">{item.value}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -296,8 +395,12 @@ export function ComplaintsPage() {
               </thead>
               <tbody>
                 {filteredRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.id}</td>
+                  <tr
+                    key={row.id}
+                    className="complaintsTableRow--clickable"
+                    onClick={() => setSelectedComplaintId(row.id)}
+                  >
+                    <td>{row.displayId}</td>
                     <td>
                       <div className="complaintsUser">
                         <span className="complaintsAvatar">{row.initials}</span>
@@ -309,7 +412,7 @@ export function ComplaintsPage() {
                     </td>
                     <td>
                       <span className="complaintsType">
-                        {row.type === 'dealer' ? <UserRound size={14} /> : <Users size={14} />}
+                        <Users size={14} />
                         {row.type}
                       </span>
                     </td>
@@ -325,14 +428,19 @@ export function ComplaintsPage() {
                       <button
                         className="complaintsActionBtn"
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation()
                           const nextStatus =
                             row.status === 'open'
                               ? 'in_progress'
                               : row.status === 'in progress'
                               ? 'resolved'
                               : 'open'
-                          updateComplaintStatus(row.sourceId, nextStatus).then(() => refreshComplaints())
+                          updateComplaintStatus(row.sourceId, nextStatus)
+                            .then(() => void refreshComplaints())
+                            .catch((err) =>
+                              toast.error(err instanceof Error ? err.message : 'Failed to update status')
+                            )
                         }}
                       >
                         <BadgeCheck size={14} />
@@ -344,6 +452,79 @@ export function ComplaintsPage() {
             </table>
           </div>
         </div>
+          </>
+        )}
+
+        {selectedComplaint && (
+          <div
+            className="complaintsDetailOverlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="complaintsDetailTitle"
+            onClick={() => setSelectedComplaintId(null)}
+          >
+            <div className="complaintsDetailModal" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="complaintsDetailClose"
+                aria-label="Close"
+                onClick={() => setSelectedComplaintId(null)}
+              >
+                <X size={18} />
+              </button>
+              <h3 id="complaintsDetailTitle" className="complaintsDetailTitle">
+                Complaint details
+              </h3>
+              <dl className="complaintsDetailList">
+                <div>
+                  <dt>Complainant</dt>
+                  <dd>{selectedComplaint.customerName?.trim() || 'Unknown'}</dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd>{selectedComplaint.customerEmail?.trim() || '—'}</dd>
+                </div>
+                <div>
+                  <dt>Subject</dt>
+                  <dd>{selectedComplaint.subject}</dd>
+                </div>
+                <div className="complaintsDetailFull">
+                  <dt>Description</dt>
+                  <dd>{selectedComplaint.description || '—'}</dd>
+                </div>
+                <div>
+                  <dt>Priority</dt>
+                  <dd>
+                    <span className={`complaintsBadge complaintsBadge--${selectedComplaint.priority}`}>
+                      {selectedComplaint.priority}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>
+                    <span
+                      className={`complaintsBadge complaintsBadge--${selectedComplaint.status.replace('_', '-')}`}
+                    >
+                      {selectedComplaint.status.replace('_', ' ')}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Created</dt>
+                  <dd>{formatComplaintDate(selectedComplaint.createdAt)}</dd>
+                </div>
+              </dl>
+              <button
+                type="button"
+                className="complaintsDetailDone"
+                onClick={() => setSelectedComplaintId(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </AdminLayout>
   )

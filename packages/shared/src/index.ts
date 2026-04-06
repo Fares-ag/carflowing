@@ -2,6 +2,8 @@
  * Shared types and utilities for CarFlow monorepo
  */
 
+import carflowLogoSrc from './assets/CarflowLogo.png'
+
 export * from './types'
 export * from './mocks'
 export * from './utils'
@@ -9,26 +11,10 @@ export * from './apiClient'
 export * from './mockDb'
 export * from './supabaseClient'
 export * from './supabaseMappers'
+export * from './storage'
 
-// Assets
-export { default as CarflowLogo } from './assets/CarflowLogo.png'
-
-// Common utilities
-export function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date
-  return d.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-}
-
-export function formatCurrency(amount: number, currency: string = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-  }).format(amount)
-}
+/** Resolved URL for the Carflow mark (PNG). Used in customer, dealer, and admin UIs. */
+export const CarflowLogo: string = carflowLogoSrc
 
 // Icons
 export * from './icons/figma-icons'

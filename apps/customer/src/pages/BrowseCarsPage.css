@@ -151,8 +151,15 @@
   margin: 0 auto;
   padding: 0 120px;
   display: grid;
-  grid-template-columns: 307px 1fr;
+  grid-template-columns: 307px minmax(0, 1fr);
   gap: 32px;
+  align-items: start;
+}
+
+/* When the filter aside is hidden, only one child participates in the grid — use one full-width track
+   so results are not stuck in the former 307px column. */
+.browse-content__inner--no-filters {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .browse-filters {
@@ -277,6 +284,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .browse-results__header {
@@ -379,7 +387,11 @@
   }
 
   .browse-content__inner {
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .browse-content__inner--no-filters {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

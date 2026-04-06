@@ -5,12 +5,12 @@
 }
 
 .inventory-content {
-  margin-left: 224px;
-  margin-top: 54px;
+  margin-left: var(--app-shell-sidebar-width);
+  margin-top: var(--app-shell-header-height);
   flex: 1;
-  padding: 21px;
-  max-width: 1440px;
-  width: calc(100% - 224px);
+  padding: var(--app-shell-content-padding);
+  box-sizing: border-box;
+  width: calc(100% - var(--app-shell-sidebar-width));
 }
 
 .inventory-header {
@@ -25,7 +25,7 @@
   font-size: 21px;
   font-weight: 600;
   color: #101828;
-  margin: 0 0 3.5px 0;
+  margin: 0 0 4px 0;
   line-height: 28px;
 }
 
@@ -39,14 +39,14 @@
 .inventory-actions {
   display: flex;
   align-items: center;
-  gap: 10.5px;
+  gap: 10px;
   padding-top: 14px;
 }
 
 .inv-btn {
-  height: 31.5px;
-  border-radius: 8.75px;
-  padding: 0 11.5px;
+  height: 32px;
+  border-radius: 8px;
+  padding: 0 12px;
   font-size: 14px;
   line-height: 18px;
   border: 1px solid rgba(0, 0, 0, 0.1);
@@ -89,7 +89,7 @@
 }
 
 .inv-btn--icon {
-  width: 33.5px;
+  width: 32px;
   padding: 0;
   justify-content: center;
 }
@@ -112,7 +112,7 @@
 
 .inv-statCard {
   background: white;
-  border-radius: 12.75px;
+  border-radius: 12px;
   padding: 21px;
   display: flex;
   justify-content: space-between;
@@ -121,10 +121,10 @@
 }
 
 .inv-statLabel {
-  font-size: 12.25px;
+  font-size: 12px;
   color: #4a5565;
-  line-height: 17.5px;
-  margin-bottom: 3.5px;
+  line-height: 18px;
+  margin-bottom: 4px;
 }
 
 .inv-statValue {
@@ -132,19 +132,19 @@
   font-weight: 600;
   color: #0a0a0a;
   line-height: 28px;
-  margin-bottom: 3.5px;
+  margin-bottom: 4px;
 }
 
 .inv-statMeta {
-  font-size: 12.25px;
+  font-size: 12px;
   color: #6a7282;
   line-height: 14px;
 }
 
 .inv-statIcon {
-  width: 52.5px;
-  height: 52.5px;
-  border-radius: 12.75px;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -173,7 +173,7 @@
 
 .inv-filtersCard {
   background: white;
-  border-radius: 12.75px;
+  border-radius: 12px;
   padding: 21px;
   margin-bottom: 21px;
   box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
@@ -187,20 +187,20 @@
 }
 
 .inv-search {
-  width: 464.5px;
+  width: 464px;
   height: 42px;
-  border-radius: 10.5px;
+  border-radius: 10px;
   background: #f3f4f6;
   display: flex;
   align-items: center;
-  padding: 0 10.5px;
+  padding: 0 10px;
   gap: 8px;
   flex-shrink: 0;
 }
 
 .inv-searchIcon {
-  width: 17.5px;
-  height: 17.5px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -230,14 +230,14 @@
 }
 
 .inv-selectBtn {
-  height: 31.5px;
+  height: 32px;
   min-width: 140px;
-  border-radius: 8.75px;
+  border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   background: white;
   color: #0a0a0a;
   font-size: 14px;
-  padding: 0 12.5px;
+  padding: 0 12px;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
@@ -259,9 +259,9 @@
 }
 
 .inv-iconBtn {
-  width: 35.5px;
+  width: 36px;
   height: 42px;
-  border-radius: 10.5px;
+  border-radius: 10px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   background: white;
   cursor: pointer;
@@ -271,17 +271,17 @@
   display: flex;
   align-items: center;
   border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 10.5px;
+  border-radius: 10px;
   background: #f3f4f6;
   height: 35px;
-  padding: 3.5px;
-  gap: 3.5px;
+  padding: 4px;
+  gap: 4px;
 }
 
 .inv-toggleBtn {
-  width: 31.5px;
+  width: 32px;
   height: 28px;
-  border-radius: 8.75px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -299,9 +299,9 @@
 
 .inv-resultsRow {
   margin-top: 14px;
-  font-size: 12.25px;
+  font-size: 12px;
   color: #6a7282;
-  line-height: 17.5px;
+  line-height: 18px;
 }
 
 .inv-grid {
@@ -312,16 +312,24 @@
 
 .inv-vehicleCard {
   background: white;
-  border-radius: 12.75px;
+  border-radius: 12px;
   box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
 
 .inv-vehicleImage {
   position: relative;
-  height: 261.75px;
+  height: 262px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   background: linear-gradient(135deg, #111827, #374151);
+}
+
+.inv-vehicleImageImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .inv-vehicleImage--audi-a4-2023 {
@@ -348,7 +356,7 @@
   right: 14px;
   padding: 6px 11px;
   border-radius: 999px;
-  font-size: 12.25px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.1px;
   line-height: 18px;
@@ -386,11 +394,11 @@
 
 .inv-imgBtn {
   height: 28px;
-  border-radius: 8.75px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.12);
   color: white;
-  font-size: 12.25px;
+  font-size: 12px;
   cursor: pointer;
   backdrop-filter: blur(8px);
 }
@@ -411,10 +419,10 @@
 }
 
 .inv-vehicleMeta {
-  font-size: 12.25px;
+  font-size: 12px;
   color: #4a5565;
-  line-height: 17.5px;
-  margin-top: 3.5px;
+  line-height: 18px;
+  margin-top: 4px;
 }
 
 .inv-dot {
@@ -431,8 +439,8 @@
 
 .inv-metric {
   background: #f9fafb;
-  border-radius: 10.5px;
-  padding: 10.5px;
+  border-radius: 10px;
+  padding: 10px;
   border: 1px solid rgba(0, 0, 0, 0.04);
 }
 
@@ -440,7 +448,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12.25px;
+  font-size: 12px;
   color: #4a5565;
   line-height: 14px;
 }
@@ -451,7 +459,7 @@
 }
 
 .inv-metricValue {
-  margin-top: 3.5px;
+  margin-top: 4px;
   font-size: 14px;
   font-weight: 600;
   color: #0a0a0a;
@@ -474,11 +482,11 @@
 }
 
 .inv-tag {
-  padding: 4.5px 8px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: #f3f4f6;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  font-size: 12.25px;
+  font-size: 12px;
   color: #0a0a0a;
   line-height: 14px;
 }
@@ -490,7 +498,7 @@
 
 .inv-actionsRow {
   display: grid;
-  grid-template-columns: 1fr 1fr 33.5px;
+  grid-template-columns: 1fr 1fr 32px;
   gap: 7px;
   margin-top: 14px;
   align-items: center;
@@ -504,7 +512,7 @@
 
 .inv-listRow {
   background: white;
-  border-radius: 12.75px;
+  border-radius: 12px;
   box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
   padding: 21px;
   display: flex;
@@ -514,8 +522,12 @@
 .inv-thumb {
   width: 112px;
   height: 84px;
-  border-radius: 10.5px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #111827, #374151);
+}
+
+.inv-thumbImg {
+  object-fit: cover;
 }
 
 .inv-thumb--audi-a4-2023 {
@@ -532,7 +544,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10.5px;
+  gap: 10px;
 }
 
 .inv-listTop {
@@ -549,13 +561,13 @@
 }
 
 .inv-listMetricLabel {
-  font-size: 12.25px;
+  font-size: 12px;
   color: #6a7282;
   line-height: 14px;
 }
 
 .inv-listMetricValue {
-  margin-top: 3.5px;
+  margin-top: 4px;
   font-size: 14px;
   font-weight: 600;
   color: #0a0a0a;
@@ -602,6 +614,15 @@
   .inventory-actions {
     flex-wrap: wrap;
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 768px) {
+  .inventory-content {
+    margin-left: 0;
+    margin-top: 0;
+    width: 100%;
+    padding: var(--app-shell-content-padding-mobile);
   }
 }
 

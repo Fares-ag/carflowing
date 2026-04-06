@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Car,
   ChevronDown,
@@ -11,15 +11,47 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
+import type { Dealer } from '@carflow/shared'
+import { uploadVehicleImage } from '@carflow/shared'
 import './AddCarModal.css'
+
+const TYPE_TO_CATEGORY: Record<string, 'sedan' | 'suv' | 'truck' | 'luxury' | 'ev' | 'other'> = {
+  SUV: 'suv',
+  Sedan: 'sedan',
+  Luxury: 'luxury',
+  Electric: 'ev',
+  Truck: 'truck',
+}
+
+const FUEL_MAP: Record<string, 'gas' | 'diesel' | 'electric' | 'hybrid'> = {
+  Petrol: 'gas',
+  Diesel: 'diesel',
+  Hybrid: 'hybrid',
+  Electric: 'electric',
+}
 
 type AddCarModalProps = {
   open: boolean
   onClose: () => void
-  onSubmit: () => void
+  dealers: Dealer[]
+  onSubmit: (data: {
+    dealerId: string
+    name: string
+    make: string
+    model: string
+    year: number
+    category: 'sedan' | 'suv' | 'truck' | 'luxury' | 'ev' | 'other'
+    pricePerDay: number
+    mileage: number
+    transmission: 'automatic' | 'manual'
+    fuelType: 'gas' | 'diesel' | 'electric' | 'hybrid'
+    seats: number
+    imageUrl?: string
+  }) => void
 }
 
-export function AddCarModal({ open, onClose, onSubmit }: AddCarModalProps) {
+export function AddCarModal({ open, onClose, dealers, onSubmit }: AddCarModalProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [formData, setFormData] = useState({
     dealer: '',
     make: '',
@@ -38,12 +70,42 @@ export function AddCarModal({ open, onClose, onSubmit }: AddCarModalProps) {
     description: '',
     features: '',
   })
-
-  if (!open) return null
+  const [imageUrl, setImageUrl] = useState<string>('')
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
 
   const handleChange = (field: keyof typeof formData) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, [field]: event.target.value }))
   }
+
+  const handleImageClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  useEffect(() => {
+    if (!open) {
+      setImageUrl('')
+      setUploadError('')
+    }
+  }, [open])
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploadError('')
+    setUploading(true)
+    try {
+      const url = await uploadVehicleImage(file)
+      setImageUrl(url)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }, [])
+
+  if (!open) return null
 
   return (
     <div className="adminAddCarOverlay" role="dialog" aria-modal="true">
@@ -73,9 +135,9 @@ export function AddCarModal({ open, onClose, onSubmit }: AddCarModalProps) {
             <label className="adminAddCarSelect">
               <select value={formData.dealer} onChange={handleChange('dealer')}>
                 <option value="">Choose a dealer...</option>
-                <option value="dealer-1">Dealer 1</option>
-                <option value="dealer-2">Dealer 2</option>
-                <option value="dealer-3">Dealer 3</option>
+                {dealers.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
               </select>
               <ChevronDown size={14} />
             </label>
@@ -131,6 +193,7 @@ export function AddCarModal({ open, onClose, onSubmit }: AddCarModalProps) {
                     <option value="Sedan">Sedan</option>
                     <option value="Luxury">Luxury</option>
                     <option value="Electric">Electric</option>
+                    <option value="Truck">Truck</option>
                   </select>
                   <ChevronDown size={14} />
                 </div>
@@ -294,10 +357,30 @@ export function AddCarModal({ open, onClose, onSubmit }: AddCarModalProps) {
               </span>
               <h3>Vehicle Images</h3>
             </div>
-            <button className="adminAddCarUpload" type="button">
-              <ImagePlus size={16} />
-              <span>Click to upload images</span>
-              <span className="adminAddCarUploadHint">PNG, JPG up to 10MB</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="adminAddCarFileInput"
+              aria-hidden
+              onChange={handleFileChange}
+            />
+            {uploadError && <div className="adminAddCarUploadError">{uploadError}</div>}
+            <button
+              className="adminAddCarUpload"
+              type="button"
+              onClick={handleImageClick}
+              disabled={uploading}
+            >
+              {imageUrl ? (
+                <img src={imageUrl} alt="Vehicle" className="adminAddCarPreview" />
+              ) : (
+                <>
+                  <ImagePlus size={16} />
+                  <span>{uploading ? 'Uploading...' : 'Click to upload image'}</span>
+                  <span className="adminAddCarUploadHint">PNG, JPG, WebP up to 5MB</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -306,7 +389,29 @@ export function AddCarModal({ open, onClose, onSubmit }: AddCarModalProps) {
           <button className="adminAddCarBtn adminAddCarBtn--ghost" type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="adminAddCarBtn adminAddCarBtn--primary" type="button" onClick={onSubmit}>
+          <button
+            className="adminAddCarBtn adminAddCarBtn--primary"
+            type="button"
+            onClick={() => {
+              if (!formData.dealer || !formData.make || !formData.model || !formData.year || !formData.dailyRate || !formData.type) return
+              const category = TYPE_TO_CATEGORY[formData.type] ?? 'other'
+              const name = `${formData.make} ${formData.model}`
+              onSubmit({
+                dealerId: formData.dealer,
+                name,
+                make: formData.make,
+                model: formData.model,
+                year: Number(formData.year) || 2024,
+                category,
+                pricePerDay: Number(formData.dailyRate) || 0,
+                mileage: Number(formData.mileage) || 0,
+                transmission: formData.transmission === 'Manual' ? 'manual' : 'automatic',
+                fuelType: FUEL_MAP[formData.fuel] ?? 'gas',
+                seats: Number(formData.seats) || 5,
+                imageUrl: imageUrl || undefined,
+              })
+            }}
+          >
             <Wrench size={14} />
             Add Car
           </button>

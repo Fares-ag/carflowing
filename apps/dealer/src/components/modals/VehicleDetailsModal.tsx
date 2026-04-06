@@ -1,21 +1,49 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { Copy, Download } from 'lucide-react'
+import type { VehicleCategory } from '@carflow/shared'
 import { Modal } from './Modal'
 import './VehicleDetailsModal.css'
 
 export type VehicleDetailsTab = 'specifications' | 'maintenance' | 'analytics'
 
-export interface VehicleDetailsVehicle {
+export type VehicleDetailsVehicle = {
   id: string
   name: string
+  make: string
+  model: string
   year: number
-  category: string
+  category: VehicleCategory
   status: 'Available' | 'Rented' | 'Maintenance'
   dailyRateQar: number
+  mileage: number
+  fuelType: 'gas' | 'diesel' | 'electric' | 'hybrid'
+  transmission: 'automatic' | 'manual'
+  seats: number
   rating: number
   totalBookings: number
   totalRevenueQar: number
-  licensePlate: string
+  imageUrl?: string
+}
+
+function formatCategory(category: VehicleCategory): string {
+  if (category === 'suv') return 'SUV'
+  if (category === 'ev') return 'EV'
+  return category.charAt(0).toUpperCase() + category.slice(1)
+}
+
+function fuelTypeLabel(fuelType: VehicleDetailsVehicle['fuelType']): string {
+  switch (fuelType) {
+    case 'gas':
+      return 'Petrol'
+    case 'diesel':
+      return 'Diesel'
+    case 'electric':
+      return 'Electric'
+    case 'hybrid':
+      return 'Hybrid'
+    default:
+      return fuelType
+  }
 }
 
 export interface VehicleDetailsModalProps {
@@ -24,6 +52,7 @@ export interface VehicleDetailsModalProps {
   initialTab?: VehicleDetailsTab
   onClose: () => void
   onEditVehicle?: () => void
+  onDuplicateVehicle?: (vehicle: VehicleDetailsVehicle) => void
 }
 
 export const VehicleDetailsModal = memo(function VehicleDetailsModal({
@@ -32,13 +61,43 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
   initialTab = 'specifications',
   onClose,
   onEditVehicle,
+  onDuplicateVehicle,
 }: VehicleDetailsModalProps) {
   const [tab, setTab] = useState<VehicleDetailsTab>(initialTab)
 
-  // Reset to initial tab whenever a new vehicle is shown
   useEffect(() => {
     setTab(initialTab)
   }, [vehicle.id, vehicle.name, initialTab])
+
+  const exportPayload = useMemo(
+    () => ({
+      id: vehicle.id,
+      name: vehicle.name,
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year,
+      category: vehicle.category,
+      status: vehicle.status,
+      dailyRateQar: vehicle.dailyRateQar,
+      mileage: vehicle.mileage,
+      fuelType: vehicle.fuelType,
+      transmission: vehicle.transmission,
+      seats: vehicle.seats,
+      imageUrl: vehicle.imageUrl,
+    }),
+    [vehicle]
+  )
+
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `vehicle-${vehicle.id.slice(0, 8)}.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(link.href)
+  }
 
   const statusClass =
     vehicle.status === 'Available'
@@ -57,7 +116,12 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
             <div className="vfdTitle">{vehicle.name}</div>
             <div className="vfdSubtitle">Complete vehicle details and performance metrics</div>
           </div>
-          <button className="vfdHeaderIconBtn" type="button" aria-label="Quick action">
+          <button
+            className="vfdHeaderIconBtn"
+            type="button"
+            aria-label="Edit vehicle"
+            onClick={() => onEditVehicle?.()}
+          >
             ✎
           </button>
         </div>
@@ -65,7 +129,11 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
         <div className="vfdBody">
           <div className="vfdTopGrid">
             <div className="vfdImageCard">
-              <div className={`vfdImage vfdImage--${vehicle.id}`} />
+              {vehicle.imageUrl ? (
+                <img src={vehicle.imageUrl} alt="" className="vfdImage vfdImage--photo" />
+              ) : (
+                <div className={`vfdImage vfdImage--${vehicle.id}`} />
+              )}
               <div className={`vfdBadge ${statusClass}`}>{vehicle.status}</div>
             </div>
 
@@ -75,8 +143,14 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
                 <div className="vfdDivider" />
                 <div className="vfdInfoGrid">
                   <div className="vfdInfoItem">
+                    <div className="vfdInfoLabel">Make / Model</div>
+                    <div className="vfdInfoValue">
+                      {vehicle.make} {vehicle.model}
+                    </div>
+                  </div>
+                  <div className="vfdInfoItem">
                     <div className="vfdInfoLabel">Category</div>
-                    <div className="vfdInfoValue">{vehicle.category}</div>
+                    <div className="vfdInfoValue">{formatCategory(vehicle.category)}</div>
                   </div>
                   <div className="vfdInfoItem">
                     <div className="vfdInfoLabel">Year</div>
@@ -84,27 +158,27 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
                   </div>
                   <div className="vfdInfoItem">
                     <div className="vfdInfoLabel">Fuel Type</div>
-                    <div className="vfdInfoValue">Petrol</div>
+                    <div className="vfdInfoValue">{fuelTypeLabel(vehicle.fuelType)}</div>
                   </div>
                   <div className="vfdInfoItem">
                     <div className="vfdInfoLabel">Transmission</div>
-                    <div className="vfdInfoValue">Automatic</div>
+                    <div className="vfdInfoValue">
+                      {vehicle.transmission === 'automatic' ? 'Automatic' : 'Manual'}
+                    </div>
                   </div>
                   <div className="vfdInfoItem">
                     <div className="vfdInfoLabel">Seating</div>
-                    <div className="vfdInfoValue">5 seats</div>
+                    <div className="vfdInfoValue">{vehicle.seats} seats</div>
                   </div>
                   <div className="vfdInfoItem">
-                    <div className="vfdInfoLabel">Color</div>
-                    <div className="vfdInfoValue">Midnight Black</div>
-                  </div>
-                  <div className="vfdInfoItem">
-                    <div className="vfdInfoLabel">License Plate</div>
-                    <div className="vfdInfoValue">{vehicle.licensePlate}</div>
+                    <div className="vfdInfoLabel">Mileage</div>
+                    <div className="vfdInfoValue">{vehicle.mileage.toLocaleString()} km</div>
                   </div>
                   <div className="vfdInfoItem">
                     <div className="vfdInfoLabel">Daily Rate</div>
-                    <div className="vfdInfoValue vfdInfoValue--accent">QAR {vehicle.dailyRateQar}</div>
+                    <div className="vfdInfoValue vfdInfoValue--accent">
+                      QAR {vehicle.dailyRateQar.toLocaleString()}
+                    </div>
                   </div>
                 </div>
               </section>
@@ -135,25 +209,6 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
                     <div className="vfdMetricValue vfdMetricValue--small">{vehicle.status}</div>
                   </div>
                 </div>
-              </section>
-
-              <section className="vfdSection">
-                <div className="vfdSectionTitle">Features</div>
-                <div className="vfdDivider" />
-                <div className="vfdFeatureList">
-                  {['Leather Seats', 'Sunroof', 'Navigation', 'Bluetooth', 'Backup Camera'].map((f) => (
-                    <div key={f} className="vfdFeatureItem">
-                      <span className="vfdDot" aria-hidden="true" />
-                      {f}
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="vfdSection">
-                <div className="vfdSectionTitle">Description</div>
-                <div className="vfdDivider" />
-                <div className="vfdDescriptionCard">Luxury SUV with premium features and excellent performance.</div>
               </section>
             </div>
           </div>
@@ -187,14 +242,17 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
               <div className="vfdTabCard">
                 <div className="vfdTabCardTitle">Technical Specifications</div>
                 <div className="vfdSpecGrid">
-                  {[
-                    ['Engine', '2.0L Turbo'],
-                    ['Mileage', '25,000 km'],
-                    ['Top Speed', '220 km/h'],
-                    ['Acceleration', '6.5s (0-100 km/h)'],
-                    ['Fuel Economy', '8.5L/100km'],
-                    ['Weight', '1,650 kg'],
-                  ].map(([k, v]) => (
+                  {(
+                    [
+                      ['Year', String(vehicle.year)],
+                      ['Category', formatCategory(vehicle.category)],
+                      ['Fuel type', fuelTypeLabel(vehicle.fuelType)],
+                      ['Transmission', vehicle.transmission === 'automatic' ? 'Automatic' : 'Manual'],
+                      ['Seats', `${vehicle.seats}`],
+                      ['Mileage', `${vehicle.mileage.toLocaleString()} km`],
+                      ['Price per day', `QAR ${vehicle.dailyRateQar.toLocaleString()}`],
+                    ] as const
+                  ).map(([k, v]) => (
                     <div key={k} className="vfdSpecItem">
                       <div className="vfdSpecLabel">{k}</div>
                       <div className="vfdSpecValue">{v}</div>
@@ -207,62 +265,14 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
             {tab === 'maintenance' && (
               <div className="vfdTabCard">
                 <div className="vfdTabCardTitle">Maintenance History</div>
-                <div className="vfdMaintList">
-                  {[
-                    { title: 'Oil Change', date: '2025-01-15', cost: 180 },
-                    { title: 'Tire Rotation', date: '2024-12-20', cost: 120 },
-                    { title: 'Brake Inspection', date: '2024-11-30', cost: 250 },
-                  ].map((m) => (
-                    <div key={m.title} className="vfdMaintRow">
-                      <div>
-                        <div className="vfdMaintTitle">{m.title}</div>
-                        <div className="vfdMaintDate">{m.date}</div>
-                      </div>
-                      <div className="vfdMaintRight">
-                        <div className="vfdMaintBadge">Completed</div>
-                        <div className="vfdMaintCost">QAR {m.cost}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <p className="vfdPlaceholderMsg">No maintenance records yet.</p>
               </div>
             )}
 
             {tab === 'analytics' && (
-              <div className="vfdAnalyticsGrid">
-                <div className="vfdTabCard">
-                  <div className="vfdTabCardTitle">Utilization Rate</div>
-                  <div className="vfdUtilRow">
-                    <div className="vfdUtilLabel">This Month</div>
-                    <div className="vfdUtilValue">85%</div>
-                  </div>
-                  <div className="vfdBar">
-                    <div className="vfdBarFill" style={{ width: '100%' }} />
-                  </div>
-                  <div className="vfdUtilRow">
-                    <div className="vfdUtilLabel">Last Month</div>
-                    <div className="vfdUtilValue">78%</div>
-                  </div>
-                  <div className="vfdBar">
-                    <div className="vfdBarFill" style={{ width: '90%' }} />
-                  </div>
-                </div>
-
-                <div className="vfdTabCard">
-                  <div className="vfdTabCardTitle">Booking Trends</div>
-                  <div className="vfdKv">
-                    <div className="vfdKvLabel">Average Booking Duration</div>
-                    <div className="vfdKvValue">4.2 days</div>
-                  </div>
-                  <div className="vfdKv">
-                    <div className="vfdKvLabel">Repeat Customers</div>
-                    <div className="vfdKvValue">65%</div>
-                  </div>
-                  <div className="vfdKv">
-                    <div className="vfdKvLabel">Peak Season</div>
-                    <div className="vfdKvValue">Summer</div>
-                  </div>
-                </div>
+              <div className="vfdTabCard">
+                <div className="vfdTabCardTitle">Analytics</div>
+                <p className="vfdPlaceholderMsg">No analytics data yet.</p>
               </div>
             )}
           </div>
@@ -270,11 +280,15 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
 
         <div className="vfdFooter">
           <div className="vfdFooterLeft">
-            <button className="vfdFooterBtn" type="button">
+            <button className="vfdFooterBtn" type="button" onClick={handleExport}>
               <Download size={14} />
               Export Details
             </button>
-            <button className="vfdFooterBtn" type="button">
+            <button
+              className="vfdFooterBtn"
+              type="button"
+              onClick={() => onDuplicateVehicle?.(vehicle)}
+            >
               <Copy size={14} />
               Duplicate Vehicle
             </button>
@@ -298,4 +312,3 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
     </Modal>
   )
 })
-

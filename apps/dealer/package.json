@@ -28,6 +28,7 @@
     "react-hook-form": "^7.71.1",
     "react-router-dom": "^7.11.0",
     "recharts": "^2.12.7",
+    "sonner": "^2.0.7",
     "zod": "^4.3.5"
   },
   "devDependencies": {

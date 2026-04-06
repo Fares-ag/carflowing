@@ -38,3 +38,6 @@ build
 packages/*/dist
 apps/*/dist
 
+# Supabase CLI
+supabase/.temp/
+

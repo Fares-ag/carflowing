@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { CarflowLogo } from '@carflow/shared'
 import { Facebook, Instagram, Linkedin, Youtube } from 'lucide-react'
 import './Footer.css'
@@ -12,9 +13,14 @@ export function Footer() {
           </div>
           
           <nav className="footer-nav">
-            <a href="/browse" className="footer-link">Browse Cars</a>
-            <a href="/dealer" className="footer-link">Become a Dealer</a>
-            <a href="/contact" className="footer-link">Contact Us</a>
+            <Link to="/browse" className="footer-link">Browse Cars</Link>
+            <a
+              href="mailto:dealers@carflow.ai?subject=Dealer%20Application"
+              className="footer-link"
+            >
+              Interested in listing? Email dealers@carflow.ai
+            </a>
+            <Link to="/contact" className="footer-link">Contact Us</Link>
           </nav>
 
           <div className="social-links">
@@ -36,8 +42,8 @@ export function Footer() {
         <div className="footer-bottom">
           <div className="footer-divider"></div>
           <div className="footer-legal">
-            <a href="/terms" className="footer-link">Terms</a>
-            <a href="/privacy" className="footer-link">Privacy and Policy</a>
+            <Link to="/contact" className="footer-link">Terms</Link>
+            <Link to="/contact" className="footer-link">Privacy and Policy</Link>
           </div>
         </div>
       </div>

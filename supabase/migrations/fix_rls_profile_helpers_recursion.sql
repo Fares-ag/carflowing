@@ -1,0 +1,2 @@
+-- Superseded by fix_profiles_rls_v2_split_policies.sql (PL/pgSQL + split policies).
+-- Run fix_profiles_rls_v2_split_policies.sql in the Supabase SQL Editor instead.

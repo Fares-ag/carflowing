@@ -5,12 +5,12 @@
 }
 
 .analytics-content {
-  margin-left: 224px;
-  margin-top: 54px;
+  margin-left: var(--app-shell-sidebar-width);
+  margin-top: var(--app-shell-header-height);
   flex: 1;
-  padding: 21px;
-  max-width: 1440px;
-  width: calc(100% - 224px);
+  padding: var(--app-shell-content-padding);
+  box-sizing: border-box;
+  width: calc(100% - var(--app-shell-sidebar-width));
 }
 
 .page-header {
@@ -39,7 +39,7 @@
 
 .page-actions {
   display: flex;
-  gap: 10.5px;
+  gap: 10px;
   align-items: center;
 }
 
@@ -47,7 +47,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 11.5px;
+  padding: 7px 12px;
   background: white;
   border: 1px solid #e5e5e5;
   border-radius: 4px;
@@ -66,7 +66,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5.75px 9.75px;
+  padding: 6px 10px;
   background: white;
   border: 1px solid #e5e5e5;
   border-radius: 4px;
@@ -95,7 +95,7 @@
 
 .tab {
   flex: 1;
-  padding: 3.75px 0;
+  padding: 4px 0;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -117,7 +117,7 @@
 }
 
 .tab-content {
-  padding: 38.5px 21px;
+  padding: 40px 21px;
 }
 
 /* Overview Tab */
@@ -416,7 +416,7 @@
 .geographic-info {
   display: flex;
   align-items: center;
-  gap: 10.5px;
+  gap: 10px;
 }
 
 .geographic-dot {
@@ -470,7 +470,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10.5px;
+  padding: 10px;
   background: #f9f9f9;
   border-radius: 4px;
 }
@@ -504,7 +504,7 @@
 
 .maintenance-status {
   font-size: 12px;
-  padding: 2.75px 8px;
+  padding: 3px 8px;
   border-radius: 4px;
   font-weight: 600;
 }
@@ -538,7 +538,7 @@
 }
 
 .insights-icon {
-  font-size: 17.5px;
+  font-size: 18px;
 }
 
 .insights-main-title {
@@ -585,7 +585,7 @@
 
 .insight-badge {
   font-size: 12px;
-  padding: 2.75px 8px;
+  padding: 3px 8px;
   border-radius: 4px;
   font-weight: 600;
 }
@@ -598,6 +598,11 @@
 .insight-badge.warning {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.insight-badge.info {
+  background: #e0e7ff;
+  color: #4338ca;
 }
 
 .insight-description {
@@ -627,4 +632,56 @@
   font-size: 14px;
   color: #10b981;
   font-weight: 600;
+}
+
+.analytics-loading,
+.analytics-error {
+  padding: 16px 20px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.analytics-loading {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.analytics-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.insights-coming-soon {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0 0 16px 0;
+}
+
+@media (max-width: 900px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .charts-grid,
+  .charts-row,
+  .insights-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .analytics-content {
+    margin-left: 0;
+    margin-top: 0;
+    width: 100%;
+    padding: var(--app-shell-content-padding-mobile);
+  }
+
+  .page-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
 }

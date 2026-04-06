@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { Payment } from '@carflow/shared'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatCurrency } from '@carflow/shared'
-import { listPayments } from '../services/adminService'
+import { toast } from 'sonner'
+import { listPaymentsWithDetails, type PaymentWithDetails } from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { InfoModal } from '../components/InfoModal'
 import {
@@ -37,7 +37,12 @@ const downloadCsv = (filename: string, rows: Array<Record<string, string>>) => {
 }
 
 export function PaymentsPage() {
-  const [payments, setPayments] = useState<Payment[]>([])
+  const [payments, setPayments] = useState<PaymentWithDetails[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(20)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -46,9 +51,27 @@ export function PaymentsPage() {
   const [minAmount, setMinAmount] = useState('')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
 
+  const refresh = useCallback(() => {
+    setIsLoading(true)
+    setError(null)
+    listPaymentsWithDetails({ page, pageSize })
+      .then((data) => {
+        setPayments(data.items)
+        setTotal(data.total)
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : 'Failed to load payments'
+        setError(msg)
+        toast.error(msg)
+      })
+      .finally(() => setIsLoading(false))
+  }, [page, pageSize])
+
   useEffect(() => {
-    listPayments({ pageSize: 20 }).then((data) => setPayments(data.items))
-  }, [])
+    refresh()
+  }, [refresh])
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const stats = useMemo(() => {
     const completed = payments.filter(payment => payment.status === 'completed')
@@ -63,10 +86,8 @@ export function PaymentsPage() {
         value: formatCurrency(revenueTotal),
         sub: 'From completed payments',
         icon: <CircleDollarSign size={18} />,
-        badgeIcon: <BadgeCheck size={14} />,
-        badge: '+23%',
-        badgeTone: 'success',
-        iconTone: 'green',
+        badgeTone: 'success' as const,
+        iconTone: 'green' as const,
       },
       {
         label: 'Pending Payments',
@@ -75,18 +96,16 @@ export function PaymentsPage() {
         icon: <Clock size={18} />,
         badgeIcon: <BadgeX size={14} />,
         badge: String(pending.length),
-        badgeTone: 'warning',
-        iconTone: 'amber',
+        badgeTone: 'warning' as const,
+        iconTone: 'amber' as const,
       },
       {
         label: 'Completed',
         value: String(completed.length),
         sub: 'Successful transactions',
         icon: <CheckCircle size={18} />,
-        badgeIcon: <BadgeCheck size={14} />,
-        badge: '+15%',
-        badgeTone: 'purple',
-        iconTone: 'purple',
+        badgeTone: 'purple' as const,
+        iconTone: 'purple' as const,
       },
       {
         label: 'Refunds',
@@ -95,25 +114,35 @@ export function PaymentsPage() {
         icon: <WalletCards size={18} />,
         badgeIcon: <BadgeX size={14} />,
         badge: formatCurrency(refundTotal),
-        badgeTone: 'danger',
-        iconTone: 'violet',
+        badgeTone: 'danger' as const,
+        iconTone: 'violet' as const,
       },
-    ] as const
+    ]
   }, [payments])
 
   const transactions = useMemo(() => {
-    return payments.map((payment, index) => {
-      const status = payment.status
+    return payments.map((payment) => {
+      const created = new Date(payment.createdAt)
+      const days = Math.max(0, Math.floor((Date.now() - created.getTime()) / 86400000))
+      const customer =
+        payment.customerName?.trim() ||
+        payment.customerEmail?.trim() ||
+        '—'
+      const car =
+        payment.type === 'subscription'
+          ? 'Plan subscription'
+          : payment.vehicleName?.trim() || '—'
       return {
-        id: `TXN-2025-${String(1234 + index)}`,
-        status,
+        paymentId: payment.id,
+        id: payment.id.slice(0, 8).toUpperCase(),
+        status: payment.status,
         type: payment.type,
-        customer: `Customer ${index + 1}`,
-        car: payment.type === 'subscription' ? 'Plan Subscription' : `Vehicle ${index + 1}`,
-        time: new Date(payment.createdAt).toLocaleString('en-US'),
+        customer,
+        car,
+        time: created.toLocaleString('en-US'),
         method: payment.method.replace('_', ' '),
         amount: formatCurrency(payment.amount),
-        age: `${index + 1} days`,
+        age: `${days} day${days === 1 ? '' : 's'}`,
       }
     })
   }, [payments])
@@ -147,6 +176,14 @@ export function PaymentsPage() {
     const values = Array.from(new Set(transactions.map(txn => txn.type)))
     return ['all', ...values]
   }, [transactions])
+
+  if (error && payments.length === 0) {
+    return (
+      <AdminLayout title="Payments" subtitle="Payment transactions and history">
+        <div style={{ padding: '2rem', textAlign: 'center', color: '#ef4444' }}>{error}</div>
+      </AdminLayout>
+    )
+  }
 
   return (
     <AdminLayout title="Payments" subtitle="Payment transactions and history">
@@ -182,10 +219,12 @@ export function PaymentsPage() {
                 <div className={`paymentsStatIcon paymentsStatIcon--${stat.iconTone}`}>
                   {stat.icon}
                 </div>
-                <div className={`paymentsStatBadge paymentsStatBadge--${stat.badgeTone}`}>
-                  {stat.badgeIcon}
-                  {stat.badge}
-                </div>
+                {'badge' in stat && stat.badge != null ? (
+                  <div className={`paymentsStatBadge paymentsStatBadge--${stat.badgeTone}`}>
+                    {stat.badgeIcon}
+                    {stat.badge}
+                  </div>
+                ) : null}
               </div>
               <div className="paymentsStatLabel">{stat.label}</div>
               <div className="paymentsStatValue">{stat.value}</div>
@@ -273,60 +312,87 @@ export function PaymentsPage() {
             <div className="paymentsTransactionsTitle">Payment Transactions</div>
             <div className="paymentsTransactionsSub">View and manage all payment transactions</div>
           </div>
-          <div className="paymentsTransactionsBody">
-            {filteredTransactions.map((txn) => (
-              <div key={txn.id} className="paymentsRow">
-                <div className="paymentsRowLeft">
-                  <div className="paymentsRowIcon">
-                    {txn.status === 'pending' ? <Clock size={16} /> : txn.status === 'refunded' ? <WalletCards size={16} /> : <BadgeCheck size={16} />}
-                  </div>
-                  <div className="paymentsRowDetails">
-                    <div className="paymentsRowMeta">
-                      <span className="paymentsRowId">{txn.id}</span>
-                      <span className={`paymentsBadge paymentsBadge--${txn.status}`}>{txn.status}</span>
-                      <span className="paymentsBadge paymentsBadge--type">{txn.type}</span>
+          {isLoading ? (
+            <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
+          ) : (
+            <>
+              <div className="paymentsTransactionsBody">
+                {filteredTransactions.map((txn) => (
+                  <div key={txn.paymentId} className="paymentsRow">
+                    <div className="paymentsRowLeft">
+                      <div className="paymentsRowIcon">
+                        {txn.status === 'pending' ? <Clock size={16} /> : txn.status === 'refunded' ? <WalletCards size={16} /> : <BadgeCheck size={16} />}
+                      </div>
+                      <div className="paymentsRowDetails">
+                        <div className="paymentsRowMeta">
+                          <span className="paymentsRowId">{txn.id}</span>
+                          <span className={`paymentsBadge paymentsBadge--${txn.status}`}>{txn.status}</span>
+                          <span className="paymentsBadge paymentsBadge--type">{txn.type}</span>
+                        </div>
+                        <div className="paymentsRowInfo">
+                          <div className="paymentsRowItem">
+                            <User size={14} />
+                            {txn.customer}
+                          </div>
+                          <div className="paymentsRowItem">
+                            <Car size={14} />
+                            {txn.car}
+                          </div>
+                          <div className="paymentsRowItem">
+                            <Clock size={14} />
+                            {txn.time}
+                          </div>
+                          <div className="paymentsRowItem">
+                            <WalletCards size={14} />
+                            {txn.method}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="paymentsRowInfo">
-                      <div className="paymentsRowItem">
-                        <User size={14} />
-                        {txn.customer}
+                    <div className="paymentsRowRight">
+                      <div className="paymentsRowAmount">
+                        <div>{txn.amount}</div>
+                        {txn.age && <span>{txn.age}</span>}
                       </div>
-                      <div className="paymentsRowItem">
-                        <Car size={14} />
-                        {txn.car}
-                      </div>
-                      <div className="paymentsRowItem">
-                        <Clock size={14} />
-                        {txn.time}
-                      </div>
-                      <div className="paymentsRowItem">
-                        <WalletCards size={14} />
-                        {txn.method}
-                      </div>
+                      <button
+                        className="paymentsRowAction"
+                        type="button"
+                        onClick={() =>
+                          setInfoModal({
+                            title: `Transaction ${txn.id}`,
+                            message: `Status: ${txn.status}\nAmount: ${txn.amount}`,
+                          })
+                        }
+                      >
+                        <MoreVertical size={16} />
+                      </button>
                     </div>
                   </div>
-                </div>
-                <div className="paymentsRowRight">
-                  <div className="paymentsRowAmount">
-                    <div>{txn.amount}</div>
-                    {txn.age && <span>{txn.age}</span>}
-                  </div>
-                  <button
-                    className="paymentsRowAction"
-                    type="button"
-                    onClick={() =>
-                      setInfoModal({
-                        title: `Transaction ${txn.id}`,
-                        message: `Status: ${txn.status}\nAmount: ${txn.amount}`,
-                      })
-                    }
-                  >
-                    <MoreVertical size={16} />
-                  </button>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+              <div className="customersPagination" role="navigation" aria-label="Payment list pages">
+                <button
+                  type="button"
+                  className="customersPaginationBtn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+                <span className="customersPaginationStatus">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="customersPaginationBtn"
+                  disabled={total === 0 || page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
       <InfoModal

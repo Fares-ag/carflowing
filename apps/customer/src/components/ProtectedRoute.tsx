@@ -1,40 +1,21 @@
-import { Navigate, Outlet } from 'react-router-dom'
-import { useEffect, useState } from 'react'
-import type { AuthSession } from '../services/authService'
-import { getSession } from '../services/authService'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 
 interface ProtectedRouteProps {
   allow: Array<'customer'>
 }
 
 export function ProtectedRoute({ allow }: ProtectedRouteProps) {
-  const [session, setSession] = useState<AuthSession | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    let active = true
-    getSession()
-      .then((nextSession) => {
-        if (!active) return
-        setSession(nextSession)
-        setIsLoading(false)
-      })
-      .catch(() => {
-        if (!active) return
-        setSession(null)
-        setIsLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  const location = useLocation()
+  const { session, isLoading } = useAuth()
 
   if (isLoading) {
     return <div className="route-loading">Loading...</div>
   }
 
   if (!session || !allow.includes(session.role)) {
-    return <Navigate to="/login" replace />
+    const redirect = encodeURIComponent(location.pathname + location.search)
+    return <Navigate to={`/login?redirect=${redirect}`} replace state={{ from: location }} />
   }
 
   return <Outlet />

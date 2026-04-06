@@ -1,4 +1,5 @@
 import { useState, useCallback, memo, useRef, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { Sidebar } from '../components/Sidebar'
 import { Header } from '../components/Header'
 import { getCurrentUser } from '../services/authService'
@@ -24,9 +25,6 @@ interface BusinessHours {
   startTime: string
   endTime: string
 }
-
-// Extracted constants
-const DAYS_OF_WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 
 export const Settings = memo(function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('business')
@@ -379,23 +377,34 @@ export const Settings = memo(function Settings() {
 
           {activeTab === 'notifications' && (
             <div className="notifications-settings-tab">
+              <div className="settings-info-banner">
+                Notification preferences are managed through your dealer profile. More controls coming soon.
+              </div>
               {recentNotifications.length === 0 ? (
                 <p>No recent notifications.</p>
               ) : (
-                <ul className="settings-list">
-                  {recentNotifications.map((notification) => (
-                    <li key={notification.id}>
-                      <strong>{notification.title}</strong>
-                      <span>{notification.message}</span>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="settings-list">
+                    {recentNotifications.map((notification) => (
+                      <li key={notification.id}>
+                        <strong>{notification.title}</strong>
+                        <span>{notification.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link to="/notifications" className="settings-view-all-link">
+                    View all
+                  </Link>
+                </>
               )}
             </div>
           )}
 
           {activeTab === 'preferences' && (
             <div className="preferences-settings-tab">
+              <div className="settings-info-banner">
+                These settings are managed through your dealer profile. Changes coming soon.
+              </div>
               <p>Business hours are applied across your listings.</p>
               <div className="settings-list">
                 {businessHours.map((hour) => (
@@ -409,20 +418,30 @@ export const Settings = memo(function Settings() {
 
           {activeTab === 'security' && (
             <div className="security-settings-tab">
+              <div className="settings-info-banner">
+                These settings are managed through your dealer profile. Changes coming soon.
+              </div>
               <p>Signed in as {currentUser?.email ?? 'dealer'}.</p>
-              <p>Update your password from the authentication provider.</p>
+              <p>
+                Password management and security settings are available through your account provider (for example,
+                the identity service you used to sign in).
+              </p>
             </div>
           )}
 
           {activeTab === 'privacy' && (
             <div className="privacy-settings-tab">
+              <div className="settings-info-banner">
+                Privacy controls are informational here; policy updates will appear in-product when available.
+              </div>
               <p>Your business data is only shared with customers during booking.</p>
             </div>
           )}
 
           {activeTab === 'api' && (
             <div className="api-settings-tab">
-              <p>API base: {import.meta.env.VITE_SUPABASE_URL ?? 'Not configured'}</p>
+              <p>API integration is configured and active.</p>
+              <p>Contact support for API documentation and access keys.</p>
             </div>
           )}
         </div>

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { Rental, Vehicle } from '@carflow/shared'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatCurrency } from '@carflow/shared'
-import { listRentals, listVehicles } from '../services/adminService'
+import { toast } from 'sonner'
+import { listRentalsWithDetails, type RentalWithDetails } from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { InfoModal } from '../components/InfoModal'
-import { CalendarCheck, Car, CheckCircle2, CreditCard, TrendingDown, TrendingUp } from 'lucide-react'
+import { CalendarCheck, Car, CheckCircle2, CreditCard } from 'lucide-react'
 
 const STATUS_CLASS: Record<string, string> = {
   Active: 'adminBadge adminBadge--green',
@@ -14,24 +14,39 @@ const STATUS_CLASS: Record<string, string> = {
 }
 
 export function RentalPage() {
-  const [rentals, setRentals] = useState<Rental[]>([])
-  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [rentals, setRentals] = useState<RentalWithDetails[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(50)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState('all')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
 
+  const refresh = useCallback(() => {
+    setIsLoading(true)
+    setError(null)
+    listRentalsWithDetails({ page, pageSize })
+      .then((data) => {
+        setRentals(data.items)
+        setTotal(data.total)
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : 'Failed to load rentals'
+        setError(msg)
+        toast.error(msg)
+      })
+      .finally(() => setIsLoading(false))
+  }, [page, pageSize])
+
   useEffect(() => {
-    Promise.all([listRentals({ pageSize: 12 }), listVehicles({ pageSize: 12 })]).then(
-      ([rentalData, vehicleData]) => {
-        setRentals(rentalData.items)
-        setVehicles(vehicleData.items)
-      }
-    )
-  }, [])
+    refresh()
+  }, [refresh])
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const rentalRows = useMemo(() => {
-    const vehicleMap = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]))
-    return rentals.map((rental, index) => {
-      const vehicle = vehicleMap.get(rental.vehicleId)
+    return rentals.map((rental) => {
       const status =
         rental.status === 'active'
           ? 'Active'
@@ -41,16 +56,23 @@ export function RentalPage() {
           ? 'Completed'
           : 'Cancelled'
 
+      const customer =
+        rental.customer?.name?.trim() ||
+        rental.customer?.email?.trim() ||
+        '—'
+      const vehicle = rental.vehicle?.name?.trim() || '—'
+
       return {
-        id: `R-${1000 + index}`,
-        customer: `Customer ${index + 1}`,
-        vehicle: vehicle ? vehicle.name : 'Vehicle',
+        rentalId: rental.id,
+        id: rental.id.slice(0, 8).toUpperCase(),
+        customer,
+        vehicle,
         period: `${rental.startDate} - ${rental.endDate}`,
         status,
         total: formatCurrency(rental.totalAmount),
       }
     })
-  }, [rentals, vehicles])
+  }, [rentals])
 
   const stats = useMemo(() => {
     const active = rentals.filter(rental => rental.status === 'active').length
@@ -81,10 +103,10 @@ export function RentalPage() {
       status: row.status,
       total: row.total,
     }))
-    const headers = Object.keys(rows[0] ?? {})
+    const headers = ['id', 'customer', 'vehicle', 'period', 'status', 'total'] as const
     const csv = [
       headers.join(','),
-      ...rows.map(row => headers.map(header => `"${row[header] ?? ''}"`).join(',')),
+      ...rows.map(row => headers.map((header) => `"${row[header] ?? ''}"`).join(',')),
     ].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -95,6 +117,14 @@ export function RentalPage() {
     link.remove()
   }
 
+  if (error && rentals.length === 0) {
+    return (
+      <AdminLayout title="Rental" subtitle="Track rental activity and reservations">
+        <div style={{ padding: '2rem', textAlign: 'center', color: '#ef4444' }}>{error}</div>
+      </AdminLayout>
+    )
+  }
+
   return (
     <AdminLayout title="Rental" subtitle="Track rental activity and reservations">
       <div className="adminStats">
@@ -103,56 +133,36 @@ export function RentalPage() {
             <div className="adminStatIcon adminStatIcon--purple">
               <Car size={18} />
             </div>
-            <span className="adminDelta adminDelta--up">
-              <TrendingUp size={12} />
-              +12%
-            </span>
           </div>
           <div className="adminStatLabel">Active Rentals</div>
           <div className="adminStatValue">{stats.active}</div>
-          <div className="adminStatMeta">Compared to last week</div>
         </div>
         <div className="adminStatCard">
           <div className="adminStatTop">
             <div className="adminStatIcon adminStatIcon--blue">
               <CalendarCheck size={18} />
             </div>
-            <span className="adminDelta adminDelta--up">
-              <TrendingUp size={12} />
-              +5%
-            </span>
           </div>
           <div className="adminStatLabel">Upcoming Pickups</div>
           <div className="adminStatValue">{stats.upcoming}</div>
-          <div className="adminStatMeta">Next 7 days</div>
         </div>
         <div className="adminStatCard">
           <div className="adminStatTop">
             <div className="adminStatIcon adminStatIcon--green">
               <CheckCircle2 size={18} />
             </div>
-            <span className="adminDelta adminDelta--up">
-              <TrendingUp size={12} />
-              +9%
-            </span>
           </div>
           <div className="adminStatLabel">Completed Rentals</div>
           <div className="adminStatValue">{stats.completed}</div>
-          <div className="adminStatMeta">This month</div>
         </div>
         <div className="adminStatCard">
           <div className="adminStatTop">
             <div className="adminStatIcon adminStatIcon--orange">
               <CreditCard size={18} />
             </div>
-            <span className="adminDelta adminDelta--down">
-              <TrendingDown size={12} />
-              -3%
-            </span>
           </div>
           <div className="adminStatLabel">Revenue</div>
           <div className="adminStatValue">{formatCurrency(stats.revenue)}</div>
-          <div className="adminStatMeta">Rental income</div>
         </div>
       </div>
 
@@ -182,49 +192,76 @@ export function RentalPage() {
             <button className="adminSelectBtn" type="button" onClick={handleExport}>Export</button>
           </div>
         </div>
-        <div className="adminTableWrap">
-          <table className="adminTable">
-            <thead>
-              <tr>
-                <th>Rental ID</th>
-                <th>Customer</th>
-                <th>Vehicle</th>
-                <th>Period</th>
-                <th>Status</th>
-                <th>Total</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row) => (
-                <tr key={row.id}>
-                  <td className="adminTdStrong">{row.id}</td>
-                  <td>{row.customer}</td>
-                  <td>{row.vehicle}</td>
-                  <td className="adminTdMuted">{row.period}</td>
-                  <td>
-                    <span className={STATUS_CLASS[row.status]}>{row.status}</span>
-                  </td>
-                  <td className="adminTdStrong">{row.total}</td>
-                  <td>
-                    <button
-                      className="adminKebab"
-                      type="button"
-                      onClick={() =>
-                        setInfoModal({
-                          title: `Rental ${row.id}`,
-                          message: `Customer: ${row.customer}\nStatus: ${row.status}`,
-                        })
-                      }
-                    >
-                      ⋮
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {isLoading ? (
+          <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
+        ) : (
+          <>
+            <div className="adminTableWrap">
+              <table className="adminTable">
+                <thead>
+                  <tr>
+                    <th>Rental ID</th>
+                    <th>Customer</th>
+                    <th>Vehicle</th>
+                    <th>Period</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.map((row) => (
+                    <tr key={row.rentalId}>
+                      <td className="adminTdStrong">{row.id}</td>
+                      <td>{row.customer}</td>
+                      <td>{row.vehicle}</td>
+                      <td className="adminTdMuted">{row.period}</td>
+                      <td>
+                        <span className={STATUS_CLASS[row.status]}>{row.status}</span>
+                      </td>
+                      <td className="adminTdStrong">{row.total}</td>
+                      <td>
+                        <button
+                          className="adminKebab"
+                          type="button"
+                          onClick={() =>
+                            setInfoModal({
+                              title: `Rental ${row.id}`,
+                              message: `Customer: ${row.customer}\nStatus: ${row.status}`,
+                            })
+                          }
+                        >
+                          ⋮
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="customersPagination" role="navigation" aria-label="Rental list pages">
+              <button
+                type="button"
+                className="customersPaginationBtn"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <span className="customersPaginationStatus">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                className="customersPaginationBtn"
+                disabled={total === 0 || page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </>
+        )}
       </div>
       <InfoModal
         open={!!infoModal}

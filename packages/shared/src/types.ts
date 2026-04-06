@@ -21,6 +21,7 @@ export interface User {
   role: UserRole
   phone?: string
   avatarUrl?: string
+  status?: UserStatus
   createdAt: string
 }
 
@@ -38,6 +39,8 @@ export interface Dealer {
   vehiclesCount: number
   contactEmail: string
   contactPhone?: string
+  address?: string
+  logoUrl?: string
   createdAt: string
 }
 
@@ -172,6 +175,13 @@ export interface Lead {
 export type SubscriptionStatus = 'trial' | 'active' | 'past_due' | 'canceled'
 export type SubscriptionOwnerType = 'dealer' | 'customer'
 
+export interface SubscriptionPlanSummary {
+  name: string
+  priceMonthly: number
+  priceYearly: number
+  features: string[]
+}
+
 export interface Subscription {
   id: string
   ownerId: string
@@ -180,6 +190,8 @@ export interface Subscription {
   status: SubscriptionStatus
   startDate: string
   endDate?: string
+  /** Present when loaded with plan join (e.g. dealer billing). */
+  plan?: SubscriptionPlanSummary
   usage: {
     rentals: number
     listings: number
@@ -228,6 +240,8 @@ export interface BookingRequest {
   status: BookingRequestStatus
   createdAt: string
   note?: string
+  /** Set when status is `declined`; shown to the customer as the dealer's explanation. */
+  declineReason?: string
 }
 
 export interface Favorite {

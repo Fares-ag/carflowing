@@ -6,6 +6,7 @@ import './Modal.css'
 type ModalSize = 'sm' | 'md' | 'lg'
 
 export interface ModalProps {
+  open?: boolean
   title: string
   description?: string
   size: ModalSize
@@ -13,13 +14,13 @@ export interface ModalProps {
   children: React.ReactNode
 }
 
-export const Modal = memo(function Modal({ title, description, size, onClose, children }: ModalProps) {
+export const Modal = memo(function Modal({ open = true, title, description, size, onClose, children }: ModalProps) {
   const modalDescription = description ?? 'Dialog content'
   return (
     <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose()
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose()
       }}
     >
       <Dialog.Portal>

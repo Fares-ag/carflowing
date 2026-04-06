@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { createLead, listLeads, removeLead, updateLead } from '../services/dealerService'
+import { useNavigate } from 'react-router-dom'
+import { createLead, listLeads, listInventory, removeLead, updateLead } from '../services/dealerService'
 import { Sidebar } from '../components/Sidebar'
 import { Header } from '../components/Header'
 import {
@@ -15,7 +16,7 @@ import {
 } from 'lucide-react'
 import './Leads.css'
 
-interface Lead {
+interface LeadRow {
   id: string
   name: string
   email: string
@@ -24,36 +25,51 @@ interface Lead {
   score: number
   status: 'New' | 'Contacted' | 'Qualified'
   priority: 'High' | 'Medium' | 'Low'
+  source: string
+  createdAt: string
   avatar: string
 }
 
+interface VehicleOption {
+  id: string
+  name: string
+}
+
 export function Leads() {
+  const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [showManageModal, setShowManageModal] = useState(false)
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [leads, setLeads] = useState<Lead[]>([])
+  const [selectedLead, setSelectedLead] = useState<LeadRow | null>(null)
+  const [leads, setLeads] = useState<LeadRow[]>([])
+  const [vehicleOptions, setVehicleOptions] = useState<VehicleOption[]>([])
   const [newLeadName, setNewLeadName] = useState('')
   const [newLeadEmail, setNewLeadEmail] = useState('')
   const [newLeadPhone, setNewLeadPhone] = useState('')
   const [newLeadSource, setNewLeadSource] = useState('Website')
+  const [newLeadVehicle, setNewLeadVehicle] = useState('')
   const [newLeadStatus, setNewLeadStatus] = useState<'New' | 'Contacted' | 'Qualified'>('New')
   const [newLeadPriority, setNewLeadPriority] = useState<'High' | 'Medium' | 'Low'>('Medium')
+  const [newLeadNotes, setNewLeadNotes] = useState('')
   const [manageStatus, setManageStatus] = useState<'New' | 'Contacted' | 'Qualified'>('New')
   const [managePriority, setManagePriority] = useState<'High' | 'Medium' | 'Low'>('Medium')
-  const [manageScore, setManageScore] = useState(80)
+  const [manageScore, setManageScore] = useState(0)
+  const [manageSource, setManageSource] = useState('Website')
+  const [manageNotes, setManageNotes] = useState('')
 
   const refreshLeads = useCallback(() => {
     listLeads({ pageSize: 12 }).then((data) => {
-      const mapped = data.items.map((lead, index) => ({
+      const mapped = data.items.map((lead) => ({
         id: lead.id,
         name: lead.name,
         email: lead.email,
-        phone: lead.phone ?? '+974 4444 0000',
-        vehicle: `Vehicle ${index + 1}`,
-        score: 70 + index * 8,
-        status: lead.stage === 'contacted' ? 'Contacted' : lead.stage === 'qualified' ? 'Qualified' : 'New',
-        priority: index % 2 === 0 ? 'High' : 'Medium',
+        phone: lead.phone ?? '—',
+        vehicle: lead.source ?? '—',
+        score: 0,
+        status: (lead.stage === 'contacted' ? 'Contacted' : lead.stage === 'qualified' ? 'Qualified' : 'New') as LeadRow['status'],
+        priority: (lead.stage === 'qualified' ? 'High' : lead.stage === 'contacted' ? 'Medium' : 'Low') as LeadRow['priority'],
+        source: lead.source ?? 'Website',
+        createdAt: lead.createdAt,
         avatar: lead.name
           .split(' ')
           .map(part => part[0])
@@ -68,12 +84,20 @@ export function Leads() {
     refreshLeads()
   }, [refreshLeads])
 
+  useEffect(() => {
+    listInventory({ pageSize: 100 }).then((data) => {
+      setVehicleOptions(data.items.map((v) => ({ id: v.id, name: v.name })))
+    }).catch((err) => console.error('Failed to load vehicles for lead form:', err))
+  }, [])
+
   // Memoize callback to prevent unnecessary re-renders
-  const handleManageLead = useCallback((lead: Lead) => {
+  const handleManageLead = useCallback((lead: LeadRow) => {
     setSelectedLead(lead)
     setManageStatus(lead.status)
     setManagePriority(lead.priority)
     setManageScore(lead.score)
+    setManageSource(lead.source)
+    setManageNotes('')
     setShowManageModal(true)
   }, [])
 
@@ -91,6 +115,15 @@ export function Leads() {
     )
   }, [searchQuery, leads])
 
+  const leadStats = useMemo(() => {
+    const newCount = leads.filter((l) => l.status === 'New').length
+    const contactedCount = leads.filter((l) => l.status === 'Contacted').length
+    const qualifiedCount = leads.filter((l) => l.status === 'Qualified').length
+    const total = leads.length
+    const conversionPct = total > 0 ? Math.round((qualifiedCount / total) * 100) : 0
+    return { newCount, contactedCount, qualifiedCount, conversionPct }
+  }, [leads])
+
   // Memoize callbacks for modal handlers
   const handleOpenAddModal = useCallback(() => {
     setShowAddModal(true)
@@ -102,8 +135,10 @@ export function Leads() {
     setNewLeadEmail('')
     setNewLeadPhone('')
     setNewLeadSource('Website')
+    setNewLeadVehicle('')
     setNewLeadStatus('New')
     setNewLeadPriority('Medium')
+    setNewLeadNotes('')
   }, [])
 
   const handleCloseManageModal = useCallback(() => {
@@ -122,15 +157,21 @@ export function Leads() {
       source: newLeadSource,
       stage:
         newLeadStatus === 'Qualified' ? 'qualified' : newLeadStatus === 'Contacted' ? 'contacted' : 'new',
+      priority: newLeadPriority.toLowerCase(),
+      notes: newLeadNotes.trim() || undefined,
     }).then(() => {
       refreshLeads()
       handleCloseAddModal()
+    }).catch((err) => {
+      alert(err instanceof Error ? err.message : 'Failed to create lead')
     })
   }, [
     handleCloseAddModal,
     newLeadEmail,
     newLeadName,
+    newLeadNotes,
     newLeadPhone,
+    newLeadPriority,
     newLeadSource,
     newLeadStatus,
     refreshLeads,
@@ -140,11 +181,16 @@ export function Leads() {
     if (!selectedLead) return
     updateLead(selectedLead.id, {
       stage: manageStatus === 'Qualified' ? 'qualified' : manageStatus === 'Contacted' ? 'contacted' : 'new',
+      source: manageSource,
+      priority: managePriority.toLowerCase(),
+      notes: manageNotes.trim() || undefined,
     }).then(() => {
       refreshLeads()
       handleCloseManageModal()
+    }).catch((err) => {
+      alert(err instanceof Error ? err.message : 'Failed to update lead')
     })
-  }, [handleCloseManageModal, manageStatus, refreshLeads, selectedLead])
+  }, [handleCloseManageModal, manageNotes, managePriority, manageSource, manageStatus, refreshLeads, selectedLead])
 
   const handleDeleteLead = useCallback(() => {
     if (!selectedLead) return
@@ -158,12 +204,12 @@ export function Leads() {
     setSearchQuery(e.target.value)
   }, [])
 
-  const handleCallLead = useCallback((lead: Lead) => {
-    window.location.href = `tel:${lead.phone}`
+  const handleCallLead = useCallback((lead: LeadRow) => {
+    window.open(`tel:${lead.phone}`, '_self')
   }, [])
 
-  const handleEmailLead = useCallback((lead: Lead) => {
-    window.location.href = `mailto:${lead.email}`
+  const handleEmailLead = useCallback((lead: LeadRow) => {
+    window.open(`mailto:${lead.email}`, '_self')
   }, [])
 
   return (
@@ -186,30 +232,26 @@ export function Leads() {
         <div className="stats-cards">
           <div className="stat-card">
             <div className="stat-info">
-              <div className="stat-label">Total Leads</div>
-              <div className="stat-value">3</div>
-              <div className="stat-change positive">+12%</div>
+              <div className="stat-label">New Leads</div>
+              <div className="stat-value">{leadStats.newCount}</div>
             </div>
           </div>
           <div className="stat-card">
             <div className="stat-info">
-              <div className="stat-label">New This Week</div>
-              <div className="stat-value">1</div>
-              <div className="stat-change positive">+25%</div>
+              <div className="stat-label">Contacted</div>
+              <div className="stat-value">{leadStats.contactedCount}</div>
             </div>
           </div>
           <div className="stat-card">
             <div className="stat-info">
               <div className="stat-label">Conversion Rate</div>
-              <div className="stat-value">68%</div>
-              <div className="stat-change positive">+5%</div>
+              <div className="stat-value">{leadStats.conversionPct}%</div>
             </div>
           </div>
           <div className="stat-card">
             <div className="stat-info">
-              <div className="stat-label">Avg Response Time</div>
-              <div className="stat-value">2.4h</div>
-              <div className="stat-change negative">-15%</div>
+              <div className="stat-label">Qualified</div>
+              <div className="stat-value">{leadStats.qualifiedCount}</div>
             </div>
           </div>
         </div>
@@ -245,7 +287,7 @@ export function Leads() {
                       </span>
                     </div>
                     <div className="lead-meta">
-                      {lead.vehicle} • {lead.email} • Score: {lead.score}/100
+                      {lead.vehicle} • {lead.email}{lead.score > 0 ? ` • Score: ${lead.score}/100` : ''}
                     </div>
                   </div>
                 </div>
@@ -329,12 +371,12 @@ export function Leads() {
                     <p>Manage vehicle interest, priority level, and lead status</p>
                   </div>
                   <div className="form-group">
-                    <label>Interested Vehicle *</label>
-                    <select>
-                      <option>Select interested vehicle</option>
-                      <option>BMW X3 2024</option>
-                      <option>Mercedes C-Class 2023</option>
-                      <option>Audi A4 2023</option>
+                    <label>Interested Vehicle</label>
+                    <select value={newLeadVehicle} onChange={(event) => setNewLeadVehicle(event.target.value)}>
+                      <option value="">Select interested vehicle</option>
+                      {vehicleOptions.map((v) => (
+                        <option key={v.id} value={v.name}>{v.name}</option>
+                      ))}
                     </select>
                   </div>
                   <div className="form-group">
@@ -364,6 +406,8 @@ export function Leads() {
                     <textarea 
                       placeholder="Add any additional information about this lead, special requirements, or follow-up reminders..."
                       rows={4}
+                      value={newLeadNotes}
+                      onChange={(event) => setNewLeadNotes(event.target.value)}
                     />
                   </div>
                 </div>
@@ -373,18 +417,19 @@ export function Leads() {
                 <div className="summary-grid">
                   <div className="summary-column">
                     <div className="summary-label">Customer Details</div>
-                    <div className="summary-value">Name not specified</div>
-                    <div className="summary-value">Email not provided</div>
+                    <div className="summary-value">{newLeadName.trim() || 'Name not specified'}</div>
+                    <div className="summary-value">{newLeadEmail.trim() || 'Email not provided'}</div>
+                    {newLeadPhone.trim() && <div className="summary-value">{newLeadPhone}</div>}
                   </div>
                   <div className="summary-column">
                     <div className="summary-label">Vehicle Interest</div>
-                    <div className="summary-value">No vehicle selected</div>
-                    <div className="summary-value">Source: Not specified</div>
+                    <div className="summary-value">{newLeadVehicle || 'No vehicle selected'}</div>
+                    <div className="summary-value">Source: {newLeadSource}</div>
                   </div>
                   <div className="summary-column">
                     <div className="summary-label">Lead Management</div>
-                    <div className="summary-value">Medium Priority</div>
-                    <div className="summary-value">Status: New</div>
+                    <div className="summary-value">{newLeadPriority} Priority</div>
+                    <div className="summary-value">Status: {newLeadStatus}</div>
                   </div>
                 </div>
               </div>
@@ -428,7 +473,7 @@ export function Leads() {
                     </div>
                     <div className="contact-item">
                       <Phone size={14} />
-                      <span>+974 5555 1234</span>
+                      <span>{selectedLead.phone || 'No phone'}</span>
                     </div>
                     <div className="contact-item">
                       <Car size={14} />
@@ -436,7 +481,7 @@ export function Leads() {
                     </div>
                     <div className="contact-item">
                       <Settings size={14} />
-                      <span>2025-01-20</span>
+                      <span>{selectedLead.createdAt ? new Date(selectedLead.createdAt).toLocaleDateString() : '—'}</span>
                     </div>
                   </div>
                 </div>
@@ -476,31 +521,36 @@ export function Leads() {
                 </div>
                 <div className="form-group">
                   <label>Lead Source</label>
-                  <select>
-                    <option>Website Inquiry</option>
-                    <option>Referral</option>
-                    <option>Social Media</option>
+                  <select value={manageSource} onChange={(event) => setManageSource(event.target.value)}>
+                    <option value="Website">Website Inquiry</option>
+                    <option value="Referral">Referral</option>
+                    <option value="Social Media">Social Media</option>
                   </select>
                 </div>
               </div>
               <div className="form-group">
                 <label>Notes & Comments</label>
-                <textarea placeholder="Add notes about this lead..." rows={3} />
+                <textarea
+                  placeholder="Add notes about this lead..."
+                  rows={3}
+                  value={manageNotes}
+                  onChange={(event) => setManageNotes(event.target.value)}
+                />
               </div>
               <div className="quick-actions">
                 <h4>Quick Actions</h4>
                 <div className="quick-actions-grid">
-                  <button className="quick-action-btn">
+                  <button className="quick-action-btn" onClick={() => selectedLead?.phone && window.open(`tel:${selectedLead.phone}`, '_self')}>
                     <Phone size={14} />
                     <span>Call Customer</span>
                   </button>
-                  <button className="quick-action-btn">
+                  <button className="quick-action-btn" onClick={() => selectedLead?.email && window.open(`mailto:${selectedLead.email}`, '_self')}>
                     <Mail size={14} />
                     <span>Send Email</span>
                   </button>
-                  <button className="quick-action-btn">
+                  <button className="quick-action-btn" onClick={() => { handleCloseManageModal(); navigate('/requests'); }}>
                     <Check size={14} />
-                    <span>Convert to Booking</span>
+                    <span>View Requests</span>
                   </button>
                   <button className="quick-action-btn danger" onClick={handleDeleteLead}>
                     <Trash2 size={14} />

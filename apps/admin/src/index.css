@@ -7,6 +7,10 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --admin-shell-sidebar-width: 256px;
+  --admin-shell-sidebar-collapsed-width: 88px;
+  --admin-shell-topbar-height: 86.5px;
+  --admin-shell-content-padding: 32px;
 }
 
 * {

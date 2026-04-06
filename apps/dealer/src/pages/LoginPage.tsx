@@ -1,12 +1,12 @@
 import { FormEvent, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { login } from '../services/authService'
 import './LoginPage.css'
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('dealer@carflow.com')
-  const [password, setPassword] = useState('password')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -39,7 +39,7 @@ export function LoginPage() {
               type="email"
               value={email}
               onChange={event => setEmail(event.target.value)}
-              placeholder="dealer@carflow.com"
+              placeholder="you@example.com"
               required
             />
           </label>
@@ -51,7 +51,7 @@ export function LoginPage() {
               type="password"
               value={password}
               onChange={event => setPassword(event.target.value)}
-              placeholder="password"
+              placeholder="Enter your password"
               required
             />
           </label>
@@ -62,6 +62,10 @@ export function LoginPage() {
             {isSubmitting ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        <p className="dealerLoginFooter">
+          Don&apos;t have an account? <Link to="/signup">Apply as dealer</Link>
+        </p>
       </div>
     </div>
   )

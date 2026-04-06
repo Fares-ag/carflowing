@@ -78,3 +78,20 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.dealerLoginFooter {
+  margin-top: 24px;
+  font-size: 14px;
+  color: #64748b;
+  text-align: center;
+}
+
+.dealerLoginFooter a {
+  color: #4f46e5;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dealerLoginFooter a:hover {
+  text-decoration: underline;
+}

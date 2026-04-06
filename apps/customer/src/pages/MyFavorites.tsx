@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import type { Favorite, Vehicle } from '@carflow/shared'
+import { useMemo, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate } from 'react-router-dom'
 import { clearFavorites, listCatalogVehicles, listFavorites, removeFavorite } from '../services/customerService'
+import { useCartStore } from '../stores/cartStore'
+import { toast } from '../hooks/useToast'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
 import { CarCard } from '../components/shared/CarCard'
@@ -9,43 +11,55 @@ import { ArrowLeft, ChevronDown, Grid, Heart, List, Search } from 'lucide-react'
 import './MyFavorites.css'
 
 export function MyFavorites() {
-  const [favorites, setFavorites] = useState<Favorite[]>([])
-  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const setVehicle = useCartStore((s) => s.setVehicle)
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState('name')
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
 
-  const refreshFavorites = () => {
-    Promise.all([listFavorites({ pageSize: 12 }), listCatalogVehicles({ pageSize: 12 })]).then(
-      ([favoriteData, vehicleData]) => {
-        setFavorites(favoriteData.items)
-        setVehicles(vehicleData.items)
-      }
-    )
-  }
+  const { data: favoritesData, isLoading: favoritesLoading, error: favoritesError } = useQuery({
+    queryKey: ['favorites', 'list'],
+    queryFn: () => listFavorites({ pageSize: 12 }),
+  })
+  const { data: vehiclesData, isLoading: vehiclesLoading, error: vehiclesError } = useQuery({
+    queryKey: ['catalog', 'favorites'],
+    queryFn: () => listCatalogVehicles({ pageSize: 12 }),
+  })
 
-  useEffect(() => {
-    refreshFavorites()
-  }, [])
+  const isLoading = favoritesLoading || vehiclesLoading
+  const queryError = favoritesError || vehiclesError
+
+  const removeMutation = useMutation({
+    mutationFn: removeFavorite,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['favorites'] })
+      toast.success('Removed from favorites.')
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to remove'),
+  })
+
+  const favorites = favoritesData?.items ?? []
+  const vehicles = vehiclesData?.items ?? []
 
   const favoriteCards = useMemo(() => {
     const vehicleMap = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]))
-    return favorites.map((favorite, index) => {
+    return favorites.map((favorite) => {
       const vehicle = vehicleMap.get(favorite.vehicleId)
       return {
         id: favorite.id,
-        name: vehicle ? vehicle.name : `Vehicle ${index + 1}`,
-        type: vehicle?.category ?? 'Sedan',
-        price: vehicle ? Math.round(vehicle.pricePerDay / 10) : 30,
-        rating: 4.6 + index * 0.1,
-        reviews: 30 + index * 4,
+        vehicleId: favorite.vehicleId,
+        name: vehicle ? vehicle.name : 'Unknown vehicle',
+        make: vehicle?.make ?? '',
+        type: vehicle?.category === 'suv' ? 'SUV' : vehicle?.category === 'ev' ? 'Electric' : vehicle?.category === 'sedan' ? 'Sedan' : 'Other',
+        price: vehicle ? Math.round(vehicle.pricePerDay) : 0,
         seats: vehicle?.seats ?? 5,
         transmission: vehicle?.transmission === 'manual' ? 'Manual' : 'Automatic',
         fuelType: vehicle?.fuelType ?? 'gas',
-        location: 'Doha, Qatar',
+        image: vehicle?.imageUrl,
         isElectric: vehicle?.fuelType === 'electric',
-        pricePeriod: 'day',
+        pricePeriod: 'day' as const,
         favoriteId: favorite.id,
       }
     })
@@ -62,7 +76,6 @@ export function MyFavorites() {
 
     list = [...list].sort((a, b) => {
       if (sortBy === 'price') return b.price - a.price
-      if (sortBy === 'rating') return b.rating - a.rating
       return a.name.localeCompare(b.name)
     })
 
@@ -111,7 +124,10 @@ export function MyFavorites() {
                     className="action-button secondary"
                     type="button"
                     onClick={() => {
-                      clearFavorites().then(() => refreshFavorites())
+                      clearFavorites().then(() => {
+                        queryClient.invalidateQueries({ queryKey: ['favorites'] })
+                        toast.success('All favorites cleared.')
+                      })
                     }}
                   >
                     Clear All
@@ -155,7 +171,6 @@ export function MyFavorites() {
                   >
                     <option value="name">Name</option>
                     <option value="price">Price</option>
-                    <option value="rating">Rating</option>
                   </select>
                   <ChevronDown size={14} />
                 </label>
@@ -178,8 +193,20 @@ export function MyFavorites() {
               </div>
             </div>
 
+            {isLoading && (
+              <div className="favorites-loading">
+                <p>Loading favorites...</p>
+              </div>
+            )}
+
+            {queryError && !isLoading && (
+              <div className="favorites-error">
+                <p>Failed to load favorites. Please try again later.</p>
+              </div>
+            )}
+
             {/* Empty State */}
-            {isEmpty ? (
+            {!isLoading && !queryError && isEmpty ? (
               <div className="empty-state">
                 <div className="empty-icon">
                   <Heart size={56} />
@@ -191,23 +218,35 @@ export function MyFavorites() {
                   Browse Cars
                 </Link>
               </div>
-            ) : (
+            ) : !isLoading && !queryError ? (
               <div className={`favorites-grid ${viewMode === 'list' ? 'favorites-grid--list' : ''}`}>
                 {filteredCards.map((car) => {
-                  const { favoriteId, ...cardProps } = car
+                  const { favoriteId, vehicleId, make, ...cardProps } = car
                   return (
                     <div key={car.id} className="favorite-card-wrapper">
                       <CarCard
                         {...cardProps}
-                        onRemove={() => {
-                          removeFavorite(favoriteId).then(() => refreshFavorites())
+                        onRemove={() => removeMutation.mutate(favoriteId)}
+                        onFavorite={() => removeMutation.mutate(favoriteId)}
+                        onConfigure={() => {
+                          setVehicle({
+                            id: vehicleId,
+                            name: car.name,
+                            make,
+                            fuelType: car.fuelType,
+                            transmission: car.transmission,
+                            seats: car.seats,
+                            image: car.image,
+                            pricePerDay: car.price,
+                          })
+                          navigate('/cart')
                         }}
                       />
                     </div>
                   )
                 })}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

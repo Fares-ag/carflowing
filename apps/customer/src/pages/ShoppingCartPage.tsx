@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Calendar,
   ChevronDown,
@@ -18,8 +18,11 @@ import {
 } from 'lucide-react'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
+import { useQuery } from '@tanstack/react-query'
 import { InfoModal } from '../components/shared/InfoModal'
-import { createBookingRequest, listCatalogVehicles } from '../services/customerService'
+import { toast } from '../hooks/useToast'
+import { useCartStore, type CartItem, type CartVehicle } from '../stores/cartStore'
+import { listCatalogVehicles } from '../services/customerService'
 import './ShoppingCartPage.css'
 
 const DURATION_OPTIONS = [
@@ -29,9 +32,14 @@ const DURATION_OPTIONS = [
 ]
 
 export function ShoppingCartPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { vehicle: storedVehicle, setVehicle, setCart, clearCart } = useCartStore()
+  const vehicleFromBrowse = (location.state as { vehicle?: CartVehicle })?.vehicle
+
   const [duration, setDuration] = useState(DURATION_OPTIONS[1])
   const [quantity, setQuantity] = useState(1)
-  const [startDate, setStartDate] = useState('2025-10-19')
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
   const [notes, setNotes] = useState('')
   const [isRemoved, setIsRemoved] = useState(false)
   const [showPromo, setShowPromo] = useState(false)
@@ -39,10 +47,11 @@ export function ShoppingCartPage() {
   const [promoDiscount, setPromoDiscount] = useState(0)
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
   const [isDurationOpen, setIsDurationOpen] = useState(false)
-  const [selectedVehicle, setSelectedVehicle] = useState<{ id: string; name: string; make: string } | null>(null)
-  const [isCheckingOut, setIsCheckingOut] = useState(false)
+  const [selectedVehicle, setSelectedVehicle] = useState<CartVehicle | null>(vehicleFromBrowse ?? null)
 
-  const baseMonthlyPrice = 749
+  const baseMonthlyPrice = selectedVehicle?.pricePerDay
+    ? Math.round(selectedVehicle.pricePerDay * 30)
+    : 749
 
   const pricing = useMemo(() => {
     const discountedMonthly = Math.round(baseMonthlyPrice * (1 - duration.discount))
@@ -53,26 +62,39 @@ export function ShoppingCartPage() {
     const tax = Math.round(taxable * 0.05)
     const total = taxable + tax
     return { discountedMonthly, subtotal, promoSavings, tax, total }
-  }, [duration, quantity, isRemoved, promoDiscount])
+  }, [duration, quantity, isRemoved, promoDiscount, baseMonthlyPrice])
+
+  const { data: catalogData } = useQuery({
+    queryKey: ['catalog', 'fallback'],
+    queryFn: () => listCatalogVehicles({ pageSize: 1 }),
+    enabled: !vehicleFromBrowse && !storedVehicle,
+  })
 
   useEffect(() => {
-    let active = true
-    listCatalogVehicles({ pageSize: 1 })
-      .then((response) => {
-        if (!active) return
-        const vehicle = response.items[0]
-        if (vehicle) {
-          setSelectedVehicle({ id: vehicle.id, name: vehicle.name, make: vehicle.make })
-        }
-      })
-      .catch(() => {
-        if (!active) return
-        setSelectedVehicle(null)
-      })
-    return () => {
-      active = false
+    if (vehicleFromBrowse) {
+      setVehicle(vehicleFromBrowse)
+      setSelectedVehicle(vehicleFromBrowse)
+      return
     }
-  }, [])
+    if (storedVehicle) {
+      setSelectedVehicle(storedVehicle)
+      return
+    }
+    const vehicle = catalogData?.items[0]
+    if (vehicle) {
+      const v: CartVehicle = {
+        id: vehicle.id,
+        name: vehicle.name,
+        make: vehicle.make,
+        fuelType: vehicle.fuelType,
+        transmission: vehicle.transmission,
+        seats: vehicle.seats,
+        image: vehicle.imageUrl,
+        pricePerDay: vehicle.pricePerDay,
+      }
+      setSelectedVehicle(v)
+    }
+  }, [vehicleFromBrowse, storedVehicle, catalogData, setVehicle])
 
   const applyPromo = () => {
     const code = promoCode.trim().toUpperCase()
@@ -84,10 +106,7 @@ export function ShoppingCartPage() {
     const discount = discounts[code] ?? 0
     setPromoDiscount(discount)
     if (!discount) {
-      setInfoModal({
-        title: 'Promo Code',
-        message: 'Invalid promo code.',
-      })
+      toast.error('Invalid promo code.')
     }
   }
 
@@ -102,7 +121,7 @@ export function ShoppingCartPage() {
           </Link>
           <div>
             <h1>Shopping Cart</h1>
-            <p>1 car selected for rental</p>
+            <p>{quantity} car{quantity > 1 ? 's' : ''} selected for rental</p>
           </div>
         </div>
       </section>
@@ -122,9 +141,13 @@ export function ShoppingCartPage() {
               <div className="cart-card">
               <div className="cart-card__image">
                 <div className="cart-card__badge">{duration.months} Months</div>
-                <div className="cart-card__image-placeholder">
-                  {selectedVehicle?.name ?? 'Vehicle'}
-                </div>
+                {selectedVehicle?.image ? (
+                  <img src={selectedVehicle.image} alt={selectedVehicle.name} className="cart-card__image-img" />
+                ) : (
+                  <div className="cart-card__image-placeholder">
+                    {selectedVehicle?.name ?? 'Vehicle'}
+                  </div>
+                )}
               </div>
               <div className="cart-card__details">
                 <div className="cart-card__top">
@@ -137,15 +160,15 @@ export function ShoppingCartPage() {
                       </span>
                     </div>
                   </div>
-                  <button type="button" className="icon-button" onClick={() => setIsRemoved(true)}>
+                  <button type="button" className="icon-button" onClick={() => { setIsRemoved(true); clearCart() }}>
                     <X size={14} />
                   </button>
                 </div>
 
                 <div className="cart-card__meta">
-                  <span><Zap size={14} /> hybrid</span>
-                  <span><Users size={14} /> 5 seats</span>
-                  <span><Wrench size={14} /> Automatic</span>
+                  <span><Zap size={14} /> {selectedVehicle?.fuelType ?? 'hybrid'}</span>
+                  <span><Users size={14} /> {selectedVehicle?.seats ?? 5} seats</span>
+                  <span><Wrench size={14} /> {selectedVehicle?.transmission === 'manual' ? 'Manual' : 'Automatic'}</span>
                   <span><Calendar size={14} /> {duration.months} months</span>
                 </div>
 
@@ -203,13 +226,19 @@ export function ShoppingCartPage() {
                   <div>
                     <div className="cart-card__price">
                       QAR {pricing.discountedMonthly}/month
-                      {duration.discount > 0 && <span className="discount-badge">5% OFF</span>}
+                      {duration.discount > 0 && (
+                        <span className="discount-badge">{Math.round(duration.discount * 100)}% OFF</span>
+                      )}
                     </div>
                     <div className="cart-card__subtext">
                       {duration.months} months × {quantity} unit
                     </div>
                     <div className="cart-card__subtext">
-                      {startDate} - {startDate}
+                      {startDate} - {(() => {
+                        const end = new Date(startDate)
+                        end.setDate(end.getDate() + duration.months * 30)
+                        return end.toISOString().split('T')[0]
+                      })()}
                     </div>
                   </div>
                   <div className="cart-card__total">
@@ -236,7 +265,7 @@ export function ShoppingCartPage() {
             <div className="summary-card">
               <h4><ReceiptText size={16} /> Order Summary</h4>
               <div className="summary-row">
-                <span>Subtotal (1 car)</span>
+                <span>Subtotal ({quantity} car{quantity > 1 ? 's' : ''})</span>
                 <span>QAR {pricing.subtotal.toLocaleString()}</span>
               </div>
               <div className="summary-row">
@@ -284,46 +313,32 @@ export function ShoppingCartPage() {
               <button
                 className="checkout-button"
                 type="button"
-                disabled={isCheckingOut}
-                onClick={async () => {
+                onClick={() => {
                   if (!selectedVehicle) {
-                    setInfoModal({
-                      title: 'Checkout',
-                      message: 'Please select a vehicle to continue.',
-                    })
+                    toast.error('Please select a vehicle to continue.')
                     return
                   }
-                  setIsCheckingOut(true)
-                  try {
-                    await createBookingRequest({
-                      vehicleId: selectedVehicle.id,
-                      note: `Duration: ${duration.label}, Start: ${startDate}, Qty: ${quantity}. ${notes}`.trim(),
-                    })
-                    const summary = [
-                      `Vehicle: ${selectedVehicle.name}`,
-                      `Duration: ${duration.label}`,
-                      `Start date: ${startDate}`,
-                      `Quantity: ${quantity}`,
-                      `Total: QAR ${pricing.total.toLocaleString()}`,
-                    ].join('\n')
-                    setInfoModal({
-                      title: 'Booking Requested',
-                      message: `${summary}\n\nWe will review your request and confirm shortly.`,
-                    })
-                    setIsRemoved(true)
-                  } catch (err) {
-                    setInfoModal({
-                      title: 'Checkout Error',
-                      message: err instanceof Error ? err.message : 'Unable to submit booking request.',
-                    })
-                  } finally {
-                    setIsCheckingOut(false)
+                  const cart: CartItem = {
+                    vehicleId: selectedVehicle.id,
+                    vehicleName: selectedVehicle.name,
+                    vehicleMake: selectedVehicle.make,
+                    durationLabel: duration.label,
+                    durationMonths: duration.months,
+                    quantity,
+                    startDate,
+                    notes,
+                    subtotal: pricing.subtotal,
+                    tax: pricing.tax,
+                    total: pricing.total,
+                    promoCode: promoCode || undefined,
                   }
+                  setCart(cart)
+                  navigate('/checkout')
                 }}
               >
-                {isCheckingOut ? 'Submitting...' : 'Submit Booking Request'} <ChevronDown size={14} />
+                Proceed to Checkout <ChevronDown size={14} />
               </button>
-              <p className="summary-hint">We will confirm your booking request by email.</p>
+              <p className="summary-hint">Complete billing and delivery details in the next steps.</p>
               <div className="summary-note">
                 <ShieldCheck size={14} />
                 Secure checkout • Free cancellation up to 24 hours

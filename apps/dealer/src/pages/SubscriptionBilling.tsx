@@ -1,5 +1,12 @@
 import { useState, useCallback, useMemo, memo, useEffect, useRef } from 'react'
-import { getSubscription, listBillingHistory, listPaymentMethods } from '../services/dealerService'
+import {
+  getDealerVehicleCount,
+  getSubscription,
+  listBillingHistory,
+  listPaymentMethods,
+  removePaymentMethod,
+} from '../services/dealerService'
+import type { Subscription } from '@carflow/shared'
 import { Sidebar } from '../components/Sidebar'
 import { Header } from '../components/Header'
 import {
@@ -41,12 +48,100 @@ const CURRENT_PLAN_FEATURES = [
   'API access',
 ] as const
 
-const USAGE_DATA = [
-  { label: 'vehicles', used: 18, total: 25, percentage: 72 },
-  { label: 'listings', used: 156, total: 500, percentage: 31 },
-  { label: 'leads', used: 89, total: 200, percentage: 44 },
-  { label: 'API Calls', used: 1247, total: 5000, percentage: 25 },
-] as const
+type UsageBarRow = {
+  label: string
+  used: number
+  total: number
+  percentage: number
+  /** When set, show `used / totalDisplay` instead of numeric total (e.g. unlimited plan). */
+  totalDisplay?: string
+}
+
+const DEFAULT_USAGE_CAPS: { vehicles: number; rentals: number; leads: number; messages: number } = {
+  vehicles: 25,
+  rentals: 200,
+  leads: 500,
+  messages: 5000,
+}
+
+const USAGE_FALLBACK: UsageBarRow[] = [
+  { label: 'Vehicles', used: 0, total: DEFAULT_USAGE_CAPS.vehicles, percentage: 0 },
+  { label: 'Active Rentals', used: 0, total: DEFAULT_USAGE_CAPS.rentals, percentage: 0 },
+  { label: 'Leads', used: 0, total: DEFAULT_USAGE_CAPS.leads, percentage: 0 },
+  { label: 'Messages', used: 0, total: DEFAULT_USAGE_CAPS.messages, percentage: 0 },
+]
+
+const BILLING_STORAGE_KEY = 'carflow-dealer-billing'
+
+type BillingAddressForm = {
+  companyName: string
+  taxId: string
+  addressLine1: string
+  city: string
+  state: string
+  postalCode: string
+}
+
+const EMPTY_BILLING: BillingAddressForm = {
+  companyName: '',
+  taxId: '',
+  addressLine1: '',
+  city: '',
+  state: '',
+  postalCode: '',
+}
+
+function loadBillingAddress(): BillingAddressForm {
+  try {
+    const raw = localStorage.getItem(BILLING_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<BillingAddressForm>
+      return { ...EMPTY_BILLING, ...parsed }
+    }
+  } catch {
+    /* ignore */
+  }
+  return { ...EMPTY_BILLING }
+}
+
+function parseVehicleCapFromFeatures(features: string[] | undefined): number | 'unlimited' | null {
+  if (!features?.length) return null
+  for (const f of features) {
+    if (/unlimited/i.test(f) && /vehicle/i.test(f)) return 'unlimited'
+    const m = f.match(/(?:up to\s+)?(\d+)\s+vehicles?/i)
+    if (m) return parseInt(m[1], 10)
+  }
+  return null
+}
+
+function formatBillingDate(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function computeNextBillingDate(sub: Subscription | null): string {
+  if (!sub) return '—'
+  const periodEnd = (sub as Subscription & { currentPeriodEnd?: string }).currentPeriodEnd
+  if (periodEnd) {
+    const d = new Date(periodEnd)
+    if (Number.isFinite(d.getTime())) return formatBillingDate(d)
+  }
+  if (sub.endDate) {
+    const d = new Date(sub.endDate + 'T12:00:00')
+    if (Number.isFinite(d.getTime())) return formatBillingDate(d)
+  }
+  const start = new Date(sub.startDate + 'T12:00:00')
+  if (!Number.isFinite(start.getTime())) return '—'
+  start.setDate(start.getDate() + 30)
+  return formatBillingDate(start)
+}
+
+function formatSubscriptionStatus(status: Subscription['status'] | undefined): string {
+  if (!status) return 'Unknown'
+  return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
 
 const MONTHLY_PLANS = [
   {
@@ -67,7 +162,6 @@ const MONTHLY_PLANS = [
     price: 'QAR 299',
     period: 'per month',
     description: 'Best for growing businesses',
-    isCurrent: true,
     isPopular: true,
     features: [
       'Up to 25 vehicles',
@@ -118,7 +212,6 @@ const YEARLY_PLANS = [
     period: 'per year',
     savings: 'Save QAR 598 annually',
     description: 'Best for growing businesses',
-    isCurrent: true,
     isPopular: true,
     features: [
       'Up to 25 vehicles',
@@ -154,14 +247,97 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
   const [showManageBillingModal, setShowManageBillingModal] = useState(false)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [billingHistory, setBillingHistory] = useState<BillingHistoryItem[]>([])
-  const [subscriptionUsage, setSubscriptionUsage] = useState(USAGE_DATA)
+  const [subscriptionRecord, setSubscriptionRecord] = useState<Subscription | null>(null)
+  const [vehicleCountState, setVehicleCountState] = useState(0)
   const [showAllInvoices, setShowAllInvoices] = useState(false)
   const [selectedPlanName, setSelectedPlanName] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [paymentActionError, setPaymentActionError] = useState<string | null>(null)
+  const [billingAddress, setBillingAddress] = useState<BillingAddressForm>(() => loadBillingAddress())
   const planSectionRef = useRef<HTMLDivElement>(null)
 
+  const { subscriptionUsage, usageLimitNote } = useMemo(() => {
+    const pct = (used: number, total: number) =>
+      total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0
+
+    if (!subscriptionRecord) {
+      return {
+        subscriptionUsage: USAGE_FALLBACK.map((r) => ({ ...r, percentage: 0 })),
+        usageLimitNote: 'Default limits.',
+      }
+    }
+
+    const vehicleCap = parseVehicleCapFromFeatures(subscriptionRecord.plan?.features)
+    const listings = subscriptionRecord.usage.listings ?? 0
+    const rentals = subscriptionRecord.usage.rentals ?? 0
+    const messages = subscriptionRecord.usage.messages ?? 0
+
+    let vTotal: number = DEFAULT_USAGE_CAPS.vehicles
+    let vDisplay: string | undefined
+    if (vehicleCap === 'unlimited') {
+      vTotal = Math.max(vehicleCountState, 1)
+      vDisplay = '∞'
+    } else if (typeof vehicleCap === 'number') {
+      vTotal = vehicleCap
+    }
+
+    const vPct =
+      vehicleCap === 'unlimited'
+        ? vehicleCountState > 0
+          ? 100
+          : 0
+        : pct(vehicleCountState, vTotal)
+
+    const limitNote =
+      vehicleCap != null
+        ? 'Vehicle cap from your plan. Rentals, leads, and messages use default limits until configured.'
+        : 'Default limits.'
+
+    return {
+      subscriptionUsage: [
+        {
+          label: 'Vehicles',
+          used: vehicleCountState,
+          total: vTotal,
+          percentage: vPct,
+          totalDisplay: vDisplay,
+        },
+        {
+          label: 'Active Rentals',
+          used: rentals,
+          total: DEFAULT_USAGE_CAPS.rentals,
+          percentage: pct(rentals, DEFAULT_USAGE_CAPS.rentals),
+        },
+        {
+          label: 'Leads',
+          used: listings,
+          total: DEFAULT_USAGE_CAPS.leads,
+          percentage: pct(listings, DEFAULT_USAGE_CAPS.leads),
+        },
+        {
+          label: 'Messages',
+          used: messages,
+          total: DEFAULT_USAGE_CAPS.messages,
+          percentage: pct(messages, DEFAULT_USAGE_CAPS.messages),
+        },
+      ],
+      usageLimitNote: limitNote,
+    }
+  }, [subscriptionRecord, vehicleCountState])
+
   useEffect(() => {
-    Promise.all([getSubscription(), listPaymentMethods(), listBillingHistory()]).then(
-      ([subscription, methods, history]) => {
+    setLoading(true)
+    setLoadError(null)
+    Promise.all([
+      getSubscription(),
+      listPaymentMethods(),
+      listBillingHistory(),
+      getDealerVehicleCount(),
+    ])
+      .then(([subscription, methods, history, vehicleCount]) => {
+        setSubscriptionRecord(subscription)
+        setVehicleCountState(vehicleCount)
         setPaymentMethods(
           methods.map(method => ({
             id: method.id,
@@ -180,14 +356,21 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
             status: item.status === 'paid' ? 'paid' : 'pending',
           }))
         )
-        setSubscriptionUsage([
-          { label: 'vehicles', used: subscription.usage.listings, total: 25, percentage: 72 },
-          { label: 'listings', used: subscription.usage.listings, total: 500, percentage: 31 },
-          { label: 'leads', used: subscription.usage.rentals, total: 200, percentage: 44 },
-          { label: 'API Calls', used: subscription.usage.messages, total: 5000, percentage: 25 },
-        ])
-      }
-    )
+      })
+      .catch((err) => {
+        setLoadError(err instanceof Error ? err.message : 'Failed to load subscription data')
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleRemovePaymentMethod = useCallback(async (id: string) => {
+    setPaymentActionError(null)
+    try {
+      await removePaymentMethod(id)
+      setPaymentMethods((prev) => prev.filter((item) => item.id !== id))
+    } catch (err) {
+      setPaymentActionError(err instanceof Error ? err.message : 'Could not remove payment method')
+    }
   }, [])
 
   const handleBillingPeriodChange = useCallback((period: 'monthly' | 'yearly') => {
@@ -202,6 +385,12 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
     setShowManageBillingModal(false)
   }, [])
 
+  useEffect(() => {
+    if (showManageBillingModal) {
+      setBillingAddress(loadBillingAddress())
+    }
+  }, [showManageBillingModal])
+
   const handleDownloadInvoice = useCallback((items: BillingHistoryItem[]) => {
     const rows = (items.length ? items : billingHistory).map(item => ({
       id: item.id,
@@ -214,7 +403,9 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
     const headers = Object.keys(rows[0] ?? {})
     const csv = [
       headers.join(','),
-      ...rows.map(row => headers.map(header => `"${row[header] ?? ''}"`).join(',')),
+      ...rows.map((row) =>
+        headers.map((header) => `"${String((row as Record<string, string>)[header] ?? '')}"`).join(',')
+      ),
     ].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -236,11 +427,8 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
 
   const plans = useMemo(() => billingPeriod === 'monthly' ? MONTHLY_PLANS : YEARLY_PLANS, [billingPeriod])
 
-  const getUsagePercentage = useCallback((used: number, total: number) => {
-    return (used / total) * 100
-  }, [])
-
   const getAvailablePercentage = useCallback((used: number, total: number) => {
+    if (total <= 0) return 0
     return ((total - used) / total) * 100
   }, [])
 
@@ -257,6 +445,18 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
           <p className="page-subtitle">Manage your subscription, billing, and payment methods</p>
         </div>
 
+        {loading && (
+          <div className="subscription-loading" role="status">
+            <div className="subscription-loading-spinner" />
+            <span>Loading subscription...</span>
+          </div>
+        )}
+        {loadError && !loading && (
+          <div className="subscription-error-banner" role="alert">
+            {loadError}
+          </div>
+        )}
+
         {/* Current Plan Section */}
         <div className="current-plan-section">
           <div className="current-plan-card">
@@ -265,12 +465,19 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                 <CreditCard size={28} />
               </div>
               <div className="plan-title-info">
-                <h3 className="plan-name">Professional Plan</h3>
+                <h3 className="plan-name">
+                  {subscriptionRecord?.plan?.name
+                    ? `${subscriptionRecord.plan.name} Plan`
+                    : 'Professional Plan'}
+                </h3>
                 <p className="plan-subtitle">Your current subscription</p>
               </div>
               <div className="plan-price-info">
-                <div className="plan-price">QAR 299</div>
-                <div className="plan-period">per monthly</div>
+                <div className="plan-price">
+                  QAR{' '}
+                  {(subscriptionRecord?.plan?.priceMonthly ?? 299).toLocaleString('en-US')}
+                </div>
+                <div className="plan-period">per month</div>
               </div>
             </div>
 
@@ -278,7 +485,10 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
               <div className="plan-features-section">
                 <h4 className="section-title">Plan Features</h4>
                 <ul className="features-list">
-                  {CURRENT_PLAN_FEATURES.map((feature, index) => (
+                  {(subscriptionRecord?.plan?.features?.length
+                    ? subscriptionRecord.plan.features
+                    : [...CURRENT_PLAN_FEATURES]
+                  ).map((feature, index) => (
                     <li key={index}>
                       <Check size={14} />
                       {feature}
@@ -291,15 +501,23 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                 <h4 className="section-title">Billing Information</h4>
                 <div className="billing-info-item">
                   <span className="info-label">Status</span>
-                  <span className="status-badge active">Active</span>
+                  <span
+                    className={`status-badge subscription-status subscription-status--${subscriptionRecord?.status ?? 'unknown'}`}
+                  >
+                    {formatSubscriptionStatus(subscriptionRecord?.status)}
+                  </span>
                 </div>
                 <div className="billing-info-item">
                   <span className="info-label">Next billing</span>
-                  <span className="info-value">2025-02-15</span>
+                  <span className="info-value">{computeNextBillingDate(subscriptionRecord)}</span>
                 </div>
                 <div className="billing-info-item">
                   <span className="info-label">Auto-renewal</span>
-                  <span className="info-value">Enabled</span>
+                  <span className="info-value">
+                    {subscriptionRecord?.status === 'active'
+                      ? 'Auto-renewal Enabled'
+                      : 'Auto-renewal Disabled'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -329,16 +547,18 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
               <Gauge size={18} />
                 <h3 className="card-title">Usage Overview</h3>
               </div>
-              <p className="card-description">Current month usage</p>
+              <p className="card-description">Current month usage · {usageLimitNote}</p>
             </div>
             <div className="usage-list">
               {subscriptionUsage.map((item, index) => {
                 const availablePercent = getAvailablePercentage(item.used, item.total)
+                const countLabel =
+                  item.totalDisplay != null ? `${item.used} / ${item.totalDisplay}` : `${item.used} / ${item.total}`
                 return (
                   <div key={index} className="usage-item">
                     <div className="usage-header">
                       <span className="usage-label">{item.label}</span>
-                      <span className="usage-count">{item.used} / {item.total}</span>
+                      <span className="usage-count">{countLabel}</span>
                     </div>
                     <div className="usage-progress-bar">
                       <div 
@@ -346,7 +566,11 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                         style={{ width: `${item.percentage}%` }}
                       ></div>
                     </div>
-                    <div className="usage-available">{Math.round(availablePercent)}% available</div>
+                    <div className="usage-available">
+                      {item.totalDisplay === '∞'
+                        ? 'Unlimited plan'
+                        : `${Math.round(availablePercent)}% available`}
+                    </div>
                   </div>
                 )
               })}
@@ -377,19 +601,25 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
           </div>
 
           <div className="plans-grid">
-            {plans.map((plan, index) => (
+            {plans.map((plan) => {
+              const isCurrent = subscriptionRecord?.plan?.name === plan.name
+              return (
               <div
                 key={plan.name}
-                className={`plan-card ${plan.isCurrent ? 'current' : ''} ${plan.isPopular ? 'popular' : ''}`}
+                className={`plan-card ${isCurrent ? 'current' : ''} ${'isPopular' in plan && plan.isPopular ? 'popular' : ''}`}
               >
-                {plan.isPopular && <div className="popular-badge">Most Popular</div>}
+                {'isPopular' in plan && plan.isPopular ? (
+                  <div className="popular-badge">Most Popular</div>
+                ) : null}
                 <div className="plan-card-header">
                   <h3 className="plan-card-name">{plan.name}</h3>
                   <p className="plan-card-description">{plan.description}</p>
                   <div className="plan-card-price">
                     <div className="price-amount">{plan.price}</div>
                     <div className="price-period">{plan.period}</div>
-                    {plan.savings && <div className="price-savings">{plan.savings}</div>}
+                    {'savings' in plan && plan.savings ? (
+                      <div className="price-savings">{plan.savings}</div>
+                    ) : null}
                   </div>
                 </div>
                 <div className="plan-card-content">
@@ -402,14 +632,15 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                     ))}
                   </ul>
                   <button
-                    className={`choose-plan-btn ${plan.isCurrent ? 'current' : ''}`}
+                    className={`choose-plan-btn ${isCurrent ? 'current' : ''}`}
                     onClick={() => handleChoosePlan(plan.name)}
                   >
-                    {plan.isCurrent ? 'Current Plan' : 'Choose Plan'}
+                    {isCurrent ? 'Current Plan' : 'Choose Plan'}
                   </button>
                 </div>
               </div>
-            ))}
+            )
+            })}
           </div>
         </div>
 
@@ -427,6 +658,11 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                 Add Card
               </button>
             </div>
+            {paymentActionError && (
+              <div className="subscription-inline-error" role="alert">
+                {paymentActionError}
+              </div>
+            )}
             <div className="payment-methods-list">
               {paymentMethods.map((method) => (
                 <div key={method.id} className="payment-method-item">
@@ -442,8 +678,10 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                   <div className="payment-method-actions">
                     {method.isDefault && <span className="default-badge">Default</span>}
                     <button
+                      type="button"
                       className="icon-btn"
-                      onClick={() => setPaymentMethods((prev) => prev.filter(item => item.id !== method.id))}
+                      aria-label="Remove payment method"
+                      onClick={() => handleRemovePaymentMethod(method.id)}
                     >
                       <X size={14} />
                     </button>
@@ -540,10 +778,10 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                       <div className="payment-method-actions">
                         {method.isDefault && <span className="default-badge">Default</span>}
                         <button
+                          type="button"
                           className="icon-btn"
-                          onClick={() =>
-                            setPaymentMethods((prev) => prev.filter(item => item.id !== method.id))
-                          }
+                          aria-label="Remove payment method"
+                          onClick={() => handleRemovePaymentMethod(method.id)}
                         >
                           <X size={14} />
                         </button>
@@ -555,30 +793,67 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
 
               <div className="modal-section">
                 <h3 className="modal-section-title">Billing Address</h3>
+                <p className="modal-section-hint">Saved on this device only (local storage).</p>
                 <div className="address-form-grid">
                   <div className="form-group">
                     <label>Company Name</label>
-                    <input type="text" placeholder="Your Company Name" />
+                    <input
+                      type="text"
+                      placeholder="Your Company Name"
+                      value={billingAddress.companyName}
+                      onChange={(e) =>
+                        setBillingAddress((prev) => ({ ...prev, companyName: e.target.value }))
+                      }
+                    />
                   </div>
                   <div className="form-group">
                     <label>Tax ID</label>
-                    <input type="text" placeholder="QA123456789" />
+                    <input
+                      type="text"
+                      placeholder="QA123456789"
+                      value={billingAddress.taxId}
+                      onChange={(e) => setBillingAddress((prev) => ({ ...prev, taxId: e.target.value }))}
+                    />
                   </div>
                   <div className="form-group">
                     <label>Address Line 1</label>
-                    <input type="text" placeholder="123 Business District" />
+                    <input
+                      type="text"
+                      placeholder="123 Business District"
+                      value={billingAddress.addressLine1}
+                      onChange={(e) =>
+                        setBillingAddress((prev) => ({ ...prev, addressLine1: e.target.value }))
+                      }
+                    />
                   </div>
                   <div className="form-group">
                     <label>City</label>
-                    <input type="text" placeholder="Doha" />
+                    <input
+                      type="text"
+                      placeholder="Doha"
+                      value={billingAddress.city}
+                      onChange={(e) => setBillingAddress((prev) => ({ ...prev, city: e.target.value }))}
+                    />
                   </div>
                   <div className="form-group">
                     <label>State/Region</label>
-                    <input type="text" placeholder="Doha" />
+                    <input
+                      type="text"
+                      placeholder="Doha"
+                      value={billingAddress.state}
+                      onChange={(e) => setBillingAddress((prev) => ({ ...prev, state: e.target.value }))}
+                    />
                   </div>
                   <div className="form-group">
                     <label>Postal Code</label>
-                    <input type="text" placeholder="12345" />
+                    <input
+                      type="text"
+                      placeholder="12345"
+                      value={billingAddress.postalCode}
+                      onChange={(e) =>
+                        setBillingAddress((prev) => ({ ...prev, postalCode: e.target.value }))
+                      }
+                    />
                   </div>
                 </div>
               </div>
@@ -627,7 +902,13 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
               <button className="modal-btn cancel" onClick={handleCloseManageBilling}>Close</button>
               <button
                 className="modal-btn primary"
+                type="button"
                 onClick={() => {
+                  try {
+                    localStorage.setItem(BILLING_STORAGE_KEY, JSON.stringify(billingAddress))
+                  } catch {
+                    /* ignore quota / private mode */
+                  }
                   setShowManageBillingModal(false)
                   if (selectedPlanName) {
                     setSelectedPlanName(null)

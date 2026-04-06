@@ -272,6 +272,12 @@
   color: #999;
 }
 
+.request-image-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .image-placeholder {
   width: 100%;
   height: 100%;
@@ -336,6 +342,12 @@
   padding: 10px;
   background: #e7f3ff;
   border-radius: 4px;
+}
+
+.dealer-response--rejected {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #7f1d1d;
 }
 
 .request-divider {

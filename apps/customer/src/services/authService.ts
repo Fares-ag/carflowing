@@ -6,20 +6,57 @@ export interface AuthSession {
   role: 'customer'
   name: string
   email: string
+  email_confirmed_at?: string | null
 }
 
 async function fetchProfile(userId: string) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, name, role')
+    .select('id, email, name, role, avatar_url')
     .eq('id', userId)
-    .single()
+    .limit(1)
+    .maybeSingle()
 
-  if (error || !data) {
-    throw new Error(error?.message ?? 'Unable to load profile')
+  if (error) {
+    throw new Error(error.message ?? 'Unable to load profile')
+  }
+
+  if (!data) {
+    throw new Error('Profile not found for this account')
   }
 
   return data
+}
+
+export async function getProfileAvatar(): Promise<string | null> {
+  const session = await getSession()
+  if (!session) return null
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('avatar_url')
+    .eq('id', session.userId)
+    .single()
+  if (error || !data) return null
+  return data.avatar_url ?? null
+}
+
+export async function updateProfileAvatar(avatarUrl: string): Promise<void> {
+  const session = await getSession()
+  if (!session) {
+    throw new Error('Not authenticated')
+  }
+  const { error } = await supabase
+    .from('profiles')
+    .update({ avatar_url: avatarUrl })
+    .eq('id', session.userId)
+  if (error) {
+    throw new Error(error.message ?? 'Failed to update avatar')
+  }
+}
+
+export async function getUserId(): Promise<string | null> {
+  const session = await getSession()
+  return session?.userId ?? null
 }
 
 export async function getSession(): Promise<AuthSession | null> {
@@ -34,6 +71,40 @@ export async function getSession(): Promise<AuthSession | null> {
   const profile = await fetchProfile(user.id)
   if (profile.role !== 'customer') {
     return null
+  }
+  return {
+    userId: profile.id,
+    role: 'customer',
+    name: profile.name,
+    email: profile.email,
+    email_confirmed_at: user.email_confirmed_at ?? null,
+  }
+}
+
+export interface SignUpInput {
+  email: string
+  password: string
+  name: string
+}
+
+export async function signUp({ email, password, name }: SignUpInput): Promise<AuthSession> {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { full_name: name.trim() || undefined },
+    },
+  })
+  if (error) {
+    throw new Error(error.message ?? 'Unable to create account')
+  }
+  if (!data.user) {
+    throw new Error('Account created but unable to sign in')
+  }
+  const profile = await fetchProfile(data.user.id)
+  if (profile.role !== 'customer') {
+    await supabase.auth.signOut()
+    throw new Error('Not authorized for customer access')
   }
   return {
     userId: profile.id,

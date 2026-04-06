@@ -1,12 +1,23 @@
 import { FormEvent, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Header } from '../components/shared/Header'
+import { Footer } from '../components/shared/Footer'
 import { login } from '../services/authService'
 import './LoginPage.css'
 
+function getRedirectTarget(redirect: string | null): string {
+  if (!redirect) return '/dashboard'
+  const path = decodeURIComponent(redirect)
+  if (path.startsWith('/') && !path.startsWith('//')) return path
+  return '/dashboard'
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('customer@carflow.com')
-  const [password, setPassword] = useState('password')
+  const [searchParams] = useSearchParams()
+  const redirect = searchParams.get('redirect')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -17,7 +28,7 @@ export function LoginPage() {
 
     try {
       await login(email, password)
-      navigate('/dashboard')
+      navigate(getRedirectTarget(redirect))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to login')
     } finally {
@@ -26,43 +37,55 @@ export function LoginPage() {
   }
 
   return (
-    <div className="customerLogin">
-      <div className="customerLoginCard">
-        <div className="customerLoginTitle">Customer Login</div>
-        <div className="customerLoginSubtitle">Sign in with your customer account.</div>
+    <div className="customerAuthPage">
+      <Header />
+      <div className="customerLogin">
+        <div className="customerLoginCard">
+          <div className="customerLoginTitle">Customer Login</div>
+          <div className="customerLoginSubtitle">Sign in with your customer account.</div>
 
-        <form className="customerLoginForm" onSubmit={handleSubmit}>
-          <label className="customerLoginLabel">
-            Email
-            <input
-              className="customerLoginInput"
-              type="email"
-              value={email}
-              onChange={event => setEmail(event.target.value)}
-              placeholder="customer@carflow.com"
-              required
-            />
-          </label>
+          <form className="customerLoginForm" onSubmit={handleSubmit}>
+            <label className="customerLoginLabel">
+              Email
+              <input
+                className="customerLoginInput"
+                type="email"
+                value={email}
+                onChange={event => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                required
+              />
+            </label>
 
-          <label className="customerLoginLabel">
-            Password
-            <input
-              className="customerLoginInput"
-              type="password"
-              value={password}
-              onChange={event => setPassword(event.target.value)}
-              placeholder="password"
-              required
-            />
-          </label>
+            <label className="customerLoginLabel">
+              Password
+              <input
+                className="customerLoginInput"
+                type="password"
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                placeholder="Enter your password"
+                required
+              />
+            </label>
 
-          {error ? <div className="customerLoginError">{error}</div> : null}
+            {error ? <div className="customerLoginError">{error}</div> : null}
 
-          <button className="customerLoginButton" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Signing in...' : 'Sign in'}
-          </button>
-        </form>
+            <Link to="/forgot-password" className="customerLoginForgot">
+              Forgot password?
+            </Link>
+
+            <button className="customerLoginButton" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Signing in...' : 'Sign in'}
+            </button>
+
+            <p className="customerLoginFooter">
+              Don&apos;t have an account? <Link to="/signup">Sign up</Link>
+            </p>
+          </form>
+        </div>
       </div>
+      <Footer />
     </div>
   )
 }

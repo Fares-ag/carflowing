@@ -6,8 +6,9 @@
 
 .notifications-content {
   flex: 1;
-  margin-left: 224px;
-  padding-top: 57px;
+  margin-left: var(--app-shell-sidebar-width);
+  padding-top: var(--app-shell-header-height);
+  box-sizing: border-box;
   min-height: 100vh;
 }
 
@@ -27,24 +28,24 @@
   font-size: 21px;
   font-weight: 600;
   color: #101828;
-  margin: 0 0 3.5px 0;
-  letter-spacing: -0.36px;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.3px;
 }
 
 .page-subtitle {
   font-size: 14px;
   color: #4a5565;
   margin: 0;
-  letter-spacing: -0.15px;
+  letter-spacing: -0.1px;
 }
 
 .mark-all-read-btn {
-  padding: 7px 15.26px;
-  height: 31.5px;
+  padding: 7px 15px;
+  height: 32px;
   background: white;
   border: 1px solid #e5e7eb;
-  border-radius: 6.75px;
-  font-size: 12.25px;
+  border-radius: 8px;
+  font-size: 12px;
   font-weight: 500;
   color: #364153;
   cursor: pointer;
@@ -59,7 +60,7 @@
 
 .notifications-card {
   background: white;
-  border-radius: 12.75px;
+  border-radius: 12px;
   box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.1), 0px 1px 2px -1px rgba(0, 0, 0, 0.1);
   margin: 0 21px 21px 21px;
   padding: 0;
@@ -95,8 +96,8 @@
 
 .notification-icon {
   flex-shrink: 0;
-  width: 31.5px;
-  height: 31.5px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -113,22 +114,22 @@
   font-size: 14px;
   font-weight: 500;
   color: #0a0a0a;
-  margin: 0 0 3.5px 0;
-  letter-spacing: -0.15px;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.1px;
 }
 
 .notification-description {
   font-size: 14px;
   color: #0a0a0a;
   margin: 0 0 7px 0;
-  letter-spacing: -0.15px;
+  letter-spacing: -0.1px;
 }
 
 .notification-time {
-  font-size: 12.25px;
+  font-size: 12px;
   color: #4a5565;
   margin: 0;
-  letter-spacing: -0.018px;
+  letter-spacing: 0;
 }
 
 .unread-dot {
@@ -147,6 +148,43 @@
   text-align: center;
   color: #6a7282;
   font-size: 14px;
+}
+
+.notifications-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 21px 16px;
+  padding: 14px 16px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.notifications-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: notifications-spin 0.7s linear infinite;
+}
+
+@keyframes notifications-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.notifications-error {
+  margin: 0 21px 16px;
+  padding: 14px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #991b1b;
 }
 
 /* Responsive adjustments */

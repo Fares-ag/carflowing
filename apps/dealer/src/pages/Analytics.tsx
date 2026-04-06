@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, useEffect } from 'react'
+import { useState, useCallback, memo, useEffect, useMemo } from 'react'
 import type { DealerAnalyticsData } from '../services/dealerService'
 import { getDealerAnalytics } from '../services/dealerService'
 import { Sidebar } from '../components/Sidebar'
@@ -10,63 +10,82 @@ import {
 } from 'recharts'
 import './Analytics.css'
 
-// Move constants outside component to prevent recreation
-const REVENUE_TREND_DATA = [
-  { month: 'Jan', revenue: 45000, profit: 32000 },
-  { month: 'Feb', revenue: 52000, profit: 38000 },
-  { month: 'Mar', revenue: 48000, profit: 35000 },
-  { month: 'Apr', revenue: 65000, profit: 48000 },
-  { month: 'May', revenue: 70000, profit: 52000 },
-  { month: 'Jun', revenue: 85000, profit: 63000 },
-]
-
-const CUSTOMER_DEMOGRAPHICS_DATA = [
-  { name: '25-34', value: 35 },
-  { name: '35-44', value: 28 },
-  { name: '45-54', value: 20 },
-  { name: '18-24', value: 12 },
-  { name: '55+', value: 5 },
-]
-
 const PIE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'] as const
 
-const REVENUE_BOOKING_DATA = [
-  { month: 'Jan', revenue: 32000, bookings: 45 },
-  { month: 'Feb', revenue: 35000, bookings: 50 },
-  { month: 'Mar', revenue: 34000, bookings: 48 },
-  { month: 'Apr', revenue: 39000, bookings: 55 },
-  { month: 'May', revenue: 41000, bookings: 58 },
-  { month: 'Jun', revenue: 42000, bookings: 60 },
-]
+const EMPTY_PIE = [{ name: 'No data', value: 1 }]
+const EMPTY_LINE = [{ month: 'No data', revenue: 0, profit: 0 }]
+const EMPTY_REVENUE_BOOKING = [{ month: 'No data', revenue: 0, bookings: 0 }]
+const EMPTY_BAR_TIME = [{ time: 'No data', bookings: 0 }]
+const EMPTY_BAR_UTIL = [{ category: 'No data', utilization: 0 }]
 
-const BOOKING_TIME_DATA = [
-  { time: '6AM', bookings: 7 },
-  { time: '8AM', bookings: 12 },
-  { time: '10AM', bookings: 18 },
-  { time: '12PM', bookings: 24 },
-  { time: '2PM', bookings: 21 },
-  { time: '4PM', bookings: 28 },
-  { time: '6PM', bookings: 15 },
-  { time: '8PM', bookings: 9 },
-  { time: '10PM', bookings: 5 },
-]
+type DateRangeKey = '7d' | '30d' | '90d'
 
-const UTILIZATION_DATA = [
-  { category: 'SUV', utilization: 85 },
-  { category: 'Sedan', utilization: 70 },
-  { category: 'Hatchback', utilization: 55 },
-  { category: 'Coupe', utilization: 45 },
-]
+function getRowTime(row: { createdAt?: string; month?: string }): number {
+  const raw = row.createdAt ?? row.month
+  if (!raw) return NaN
+  const t = new Date(raw).getTime()
+  return Number.isFinite(t) ? t : NaN
+}
+
+function filterSeriesForRange<T extends { createdAt?: string; month?: string }>(
+  rows: T[],
+  range: DateRangeKey
+): T[] {
+  if (!rows.length) return rows
+  const sorted = [...rows].sort((a, b) => getRowTime(a) - getRowTime(b))
+  if (range === '90d') return sorted
+
+  const days = range === '7d' ? 7 : 30
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+  const byDate = sorted.filter((r) => {
+    const t = getRowTime(r)
+    return Number.isFinite(t) && t >= cutoff
+  })
+  if (byDate.length > 0) return byDate
+
+  const n = range === '7d' ? 7 : 30
+  return sorted.slice(-n)
+}
 
 export const Analytics = memo(function Analytics() {
   const [activeTab, setActiveTab] = useState<'overview' | 'revenue' | 'customers' | 'vehicles' | 'insights'>('overview')
   const [analytics, setAnalytics] = useState<DealerAnalyticsData | null>(null)
+  const [dateRange, setDateRange] = useState<DateRangeKey>('7d')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    getDealerAnalytics().then(setAnalytics)
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    ;(async () => {
+      try {
+        const data = await getDealerAnalytics()
+        if (!cancelled) setAnalytics(data)
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load analytics')
+          setAnalytics(null)
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  // Memoize tab change handler
+  const revenueTrendFiltered = useMemo(
+    () => filterSeriesForRange(analytics?.revenueTrend ?? [], dateRange),
+    [analytics?.revenueTrend, dateRange]
+  )
+
+  const revenueBookingFiltered = useMemo(
+    () => filterSeriesForRange(analytics?.revenueBooking ?? [], dateRange),
+    [analytics?.revenueBooking, dateRange]
+  )
+
   const handleTabChange = useCallback((tab: typeof activeTab) => {
     setActiveTab(tab)
   }, [])
@@ -85,7 +104,11 @@ export const Analytics = memo(function Analytics() {
           <div className="page-actions">
             <div className="date-filter">
               <CalendarDays size={14} />
-              <select aria-label="Date range" defaultValue="7d">
+              <select
+                aria-label="Date range"
+                value={dateRange}
+                onChange={(e) => setDateRange(e.target.value as DateRangeKey)}
+              >
                 <option value="7d">Last 7 days</option>
                 <option value="30d">Last 30 days</option>
                 <option value="90d">Last 90 days</option>
@@ -95,15 +118,16 @@ export const Analytics = memo(function Analytics() {
               className="export-btn"
               type="button"
               onClick={() => {
-                const rows = (analytics?.revenueTrend ?? REVENUE_TREND_DATA).map(row => ({
+                const revenueData = revenueTrendFiltered
+                const rows = (revenueData.length > 0 ? revenueData : []).map(row => ({
                   month: row.month,
                   revenue: String(row.revenue),
-                  profit: String(row.profit),
+                  profit: String(row.profit ?? row.revenue * 0.2),
                 }))
                 const headers = Object.keys(rows[0] ?? {})
                 const csv = [
                   headers.join(','),
-                  ...rows.map(row => headers.map(header => `"${row[header] ?? ''}"`).join(',')),
+                  ...rows.map(row => headers.map(header => `"${row[header as keyof typeof row] ?? ''}"`).join(',')),
                 ].join('\n')
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
                 const link = document.createElement('a')
@@ -119,6 +143,13 @@ export const Analytics = memo(function Analytics() {
             </button>
           </div>
         </div>
+
+        {loading && <div className="analytics-loading" role="status">Loading analytics...</div>}
+        {error && !loading && (
+          <div className="analytics-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <div className="tabs-wrapper">
           <div className="tabs">
@@ -161,32 +192,32 @@ export const Analytics = memo(function Analytics() {
                   <div className="stat-card">
                     <div className="stat-info">
                       <div className="stat-label">Total Revenue</div>
-                      <div className="stat-value">QAR 67,000</div>
-                      <div className="stat-change positive">+12.5% <span>This month</span></div>
+                      <div className="stat-value">QAR {(analytics?.totalRevenue ?? 0).toLocaleString()}</div>
+                      <div className="stat-change positive"><span>All time</span></div>
                     </div>
                     <div className="stat-icon"><DollarSign size={18} /></div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-info">
                       <div className="stat-label">Active Bookings</div>
-                      <div className="stat-value">180</div>
-                      <div className="stat-change positive">+8.2% <span>Currently active</span></div>
+                      <div className="stat-value">{analytics?.activeBookings ?? 0}</div>
+                      <div className="stat-change positive"><span>Currently active</span></div>
                     </div>
                     <div className="stat-icon"><CalendarDays size={18} /></div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-info">
                       <div className="stat-label">New Customers</div>
-                      <div className="stat-value">148</div>
-                      <div className="stat-change positive">+15.3% <span>This month</span></div>
+                      <div className="stat-value">{analytics?.newCustomersThisMonth ?? 0}</div>
+                      <div className="stat-change positive"><span>This month</span></div>
                     </div>
                     <div className="stat-icon"><Users size={18} /></div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-info">
                       <div className="stat-label">Fleet Utilization</div>
-                      <div className="stat-value">73%</div>
-                      <div className="stat-change positive">+5.1% <span>Average rate</span></div>
+                      <div className="stat-value">{analytics?.fleetUtilization ?? 0}%</div>
+                      <div className="stat-change positive"><span>Average rate</span></div>
                     </div>
                     <div className="stat-icon"><Car size={18} /></div>
                   </div>
@@ -200,7 +231,7 @@ export const Analytics = memo(function Analytics() {
                     </div>
                     <div className="chart-placeholder">
                       <ResponsiveContainer width="100%" height={280}>
-                        <LineChart data={analytics?.revenueTrend ?? REVENUE_TREND_DATA}>
+                        <LineChart data={(revenueTrendFiltered.length > 0 ? revenueTrendFiltered : EMPTY_LINE)}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
                           <XAxis dataKey="month" stroke="#666" tick={{ fontSize: 12 }} />
                           <YAxis stroke="#666" tick={{ fontSize: 12 }} />
@@ -213,7 +244,7 @@ export const Analytics = memo(function Analytics() {
                           />
                           <Legend />
                           <Line type="monotone" dataKey="revenue" stroke="#6366f1" strokeWidth={2} name="Revenue" />
-                          <Line type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} name="Profit" />
+                          <Line type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} name="Profit" connectNulls />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -227,17 +258,17 @@ export const Analytics = memo(function Analytics() {
                       <ResponsiveContainer width="100%" height={280}>
                         <PieChart>
                           <Pie
-                            data={analytics?.customerDemographics ?? CUSTOMER_DEMOGRAPHICS_DATA}
+                            data={(analytics?.customerDemographics?.length ?? 0) > 0 ? analytics!.customerDemographics : EMPTY_PIE}
                             cx="50%"
                             cy="50%"
                             labelLine={false}
-                            label={({ name, value }) => `${name}: ${value}%`}
+                            label={({ name, value }) => (value > 0 ? `${name}: ${value}%` : name)}
                             outerRadius={80}
                             fill="#8884d8"
                             dataKey="value"
                           >
-                            {(analytics?.customerDemographics ?? CUSTOMER_DEMOGRAPHICS_DATA).map((entry, index) => (
-                              <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                            {((analytics?.customerDemographics?.length ?? 0) > 0 ? analytics!.customerDemographics : EMPTY_PIE).map((entry, index) => (
+                              <Cell key={`cell-${entry.name}-${index}`} fill={(entry.value ?? 0) > 0 ? PIE_COLORS[index % PIE_COLORS.length] : '#e5e7eb'} />
                             ))}
                           </Pie>
                           <Tooltip />
@@ -249,37 +280,30 @@ export const Analytics = memo(function Analytics() {
 
                 <div className="vehicles-list-card">
                   <div className="card-header">
-                    <h3 className="card-title"><Star size={16} /> Top Performing Vehicles</h3>
-                    <p className="card-description">Vehicles ranked by bookings and revenue</p>
+                    <h3 className="card-title"><Star size={16} /> Utilization by Category</h3>
+                    <p className="card-description">Fleet utilization by vehicle category</p>
                   </div>
                   <div className="vehicles-list">
-                    {[
-                      { rank: 1, name: 'BMW X3 2024', bookings: '45 bookings', revenue: 'QAR 13,500', utilization: '85% utilization', rating: '4.8' },
-                      { rank: 2, name: 'Mercedes C-Class', bookings: '38 bookings', revenue: 'QAR 9,500', utilization: '72% utilization', rating: '4.9' },
-                      { rank: 3, name: 'Audi A4 2023', bookings: '32 bookings', revenue: 'QAR 8,960', utilization: '68% utilization', rating: '4.7' },
-                      { rank: 4, name: 'Toyota Camry', bookings: '28 bookings', revenue: 'QAR 5,600', utilization: '58% utilization', rating: '4.6' },
-                      { rank: 5, name: 'Nissan Altima', bookings: '22 bookings', revenue: 'QAR 4,400', utilization: '45% utilization', rating: '4.5' },
-                    ].map((vehicle) => (
-                      <div key={vehicle.rank} className="vehicle-item">
+                    {((analytics?.utilization?.length ?? 0) > 0 ? analytics!.utilization : []).map((item, index) => (
+                      <div key={`${item.category}-${index}`} className="vehicle-item">
                         <div className="vehicle-info">
-                          <div className="vehicle-rank">{vehicle.rank}</div>
+                          <div className="vehicle-rank">{index + 1}</div>
                           <div className="vehicle-details">
-                            <div className="vehicle-name">{vehicle.name}</div>
-                            <div className="vehicle-bookings">{vehicle.bookings}</div>
-                          </div>
-                        </div>
-                        <div className="vehicle-stats">
-                          <div className="vehicle-revenue-info">
-                            <div className="vehicle-revenue">{vehicle.revenue}</div>
-                            <div className="vehicle-utilization">{vehicle.utilization}</div>
-                          </div>
-                          <div className="vehicle-rating">
-                            <Star size={14} />
-                            <span>{vehicle.rating}</span>
+                            <div className="vehicle-name">{item.category}</div>
+                            <div className="vehicle-bookings">{item.utilization}% utilization</div>
                           </div>
                         </div>
                       </div>
                     ))}
+                    {(!analytics?.utilization?.length) && (
+                      <div className="vehicle-item">
+                        <div className="vehicle-info">
+                          <div className="vehicle-details">
+                            <div className="vehicle-name">No utilization data</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -295,9 +319,17 @@ export const Analytics = memo(function Analytics() {
                     </div>
                     <div className="chart-placeholder">
                       <ResponsiveContainer width="100%" height={280}>
-                        <LineChart data={analytics?.revenueBooking ?? REVENUE_BOOKING_DATA}>
+                        <LineChart data={(revenueBookingFiltered.length > 0 ? revenueBookingFiltered : EMPTY_REVENUE_BOOKING)}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-                          <XAxis dataKey="month" stroke="#666" tick={{ fontSize: 12 }} />
+                          <XAxis
+                            dataKey="month"
+                            stroke="#666"
+                            tick={{ fontSize: 12 }}
+                            tickFormatter={(v) => {
+                              const d = new Date(v)
+                              return Number.isFinite(d.getTime()) ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : String(v)
+                            }}
+                          />
                           <YAxis yAxisId="left" stroke="#666" tick={{ fontSize: 12 }} />
                           <YAxis yAxisId="right" orientation="right" stroke="#666" tick={{ fontSize: 12 }} />
                           <Tooltip 
@@ -333,25 +365,26 @@ export const Analytics = memo(function Analytics() {
                   <div className="revenue-breakdown-card">
                     <div className="chart-header">
                       <h3 className="chart-title">Revenue Breakdown</h3>
-                      <p className="chart-description">This month's revenue sources</p>
+                      <p className="chart-description">This month&apos;s revenue sources</p>
                     </div>
                     <div className="revenue-items">
-                      {[
-                        { label: 'Daily Rentals', amount: 'QAR 35,200', percent: 55 },
-                        { label: 'Weekly Rentals', amount: 'QAR 20,100', percent: 31 },
-                        { label: 'Monthly Rentals', amount: 'QAR 8,700', percent: 14 },
-                        { label: 'Insurance & Fees', amount: 'QAR 3,000', percent: 5 },
-                      ].map((item) => (
-                        <div key={item.label} className="revenue-item">
+                      {analytics?.totalRevenue != null && analytics.totalRevenue > 0 ? (
+                        <div className="revenue-item">
                           <div className="revenue-item-header">
-                            <span className="revenue-item-label">{item.label}</span>
-                            <span className="revenue-item-amount">{item.amount}</span>
+                            <span className="revenue-item-label">Total Revenue</span>
+                            <span className="revenue-item-amount">QAR {analytics.totalRevenue.toLocaleString()}</span>
                           </div>
                           <div className="revenue-bar">
-                            <div className="revenue-bar-fill" style={{ width: `${item.percent}%` }}></div>
+                            <div className="revenue-bar-fill" style={{ width: '100%' }}></div>
                           </div>
                         </div>
-                      ))}
+                      ) : (
+                        <div className="revenue-item">
+                          <div className="revenue-item-header">
+                            <span className="revenue-item-label">No revenue data</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -361,14 +394,14 @@ export const Analytics = memo(function Analytics() {
             {activeTab === 'customers' && (
               <div className="customers-tab">
                 <div className="charts-row">
-                  <div className="chart-card">
+                  <div className="chart-card large">
                     <div className="chart-header">
                       <h3 className="chart-title">Booking Patterns by Time</h3>
                       <p className="chart-description">Peak booking hours analysis</p>
                     </div>
                     <div className="chart-placeholder">
                       <ResponsiveContainer width="100%" height={224}>
-                        <BarChart data={analytics?.bookingTime ?? BOOKING_TIME_DATA}>
+                        <BarChart data={(analytics?.bookingTime?.length ?? 0) > 0 ? analytics!.bookingTime : EMPTY_BAR_TIME}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
                           <XAxis dataKey="time" stroke="#666" tick={{ fontSize: 12 }} />
                           <YAxis stroke="#666" tick={{ fontSize: 12 }} />
@@ -382,32 +415,6 @@ export const Analytics = memo(function Analytics() {
                           <Bar dataKey="bookings" fill="#6366f1" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
-                    </div>
-                  </div>
-                  <div className="chart-card">
-                    <div className="chart-header">
-                      <h3 className="chart-title">Geographic Distribution</h3>
-                      <p className="chart-description">Bookings by location</p>
-                    </div>
-                    <div className="geographic-list">
-                      {[
-                        { location: 'Doha', bookings: '145 bookings', percent: '45.2%', color: '#6366f1' },
-                        { location: 'Al Rayyan', bookings: '98 bookings', percent: '30.5%', color: '#8b5cf6' },
-                        { location: 'Al Wakrah', bookings: '42 bookings', percent: '13.1%', color: '#a78bfa' },
-                        { location: 'Umm Salal', bookings: '25 bookings', percent: '7.8%', color: '#c4b5fd' },
-                        { location: 'Others', bookings: '11 bookings', percent: '3.4%', color: '#ddd6fe' },
-                      ].map((item) => (
-                        <div key={item.location} className="geographic-item">
-                          <div className="geographic-info">
-                            <div className="geographic-dot" style={{ backgroundColor: item.color }}></div>
-                            <span className="geographic-location">{item.location}</span>
-                          </div>
-                          <div className="geographic-stats">
-                            <span className="geographic-bookings">{item.bookings}</span>
-                            <span className="geographic-percent">{item.percent}</span>
-                          </div>
-                        </div>
-                      ))}
                     </div>
                   </div>
                 </div>
@@ -424,7 +431,7 @@ export const Analytics = memo(function Analytics() {
                     </div>
                     <div className="chart-placeholder">
                       <ResponsiveContainer width="100%" height={224}>
-                        <BarChart data={analytics?.utilization ?? UTILIZATION_DATA}>
+                        <BarChart data={(analytics?.utilization?.length ?? 0) > 0 ? analytics!.utilization : EMPTY_BAR_UTIL}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
                           <XAxis dataKey="category" stroke="#666" tick={{ fontSize: 12 }} />
                           <YAxis stroke="#666" tick={{ fontSize: 12 }} domain={[0, 100]} />
@@ -447,23 +454,11 @@ export const Analytics = memo(function Analytics() {
                       <p className="chart-description">Upcoming maintenance requirements</p>
                     </div>
                     <div className="maintenance-list">
-                      {[
-                        { vehicle: 'BMW X3 2024', service: 'Oil Change', date: 'Dec 28', status: 'pending' },
-                        { vehicle: 'Mercedes C-Class', service: 'Tire Rotation', date: 'Dec 30', status: 'pending' },
-                        { vehicle: 'Audi A4 2023', service: 'Brake Service', date: 'Jan 2', status: 'scheduled' },
-                        { vehicle: 'Toyota Camry', service: 'General Service', date: 'Jan 5', status: 'scheduled' },
-                      ].map((item, i) => (
-                        <div key={i} className="maintenance-item">
-                          <div className="maintenance-info">
-                            <div className="maintenance-vehicle">{item.vehicle}</div>
-                            <div className="maintenance-service">{item.service}</div>
-                          </div>
-                          <div className="maintenance-date-info">
-                            <div className="maintenance-date">{item.date}</div>
-                            <div className={`maintenance-status ${item.status}`}>{item.status}</div>
-                          </div>
+                      <div className="maintenance-item">
+                        <div className="maintenance-info">
+                          <div className="maintenance-vehicle">No maintenance data available</div>
                         </div>
-                      ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -475,39 +470,26 @@ export const Analytics = memo(function Analytics() {
                 <div className="insights-header">
                   <div className="insights-title-section">
                     <span className="insights-icon"><Lightbulb size={16} /></span>
-                    <h3 className="insights-main-title">AI-Powered Insights & Recommendations</h3>
+                    <h3 className="insights-main-title">Insights &amp; recommendations</h3>
                   </div>
                   <p className="insights-subtitle">Smart analytics to optimize your business</p>
+                  <p className="insights-coming-soon">AI-powered insights coming soon. Below are example tips only.</p>
                 </div>
                 <div className="insights-grid">
                   {[
-                    { 
-                      title: 'Peak Demand Prediction', 
-                      badge: 'opportunity',
-                      description: 'Weekend demand expected to increase by 25% next week',
-                      action: 'Consider increasing weekend pricing by 10-15%',
-                      impact: 'Potential +QAR 3,200 revenue'
+                    {
+                      title: 'Fleet utilization',
+                      badge: 'info',
+                      description: 'Vehicles with steady weekend demand often benefit from flexible pickup windows.',
+                      action: 'Review peak booking times and adjust availability where it makes sense for your operation.',
+                      impact: 'Example insight — not personalized yet.',
                     },
-                    { 
-                      title: 'Fleet Optimization', 
-                      badge: 'opportunity',
-                      description: 'SUVs have 20% higher utilization than sedans',
-                      action: 'Consider adding 2 more SUVs to your fleet',
-                      impact: 'Estimated +QAR 5,000 monthly revenue'
-                    },
-                    { 
-                      title: 'Customer Retention', 
-                      badge: 'warning',
-                      description: '15% of customers haven\'t returned in 3 months',
-                      action: 'Launch re-engagement campaign with 10% discount',
-                      impact: 'Potential to recover 40+ customers'
-                    },
-                    { 
-                      title: 'Pricing Strategy', 
-                      badge: 'opportunity',
-                      description: 'Your average daily rate is 12% below market',
-                      action: 'Gradual price increase of QAR 20-30 per day',
-                      impact: 'Estimated +QAR 8,000 monthly revenue'
+                    {
+                      title: 'Revenue mix',
+                      badge: 'info',
+                      description: 'Longer rentals can improve predictability; short trips can lift turnover.',
+                      action: 'Balance daily rates and minimum rental length based on what your data shows.',
+                      impact: 'Example insight — not personalized yet.',
                     },
                   ].map((insight, i) => (
                     <div key={i} className="insight-card">

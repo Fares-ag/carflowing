@@ -1,4 +1,7 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { ImagePlus } from 'lucide-react'
+import type { VehicleCategory } from '@carflow/shared'
+import { uploadVehicleImage } from '@carflow/shared'
 import { Modal } from './Modal'
 import './EditVehicleModal.css'
 
@@ -6,16 +9,17 @@ export type EditVehicleStatus = 'Available' | 'Rented' | 'Maintenance'
 
 export interface EditVehicleValues {
   vehicleName: string
-  fuelType: string
-  category: string
-  transmission: string
+  make: string
+  model: string
+  fuelType: 'gas' | 'diesel' | 'electric' | 'hybrid'
+  category: VehicleCategory
+  transmission: 'automatic' | 'manual'
   dailyRate: string
   seatingCapacity: string
   year: string
-  color: string
+  mileage: string
   status: EditVehicleStatus
-  licensePlate: string
-  description: string
+  imageUrl?: string
 }
 
 export interface EditVehicleModalProps {
@@ -25,6 +29,15 @@ export interface EditVehicleModalProps {
   onSave?: (values: EditVehicleValues) => void
 }
 
+const CATEGORY_OPTIONS: { value: VehicleCategory; label: string }[] = [
+  { value: 'sedan', label: 'Sedan' },
+  { value: 'suv', label: 'SUV' },
+  { value: 'truck', label: 'Truck' },
+  { value: 'luxury', label: 'Luxury' },
+  { value: 'ev', label: 'EV' },
+  { value: 'other', label: 'Other' },
+]
+
 export const EditVehicleModal = memo(function EditVehicleModal({
   isOpen,
   initialValues,
@@ -32,10 +45,33 @@ export const EditVehicleModal = memo(function EditVehicleModal({
   onSave,
 }: EditVehicleModalProps) {
   const [values, setValues] = useState<EditVehicleValues>(initialValues)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setValues(initialValues)
+    setUploadError('')
   }, [initialValues])
+
+  const handleImageChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      e.target.value = ''
+      if (!file) return
+      setUploadError('')
+      setUploading(true)
+      try {
+        const url = await uploadVehicleImage(file, 'edit')
+        setValues((p) => ({ ...p, imageUrl: url }))
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : 'Upload failed')
+      } finally {
+        setUploading(false)
+      }
+    },
+    []
+  )
 
   if (!isOpen) return null
 
@@ -48,6 +84,36 @@ export const EditVehicleModal = memo(function EditVehicleModal({
         </div>
 
         <div className="evBody">
+          <div className="evImageSection">
+            <span className="evLabel">Vehicle Image</span>
+            <div className="evImageWrap">
+              {values.imageUrl ? (
+                <img src={values.imageUrl} alt={values.vehicleName} className="evImagePreview" />
+              ) : (
+                <div className="evImagePlaceholder">
+                  <ImagePlus size={24} />
+                  <span>No image</span>
+                </div>
+              )}
+              <button
+                type="button"
+                className="evImageBtn"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploading ? 'Uploading...' : 'Change Image'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                hidden
+                onChange={handleImageChange}
+              />
+            </div>
+            {uploadError && <div className="evUploadError">{uploadError}</div>}
+          </div>
+
           <div className="evGrid">
             <label className="evField">
               <span className="evLabel">Vehicle Name</span>
@@ -59,16 +125,36 @@ export const EditVehicleModal = memo(function EditVehicleModal({
             </label>
 
             <label className="evField">
+              <span className="evLabel">Make</span>
+              <input
+                className="evInput"
+                value={values.make}
+                onChange={(e) => setValues((p) => ({ ...p, make: e.target.value }))}
+              />
+            </label>
+
+            <label className="evField">
+              <span className="evLabel">Model</span>
+              <input
+                className="evInput"
+                value={values.model}
+                onChange={(e) => setValues((p) => ({ ...p, model: e.target.value }))}
+              />
+            </label>
+
+            <label className="evField">
               <span className="evLabel">Fuel Type</span>
               <select
                 className="evSelect"
                 value={values.fuelType}
-                onChange={(e) => setValues((p) => ({ ...p, fuelType: e.target.value }))}
+                onChange={(e) =>
+                  setValues((p) => ({ ...p, fuelType: e.target.value as EditVehicleValues['fuelType'] }))
+                }
               >
-                <option>Petrol</option>
-                <option>Diesel</option>
-                <option>Electric</option>
-                <option>Hybrid</option>
+                <option value="gas">Petrol</option>
+                <option value="diesel">Diesel</option>
+                <option value="electric">Electric</option>
+                <option value="hybrid">Hybrid</option>
               </select>
             </label>
 
@@ -77,12 +163,15 @@ export const EditVehicleModal = memo(function EditVehicleModal({
               <select
                 className="evSelect"
                 value={values.category}
-                onChange={(e) => setValues((p) => ({ ...p, category: e.target.value }))}
+                onChange={(e) =>
+                  setValues((p) => ({ ...p, category: e.target.value as VehicleCategory }))
+                }
               >
-                <option>SUV</option>
-                <option>Sedan</option>
-                <option>Hatchback</option>
-                <option>Coupe</option>
+                {CATEGORY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -91,10 +180,12 @@ export const EditVehicleModal = memo(function EditVehicleModal({
               <select
                 className="evSelect"
                 value={values.transmission}
-                onChange={(e) => setValues((p) => ({ ...p, transmission: e.target.value }))}
+                onChange={(e) =>
+                  setValues((p) => ({ ...p, transmission: e.target.value as 'automatic' | 'manual' }))
+                }
               >
-                <option>Automatic</option>
-                <option>Manual</option>
+                <option value="automatic">Automatic</option>
+                <option value="manual">Manual</option>
               </select>
             </label>
 
@@ -108,16 +199,26 @@ export const EditVehicleModal = memo(function EditVehicleModal({
             </label>
 
             <label className="evField">
+              <span className="evLabel">Mileage (km)</span>
+              <input
+                className="evInput"
+                value={values.mileage}
+                onChange={(e) => setValues((p) => ({ ...p, mileage: e.target.value.replace(/\D/g, '') }))}
+              />
+            </label>
+
+            <label className="evField">
               <span className="evLabel">Seating Capacity</span>
               <select
                 className="evSelect"
                 value={values.seatingCapacity}
                 onChange={(e) => setValues((p) => ({ ...p, seatingCapacity: e.target.value }))}
               >
-                <option>2 Seats</option>
-                <option>4 Seats</option>
-                <option>5 Seats</option>
-                <option>7 Seats</option>
+                {['2', '4', '5', '6', '7', '8'].map((n) => (
+                  <option key={n} value={n}>
+                    {n} Seats
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -127,15 +228,6 @@ export const EditVehicleModal = memo(function EditVehicleModal({
                 className="evInput"
                 value={values.year}
                 onChange={(e) => setValues((p) => ({ ...p, year: e.target.value }))}
-              />
-            </label>
-
-            <label className="evField">
-              <span className="evLabel">Color</span>
-              <input
-                className="evInput"
-                value={values.color}
-                onChange={(e) => setValues((p) => ({ ...p, color: e.target.value }))}
               />
             </label>
 
@@ -151,25 +243,7 @@ export const EditVehicleModal = memo(function EditVehicleModal({
                 <option value="Maintenance">Maintenance</option>
               </select>
             </label>
-
-            <label className="evField">
-              <span className="evLabel">License Plate</span>
-              <input
-                className="evInput"
-                value={values.licensePlate}
-                onChange={(e) => setValues((p) => ({ ...p, licensePlate: e.target.value }))}
-              />
-            </label>
           </div>
-
-          <label className="evField evFieldFull">
-            <span className="evLabel">Description</span>
-            <textarea
-              className="evTextarea"
-              value={values.description}
-              onChange={(e) => setValues((p) => ({ ...p, description: e.target.value }))}
-            />
-          </label>
         </div>
 
         <div className="evFooter">
@@ -191,4 +265,3 @@ export const EditVehicleModal = memo(function EditVehicleModal({
     </Modal>
   )
 })
-

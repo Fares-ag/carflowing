@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { Vehicle } from '@carflow/shared'
-import { listCatalogVehicles } from '../services/customerService'
-import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { addFavorite, listCatalogVehicles } from '../services/customerService'
+import { toast } from '../hooks/useToast'
+import { Link, useNavigate } from 'react-router-dom'
+import { useCartStore } from '../stores/cartStore'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
 import { CarCard } from '../components/shared/CarCard'
@@ -10,37 +12,46 @@ import {
   CheckCircle2,
   Car,
   CalendarCheck,
+  CarFront,
   ClipboardList,
-  Laptop,
+  MonitorSmartphone,
   Shield,
-  Star,
+  Sparkles,
   Truck,
   Wrench,
 } from 'lucide-react'
+
+const howItWorksIconProps = {
+  size: 32,
+  strokeWidth: 1.75,
+  'aria-hidden': true as const,
+}
 import './HomePage.css'
 
 export function HomePage() {
+  const navigate = useNavigate()
+  const setVehicle = useCartStore((s) => s.setVehicle)
   const [selectedCategory, setSelectedCategory] = useState('All')
-  const [vehicles, setVehicles] = useState<Vehicle[]>([])
-
-  useEffect(() => {
-    listCatalogVehicles({ pageSize: 20 }).then((data) => setVehicles(data.items))
-  }, [])
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['catalog', 'home', 20],
+    queryFn: () => listCatalogVehicles({ pageSize: 20 }),
+  })
+  const vehicles = data?.items ?? []
 
   const categories = ['All', 'Sedan', 'SUV', 'Electric']
   
   const cars = useMemo(() => {
-    return vehicles.map((vehicle, index) => ({
+    return vehicles.map((vehicle) => ({
       id: vehicle.id,
       name: vehicle.name,
-      type: vehicle.category === 'suv' ? 'SUV' : vehicle.category === 'ev' ? 'Electric' : 'Sedan',
+      make: vehicle.make,
+      model: vehicle.model,
+      type: vehicle.category === 'suv' ? 'SUV' : vehicle.category === 'ev' ? 'Electric' : vehicle.category === 'sedan' ? 'Sedan' : 'Other',
       price: Math.round(vehicle.pricePerDay * 6),
-      rating: 4.6 + index * 0.1,
-      reviews: 20 + index * 5,
       seats: vehicle.seats,
       transmission: vehicle.transmission === 'manual' ? 'Manual' : 'Automatic',
       fuelType: vehicle.fuelType,
-      isPopular: index % 2 === 0,
+      image: vehicle.imageUrl,
       isElectric: vehicle.fuelType === 'electric',
     }))
   }, [vehicles])
@@ -88,25 +99,25 @@ export function HomePage() {
       step: '01',
       title: 'Choose your car',
       description: 'Browse our extensive fleet and select the perfect vehicle for your needs.',
-      icon: <Car size={18} />,
+      icon: <CarFront {...howItWorksIconProps} />,
     },
     {
       step: '02',
       title: 'Subscribe online',
       description: 'Complete your subscription in minutes with our simple online process.',
-      icon: <Laptop size={18} />,
+      icon: <MonitorSmartphone {...howItWorksIconProps} />,
     },
     {
       step: '03',
       title: 'Get delivered',
       description: 'Your car will be delivered to your doorstep within 3-5 business days.',
-      icon: <Truck size={18} />,
+      icon: <Truck {...howItWorksIconProps} />,
     },
     {
       step: '04',
       title: 'Drive & enjoy',
       description: 'Enjoy your car with complete peace of mind. Insurance and maintenance included.',
-      icon: <Star size={18} />,
+      icon: <Sparkles {...howItWorksIconProps} />,
     },
   ]
 
@@ -205,9 +216,36 @@ export function HomePage() {
           </div>
 
           <div className="cars-grid">
-            {filteredCars.map((car) => (
-              <CarCard key={car.id} {...car} />
-            ))}
+            {isLoading ? (
+              <div className="loading-state">Loading vehicles…</div>
+            ) : isError ? (
+              <div className="error-state">Failed to load vehicles</div>
+            ) : (
+              filteredCars.map((car) => (
+                <CarCard
+                  key={car.id}
+                  {...car}
+                  onConfigure={() => {
+                    setVehicle({
+                      id: car.id,
+                      name: car.name,
+                      make: car.make,
+                      fuelType: car.fuelType,
+                      transmission: car.transmission,
+                      seats: car.seats,
+                      image: car.image,
+                      pricePerDay: Math.round(car.price / 6),
+                    })
+                    navigate('/cart')
+                  }}
+                  onFavorite={() => {
+                    addFavorite(car.id)
+                      .then(() => toast.success('Saved to favorites'))
+                      .catch(() => toast.error('Failed to save favorite'))
+                  }}
+                />
+              ))
+            )}
           </div>
           <div className="view-all-cars">
             <Link to="/browse" className="view-all-button">
@@ -298,29 +336,17 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* Get Offers Section */}
+      {/* Stay Updated Section */}
       <section className="get-offers-section">
         <div className="section-container">
           <div className="offers-content">
             <div className="offers-text">
-              <h3 className="offers-title">Don't miss any car subscription offers anymore!</h3>
-              <p className="offers-description">Get exclusive Carflow offers before everyone else</p>
+              <h3 className="offers-title">Stay updated — follow us on social media</h3>
+              <p className="offers-description">
+                Follow Carflow on social media to get the latest offers, news, and updates.
+              </p>
+              <Link to="/faqs" className="more-info">More Information</Link>
             </div>
-            <form className="offers-form">
-              <div className="form-row">
-                <input type="text" placeholder="First Name" className="form-input" />
-                <input type="text" placeholder="Last Name" className="form-input" />
-              </div>
-              <input type="email" placeholder="Email" className="form-input full-width" />
-              <div className="form-checkbox">
-                <input type="checkbox" id="newsletter" />
-                <label htmlFor="newsletter">
-                  Yes, I would like to receive the Carflow newsletter
-                  <a href="/privacy" className="more-info">More Information</a>
-                </label>
-              </div>
-              <button type="submit" className="submit-button">Get Offers Now</button>
-            </form>
           </div>
         </div>
       </section>

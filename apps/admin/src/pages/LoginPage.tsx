@@ -5,8 +5,8 @@ import './LoginPage.css'
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('admin@carflow.com')
-  const [password, setPassword] = useState('password')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -39,7 +39,7 @@ export function LoginPage() {
               type="email"
               value={email}
               onChange={event => setEmail(event.target.value)}
-              placeholder="admin@carflow.com"
+              placeholder="admin@example.com"
               required
             />
           </label>
@@ -51,7 +51,7 @@ export function LoginPage() {
               type="password"
               value={password}
               onChange={event => setPassword(event.target.value)}
-              placeholder="password"
+              placeholder="Enter your password"
               required
             />
           </label>

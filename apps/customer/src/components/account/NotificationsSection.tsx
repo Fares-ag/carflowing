@@ -1,28 +1,63 @@
 import { useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, Info } from 'lucide-react'
+import { toast } from '../../hooks/useToast'
 import './NotificationsSection.css'
 
+const NOTIFICATION_PREFS_KEY = 'carflow-notification-preferences'
+
+const DEFAULT_PREFS = {
+  emailRentalUpdates: true,
+  smsRentalUpdates: true,
+  reminderNotifications: true,
+  emailPromotions: false,
+  smsPromotions: false,
+  weeklyDigest: true,
+  pushNotifications: true,
+}
+
+function loadPrefs(): typeof DEFAULT_PREFS {
+  try {
+    const raw = localStorage.getItem(NOTIFICATION_PREFS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<typeof DEFAULT_PREFS>
+      return { ...DEFAULT_PREFS, ...parsed }
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_PREFS
+}
+
 export default function NotificationsSection() {
-  const [notifications, setNotifications] = useState({
-    emailRentalUpdates: true,
-    smsRentalUpdates: true,
-    reminderNotifications: true,
-    emailPromotions: false,
-    smsPromotions: false,
-    weeklyDigest: true,
-    pushNotifications: true,
-  })
+  const [notifications, setNotifications] = useState(loadPrefs)
 
   const toggleNotification = (key: keyof typeof notifications) => {
-    setNotifications({
-      ...notifications,
-      [key]: !notifications[key],
-    })
+    setNotifications((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }))
+  }
+
+  const handleSave = () => {
+    try {
+      localStorage.setItem(NOTIFICATION_PREFS_KEY, JSON.stringify(notifications))
+      toast.success('Notification preferences saved.')
+    } catch {
+      toast.error('Could not save preferences.')
+    }
   }
 
   return (
     <div className="notifications-section">
       <h2 className="section-title">Notification Preferences</h2>
+
+      <div className="notifications-local-banner" role="status">
+        <Info size={16} aria-hidden />
+        <p>
+          Notification preferences are saved locally and will be synced with our notification system in a future
+          update.
+        </p>
+      </div>
 
       <div className="notifications-content">
         <div className="notification-group">
@@ -133,7 +168,7 @@ export default function NotificationsSection() {
         </div>
 
         <div className="section-actions">
-          <button className="save-button">
+          <button type="button" className="save-button" onClick={handleSave}>
             <Check size={14} />
             Save Preferences
           </button>

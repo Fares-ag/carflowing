@@ -1,7 +1,14 @@
 import { Link } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { BookingRequest } from '@carflow/shared'
-import { createBookingRequest, listBookingRequests, updateBookingRequestStatus } from '../services/customerService'
+import {
+  createBookingRequest,
+  listBookingRequestsWithVehicles,
+  updateBookingRequestStatus,
+  updateBookingRequestNote,
+} from '../services/customerService'
+import { toast } from '../hooks/useToast'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
 import { InfoModal } from '../components/shared/InfoModal'
@@ -9,47 +16,91 @@ import { ArrowLeft, Calendar, ChevronDown, Clock, Copy, DollarSign, MapPin, Mess
 import './MyRequests.css'
 
 export function MyRequests() {
-  const [requestsData, setRequestsData] = useState<BookingRequest[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortBy, setSortBy] = useState('date')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
-  const [editModal, setEditModal] = useState<{ sourceId: string; requestId: string; note: string; status: BookingRequest['status'] } | null>(null)
+  const [editModal, setEditModal] = useState<{
+    sourceId: string
+    requestId: string
+    note: string
+    status: BookingRequest['status']
+  } | null>(null)
 
-  const refreshRequests = () => {
-    listBookingRequests({ pageSize: 12 }).then((data) => setRequestsData(data.items))
+  const queryClient = useQueryClient()
+  const { data: requestsResponse, refetch: refreshRequests, isLoading, error: queryError } = useQuery({
+    queryKey: ['bookingRequests'],
+    queryFn: () => listBookingRequestsWithVehicles({ pageSize: 50 }),
+  })
+  const requestsData = requestsResponse?.items ?? []
+
+  function parseNote(note: string | undefined) {
+    if (!note) return null
+    try {
+      const parsed = JSON.parse(note) as {
+        duration?: string
+        startDate?: string
+        delivery?: { location?: string; date?: string; time?: string }
+        contact?: { firstName?: string; lastName?: string; email?: string; phone?: string }
+        total?: number
+      }
+      return parsed
+    } catch {
+      return null
+    }
   }
 
-  useEffect(() => {
-    refreshRequests()
-  }, [])
-
   const requests = useMemo(() => {
-    return requestsData.map((request, index) => {
+    return requestsData.map((request) => {
       const status =
         request.status === 'approved'
           ? 'Approved'
           : request.status === 'declined'
           ? 'Rejected'
           : 'Pending'
+      const declineReason = request.declineReason?.trim() || null
+      const noteData = parseNote(request.note)
+      const vehicle = (request as { vehicle?: { name: string; image_url?: string; dealer?: { name?: string; contact_phone?: string } } }).vehicle
+      const carName = vehicle?.name ?? 'Unknown vehicle'
+      const vehicleImage = vehicle?.image_url
+      const dealerName = vehicle?.dealer?.name ?? 'Unknown dealer'
+      const dealerPhone = vehicle?.dealer?.contact_phone ?? null
+      const startDate = noteData?.startDate ?? request.createdAt
+      const duration = noteData?.duration ?? null
+      const totalAmount = noteData?.total ?? null
+      const location = noteData?.delivery?.location ?? null
+      const notesDisplay = noteData
+        ? `${noteData.duration ?? ''} • Start: ${noteData.startDate ?? ''}${noteData.delivery?.location ? ` • Delivery: ${noteData.delivery.location}` : ''}${noteData.contact ? ` • Contact: ${noteData.contact.firstName} ${noteData.contact.lastName}` : ''}`.trim() || (request.note ?? 'No notes')
+        : (request.note ?? 'No notes')
+      const displayId = request.id.length > 12 ? `${request.id.slice(0, 8)}...` : request.id
       return {
-        id: `REQ-2024-${String(index + 1).padStart(3, '0')}`,
+        id: request.id,
+        displayId,
         sourceId: request.id,
-        car: `Vehicle ${index + 1}`,
+        car: carName,
+        vehicleImage,
         requestDate: request.createdAt,
-        pickupDate: request.createdAt,
-        returnDate: request.createdAt,
-        location: 'Doha',
-        duration: '5 days',
-        estimatedAmount: 1500 + index * 200,
-        notes: request.note ?? 'No notes',
-        dealer: `Dealer ${index + 1}`,
-        phone: '+974 4455 0000',
-        responseTime: '12-24 hours',
+        pickupDate: startDate,
+        returnDate: noteData?.delivery?.date ?? startDate,
+        location: location ?? '—',
+        duration: duration ?? '—',
+        estimatedAmount: totalAmount ?? null,
+        notes: notesDisplay,
+        dealer: dealerName,
+        phone: dealerPhone,
+        responseTime: undefined as string | undefined,
         status,
         rawStatus: request.status,
-        priority: index % 2 === 0 ? 'High Priority' : 'Normal Priority',
-        dealerResponse: status === 'Approved' ? 'Your request has been approved! Please contact us to proceed.' : undefined,
+        priority: undefined as string | undefined,
+        declineReason,
+        dealerResponse:
+          status === 'Approved'
+            ? 'Your request has been approved! Payment and pickup steps will follow from the dealer.'
+            : status === 'Rejected' && declineReason
+              ? declineReason
+              : status === 'Rejected'
+                ? 'Your request was not approved. If you have questions, contact the dealer.'
+                : undefined,
       }
     })
   }, [requestsData])
@@ -59,7 +110,7 @@ export function MyRequests() {
     const statusNormalized = statusFilter.toLowerCase()
     let list = requests.filter(request => {
       const statusOk = statusNormalized === 'all' || request.status.toLowerCase() === statusNormalized
-      const searchOk = !query || [request.id, request.car, request.dealer].some(value => value.toLowerCase().includes(query))
+      const searchOk = !query || [request.id, request.displayId ?? '', request.car, request.dealer].some(value => String(value).toLowerCase().includes(query))
       return statusOk && searchOk
     })
 
@@ -92,25 +143,19 @@ export function MyRequests() {
             <div className="section-header">
               <div>
                 <h1 className="page-title">My Requests</h1>
-                <p className="page-description">4 total requests • 4 matching</p>
+                <p className="page-description">
+                {requests.length} total request{requests.length !== 1 ? 's' : ''} • {filteredRequests.length} matching
+              </p>
               </div>
               <div className="header-actions">
-                <button className="action-button secondary" type="button" onClick={refreshRequests}>
+                <button className="action-button secondary" type="button" onClick={() => refreshRequests()}>
                   <RefreshCw size={14} />
                   Refresh
                 </button>
-                <button
-                  className="action-button"
-                  type="button"
-                  onClick={() => {
-                    createBookingRequest({ vehicleId: 'veh_1', note: 'New request from dashboard' }).then(() => {
-                      refreshRequests()
-                    })
-                  }}
-                >
+                <Link to="/browse" className="action-button">
                   <Plus size={14} />
                   New Request
-                </button>
+                </Link>
               </div>
             </div>
 
@@ -154,6 +199,18 @@ export function MyRequests() {
               </div>
             </div>
 
+            {isLoading && (
+              <div className="requests-loading">
+                <p>Loading requests...</p>
+              </div>
+            )}
+
+            {queryError && !isLoading && (
+              <div className="requests-error">
+                <p>Failed to load requests. Please try again later.</p>
+              </div>
+            )}
+
             {/* Requests List */}
             <div className="requests-list">
               {filteredRequests.map((request) => (
@@ -161,21 +218,27 @@ export function MyRequests() {
                   <div className="request-card-header">
                     <div>
                       <h3 className="request-car-name">{request.car}</h3>
-                      <p className="request-id">Request ID: {request.id}</p>
+                      <p className="request-id">Request ID: {request.displayId ?? request.id}</p>
                     </div>
                     <div className="request-status-badges">
                       <span className={`status-badge ${request.status.toLowerCase().replace(' ', '-')}`}>
                         {request.status}
                       </span>
-                      <span className={`priority-badge ${request.priority.toLowerCase().replace(' ', '-')}`}>
-                        {request.priority}
-                      </span>
+                      {request.priority != null && (
+                        <span className="priority-badge">
+                          {request.priority}
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="request-card-body">
                     <div className="request-image">
-                      <div className="image-placeholder">{request.car}</div>
+                      {request.vehicleImage ? (
+                        <img src={request.vehicleImage} alt={request.car} className="request-image-img" />
+                      ) : (
+                        <div className="image-placeholder">{request.car}</div>
+                      )}
                     </div>
                     <div className="request-info">
                       <div className="request-details-grid">
@@ -183,21 +246,43 @@ export function MyRequests() {
                         <Calendar size={18} />
                           <div>
                             <div className="detail-label">Request Date</div>
-                            <div className="detail-value">{request.requestDate}</div>
+                            <div className="detail-value">
+                              {new Date(request.requestDate).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </div>
                           </div>
                         </div>
                         <div className="detail-item">
                         <Calendar size={18} />
                           <div>
                             <div className="detail-label">Pickup Date</div>
-                            <div className="detail-value">{request.pickupDate}</div>
+                            <div className="detail-value">
+                              {typeof request.pickupDate === 'string' && request.pickupDate.length <= 12
+                                ? request.pickupDate
+                                : new Date(request.pickupDate).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                            </div>
                           </div>
                         </div>
                         <div className="detail-item">
                         <Calendar size={18} />
                           <div>
                             <div className="detail-label">Return Date</div>
-                            <div className="detail-value">{request.returnDate}</div>
+                            <div className="detail-value">
+                              {typeof request.returnDate === 'string' && request.returnDate.length <= 12
+                                ? request.returnDate
+                                : new Date(request.returnDate).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                            </div>
                           </div>
                         </div>
                         <div className="detail-item">
@@ -218,7 +303,7 @@ export function MyRequests() {
                         <DollarSign size={18} />
                           <div>
                             <div className="detail-label">Estimated Amount</div>
-                            <div className="detail-value">QAR {request.estimatedAmount.toLocaleString()}</div>
+                            <div className="detail-value">{request.estimatedAmount != null ? `QAR ${request.estimatedAmount.toLocaleString()}` : '—'}</div>
                           </div>
                         </div>
                       </div>
@@ -228,8 +313,13 @@ export function MyRequests() {
                       </div>
 
                       {request.dealerResponse && (
-                        <div className="dealer-response">
-                          <strong>Dealer Response:</strong> {request.dealerResponse}
+                        <div
+                          className={`dealer-response${request.status === 'Rejected' ? ' dealer-response--rejected' : ''}`}
+                        >
+                          <strong>
+                            {request.status === 'Rejected' ? 'Reason from dealer:' : 'Dealer response:'}
+                          </strong>{' '}
+                          {request.dealerResponse}
                         </div>
                       )}
 
@@ -239,12 +329,14 @@ export function MyRequests() {
                         <div className="request-dealer">
                           <div className="dealer-label">Dealer</div>
                           <div className="dealer-name">{request.dealer}</div>
-                          <div className="dealer-phone">{request.phone}</div>
+                          {request.phone && <div className="dealer-phone">{request.phone}</div>}
                         </div>
-                        <div className="response-time">
-                          <div className="response-label">Response Time</div>
-                          <div className="response-value">{request.responseTime}</div>
-                        </div>
+                        {request.responseTime != null && (
+                          <div className="response-time">
+                            <div className="response-label">Response Time</div>
+                            <div className="response-value">{request.responseTime}</div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="request-actions">
@@ -259,12 +351,14 @@ export function MyRequests() {
                         >
                           View Details
                         </button>
-                        <button
-                          className="action-btn"
-                          onClick={() => window.location.href = `tel:${request.phone}`}
-                        >
-                          Call Dealer
-                        </button>
+                        {request.phone && (
+                          <button
+                            className="action-btn"
+                            onClick={() => { window.location.href = `tel:${request.phone}` }}
+                          >
+                            Call Dealer
+                          </button>
+                        )}
                         <button
                           className="action-btn"
                           onClick={() => window.location.href = `mailto:support@carflow.ai?subject=Request%20${request.id}`}
@@ -289,10 +383,16 @@ export function MyRequests() {
                         )}
                         <button
                           className="action-btn"
-                          onClick={() =>
-                            createBookingRequest({ vehicleId: request.sourceId, note: `Duplicate of ${request.id}` })
-                              .then(() => refreshRequests())
-                          }
+                          onClick={() => {
+                            const req = requestsData.find((r) => r.id === request.sourceId)
+                            if (req)
+                              createBookingRequest({ vehicleId: req.vehicleId, note: req.note ?? `Duplicate of ${request.id}` })
+                                .then(() => {
+                                  refreshRequests()
+                                  toast.success('Request duplicated.')
+                                })
+                                .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to duplicate'))
+                          }}
                         >
                           <Copy size={14} />
                           Duplicate
@@ -303,8 +403,14 @@ export function MyRequests() {
                             type="button"
                             onClick={() => {
                               updateBookingRequestStatus(request.sourceId, 'declined')
-                                .then(() => refreshRequests())
-                                .catch(() => refreshRequests())
+                                .then(() => {
+                                  refreshRequests()
+                                  toast.success('Request cancelled.')
+                                })
+                                .catch((err) => {
+                                  refreshRequests()
+                                  toast.error(err instanceof Error ? err.message : 'Failed to cancel')
+                                })
                             }}
                           >
                             Cancel
@@ -344,8 +450,7 @@ export function MyRequests() {
                 }
               >
                 <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="declined">Rejected</option>
+                <option value="declined">Declined</option>
               </select>
             </label>
             <label>
@@ -365,16 +470,16 @@ export function MyRequests() {
                 type="button"
                 className="action-btn primary"
                 onClick={() => {
-                  updateBookingRequestStatus(editModal.sourceId, editModal.status)
-                    .catch(() => null)
-                    .finally(() => {
-                      setRequestsData((prev) =>
-                        prev.map((item) =>
-                          item.id === editModal.sourceId ? { ...item, note: editModal.note, status: editModal.status } : item
-                        )
-                      )
-                      setEditModal(null)
+                  Promise.all([
+                    updateBookingRequestStatus(editModal.sourceId, editModal.status),
+                    updateBookingRequestNote(editModal.sourceId, editModal.note),
+                  ])
+                    .then(() => {
+                      queryClient.invalidateQueries({ queryKey: ['bookingRequests'] })
+                      toast.success('Request updated.')
                     })
+                    .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to update'))
+                    .finally(() => setEditModal(null))
                 }}
               >
                 Save Changes

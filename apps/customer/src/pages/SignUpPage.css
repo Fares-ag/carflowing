@@ -1,0 +1,114 @@
+.customerSignUp {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fc;
+  padding: 24px;
+}
+
+.customerSignUpCard {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+.customerSignUpTitle {
+  font-size: 22px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.customerSignUpSubtitle {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.customerSignUpForm {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.customerSignUpLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.customerSignUpInput {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  font-size: 14px;
+  color: #111827;
+}
+
+.customerSignUpInput:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.customerSignUpError {
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.customerSignUpButton {
+  margin-top: 8px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: none;
+  background: #111827;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.customerSignUpButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.customerSignUpFooter {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.customerSignUpFooter a {
+  color: #6366f1;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.customerSignUpFooter a:hover {
+  text-decoration: underline;
+}
+
+.customerAuthPage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8f9fc;
+}
+
+@media (max-width: 768px) {
+  .customerSignUp {
+    padding: 16px;
+  }
+
+  .customerSignUpCard {
+    padding: 24px 18px;
+  }
+}

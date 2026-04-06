@@ -97,8 +97,37 @@
   transition: background 0.2s;
 }
 
-.toggle-button:hover {
+.toggle-button:hover:not(:disabled) {
   background: #0056b3;
+}
+
+.toggle-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #6c757d;
+}
+
+.security-item--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.security-item--stack .security-action-group {
+  align-self: flex-end;
+}
+
+.security-footnote {
+  font-size: 13px;
+  color: #666;
+  margin: 0;
+  width: 100%;
+}
+
+.security-local-prefs-note {
+  font-size: 13px;
+  color: #666;
+  margin: 0 0 16px 0;
 }
 
 .divider {
@@ -185,5 +214,72 @@
 .form-select:focus {
   outline: none;
   border-color: #007bff;
+}
+
+.password-form {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 400px;
+}
+
+.password-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+}
+
+.password-form .form-input {
+  padding: 8px 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.password-form .form-input:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.password-form-submit {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 8px 16px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.password-form-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.security-message {
+  font-size: 14px;
+  margin: 0;
+}
+
+.security-message--success {
+  color: #155724;
+}
+
+.security-message--error {
+  color: #721c24;
+}
+
+.security-item.security-password-block {
+  flex-direction: column;
+  align-items: stretch;
 }
 

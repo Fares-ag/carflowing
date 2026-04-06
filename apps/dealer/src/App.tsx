@@ -9,10 +9,12 @@ const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ defau
 const Analytics = lazy(() => import('./pages/Analytics').then(module => ({ default: module.Analytics })))
 const Inventory = lazy(() => import('./pages/Inventory').then(module => ({ default: module.Inventory })))
 const Leads = lazy(() => import('./pages/Leads').then(module => ({ default: module.Leads })))
+const BookingRequests = lazy(() => import('./pages/BookingRequests').then(module => ({ default: module.BookingRequests })))
 const Notifications = lazy(() => import('./pages/Notifications').then(module => ({ default: module.Notifications })))
 const SubscriptionBilling = lazy(() => import('./pages/SubscriptionBilling').then(module => ({ default: module.SubscriptionBilling })))
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })))
 const LoginPage = lazy(() => import('./pages/LoginPage').then(module => ({ default: module.LoginPage })))
+const SignUpPage = lazy(() => import('./pages/SignUpPage').then(m => ({ default: m.SignUpPage })))
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -35,12 +37,14 @@ function App() {
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignUpPage />} />
             <Route element={<ProtectedRoute allow={['dealer']} />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/leads" element={<Leads />} />
+              <Route path="/requests" element={<BookingRequests />} />
               <Route path="/notifications" element={<Notifications />} />
               <Route path="/subscription" element={<SubscriptionBilling />} />
               <Route path="/settings" element={<Settings />} />

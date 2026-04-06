@@ -24,6 +24,7 @@ export function mapProfileToUser(row: any): User {
     role: row.role,
     phone: row.phone ?? undefined,
     avatarUrl: row.avatar_url ?? undefined,
+    status: row.status ?? undefined,
     createdAt: row.created_at,
   }
 }
@@ -41,6 +42,8 @@ export function mapDealer(row: any): Dealer {
     vehiclesCount: row.vehicles_count,
     contactEmail: row.contact_email,
     contactPhone: row.contact_phone ?? undefined,
+    address: row.address ?? undefined,
+    logoUrl: row.logo_url ?? undefined,
     createdAt: row.created_at,
   }
 }
@@ -202,6 +205,7 @@ export function mapBookingRequest(row: any): BookingRequest {
     status: row.status,
     createdAt: row.created_at,
     note: row.note ?? undefined,
+    declineReason: row.decline_reason ?? undefined,
   }
 }
 

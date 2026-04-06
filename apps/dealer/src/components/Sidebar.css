@@ -1,5 +1,5 @@
 .sidebar {
-  width: 224px;
+  width: var(--app-shell-sidebar-width);
   min-height: 100vh;
   background: #fff;
   border-right: 1px solid #e5e5e5;
@@ -44,7 +44,7 @@
   font-size: 20px;
   font-weight: 700;
   color: #333;
-  line-height: 24.5px;
+  line-height: 24px;
 }
 
 .logo-subtitle {
@@ -58,14 +58,14 @@
   padding: 21px 14px;
   display: flex;
   flex-direction: column;
-  gap: 3.5px;
+  gap: 4px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10.5px;
-  padding: 8.75px 10.5px;
+  gap: 10px;
+  padding: 8px 10px;
   color: #666;
   text-decoration: none;
   font-size: 14px;
@@ -90,8 +90,8 @@
 }
 
 .nav-icon {
-  width: 17.5px;
-  height: 17.5px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -107,7 +107,7 @@
   border-top: 1px solid #e5e5e5;
   display: flex;
   flex-direction: column;
-  gap: 10.5px;
+  gap: 10px;
 }
 
 .sidebar-footer .nav-item {
@@ -127,7 +127,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10.5px;
+  padding: 10px;
 }
 
 .user-details {
@@ -179,4 +179,14 @@
   justify-content: center;
   font-size: 12px;
   font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    min-height: auto;
+    border-right: none;
+    border-bottom: 1px solid #e5e5e5;
+  }
 }

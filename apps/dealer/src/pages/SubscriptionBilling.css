@@ -6,9 +6,10 @@
 
 .subscription-billing-content {
   flex: 1;
-  margin-left: 224px;
+  margin-left: var(--app-shell-sidebar-width);
   min-height: 100vh;
-  padding: 78px 21px 21px;
+  padding: calc(var(--app-shell-header-height) + 24px) var(--app-shell-content-padding) var(--app-shell-content-padding);
+  box-sizing: border-box;
 }
 
 .page-header {
@@ -28,6 +29,41 @@
   color: #4a5565;
   margin: 0;
   letter-spacing: -0.15px;
+}
+
+.subscription-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  margin-bottom: 21px;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #4a5565;
+}
+
+.subscription-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: subscription-spin 0.7s linear infinite;
+}
+
+@keyframes subscription-spin {
+  to { transform: rotate(360deg); }
+}
+
+.subscription-error-banner {
+  padding: 14px 18px;
+  margin-bottom: 21px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #b91c1c;
 }
 
 /* Current Plan Section */
@@ -169,6 +205,47 @@
 .status-badge.paid {
   background: #dbeafe;
   color: #1e40af;
+}
+
+.subscription-status.subscription-status--active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.subscription-status.subscription-status--trial {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.subscription-status.subscription-status--past_due {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.subscription-status.subscription-status--canceled {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.subscription-status.subscription-status--unknown {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.subscription-inline-error {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+}
+
+.modal-section-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin: -4px 0 12px;
 }
 
 .plan-actions {
@@ -983,6 +1060,10 @@
   .subscription-billing-content {
     margin-left: 0;
     padding-top: 0;
+    width: 100%;
+    padding-left: var(--app-shell-content-padding-mobile);
+    padding-right: var(--app-shell-content-padding-mobile);
+    padding-bottom: var(--app-shell-content-padding-mobile);
   }
 
   .plan-details-grid {

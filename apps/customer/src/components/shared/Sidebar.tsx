@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BarChart3, CreditCard, Settings, Wallet } from 'lucide-react'
+import { BarChart3, CreditCard, Settings } from 'lucide-react'
 import './Sidebar.css'
 
 export function Sidebar() {
@@ -24,14 +24,7 @@ export function Sidebar() {
           className={`sidebar-item ${isActive('/billing') ? 'active' : ''}`}
         >
           <span className="sidebar-icon"><CreditCard size={16} /></span>
-          <span className="sidebar-label">Subscription & Billing</span>
-        </Link>
-        <Link 
-          to="/payment" 
-          className={`sidebar-item ${isActive('/payment') ? 'active' : ''}`}
-        >
-          <span className="sidebar-icon"><Wallet size={16} /></span>
-          <span className="sidebar-label">Payment</span>
+          <span className="sidebar-label">Billing</span>
         </Link>
         <Link 
           to="/settings" 

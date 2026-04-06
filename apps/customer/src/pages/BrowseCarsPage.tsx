@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { Vehicle } from '@carflow/shared'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { CarflowLogo } from '@carflow/shared'
 import { addFavorite, listCatalogVehicles } from '../services/customerService'
+import { toast } from '../hooks/useToast'
+import { useCartStore } from '../stores/cartStore'
 import { CarCard } from '../components/shared/CarCard'
 import { Footer } from '../components/shared/Footer'
 import { InfoModal } from '../components/shared/InfoModal'
-import { ChevronDown, Menu, Search, User, X } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { ChevronDown, Menu, Search, X } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import './BrowseCarsPage.css'
 
 const BRAND_OPTIONS = ['BMW', 'Mercedes', 'Tesla', 'Toyota', 'Honda', 'Porsche']
@@ -14,34 +16,27 @@ const CATEGORY_OPTIONS = ['Luxury', 'Electric', 'Economy', 'Sedan', 'Sports', 'S
 const FUEL_OPTIONS = ['petrol', 'electric', 'hybrid', 'diesel']
 const TRANSMISSION_OPTIONS = ['Automatic', 'Manual', 'CVT']
 const SEAT_OPTIONS = [2, 4, 5, 7]
-const FEATURE_OPTIONS = [
-  'GPS Navigation',
-  'Bluetooth',
-  'Apple CarPlay',
-  'Sunroof',
-  'Leather Seats',
-  'Heated Seats',
-  'Premium Audio',
-  'Autopilot',
-  'Parking Sensors',
-]
 
 const SORT_OPTIONS = ['Recommended', 'Price: Low to High', 'Price: High to Low', 'Newest']
 
 export function BrowseCarsPage() {
   const navigate = useNavigate()
-  const [vehicles, setVehicles] = useState<Vehicle[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchParams] = useSearchParams()
+  const setVehicle = useCartStore((s) => s.setVehicle)
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['catalog', 'browse', 20],
+    queryFn: () => listCatalogVehicles({ pageSize: 20 }),
+  })
+  const vehicles = data?.items ?? []
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') ?? '')
   const [sortBy, setSortBy] = useState(SORT_OPTIONS[0])
   const [selectedBrands, setSelectedBrands] = useState<string[]>([])
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [selectedFuelTypes, setSelectedFuelTypes] = useState<string[]>([])
   const [selectedTransmissions, setSelectedTransmissions] = useState<string[]>([])
   const [selectedSeats, setSelectedSeats] = useState<number[]>([])
-  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([])
   const [priceMin, setPriceMin] = useState(0)
-  const [priceMax, setPriceMax] = useState(1000)
-  const [minRating, setMinRating] = useState(0)
+  const [priceMax, setPriceMax] = useState(5000)
   const [maxMileage, setMaxMileage] = useState(50000)
   const [yearMin, setYearMin] = useState(2020)
   const [yearMax, setYearMax] = useState(2024)
@@ -49,21 +44,37 @@ export function BrowseCarsPage() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [showFilters, setShowFilters] = useState(true)
 
-  useEffect(() => {
-    listCatalogVehicles({ pageSize: 20 }).then((data) => setVehicles(data.items))
-  }, [])
-
   const handleFavorite = (vehicleId: string) => {
-    addFavorite(vehicleId).then(() =>
-      setInfoModal({
-        title: 'Saved',
-        message: 'Saved to favorites.',
-      })
-    )
+    addFavorite(vehicleId)
+      .then(() => toast.success('Saved to favorites.'))
+      .catch(() => toast.error('Failed to save favorite.'))
+  }
+
+  const handleConfigure = (car: {
+    id: string
+    name: string
+    make: string
+    fuelType: string
+    transmission: string
+    seats: number
+    image?: string
+    price: number
+  }) => {
+    setVehicle({
+      id: car.id,
+      name: car.name,
+      make: car.make,
+      fuelType: car.fuelType,
+      transmission: car.transmission,
+      seats: car.seats,
+      image: car.image,
+      pricePerDay: Math.round(car.price / 6),
+    })
+    navigate('/cart')
   }
 
   const cars = useMemo(() => {
-    return vehicles.map((vehicle, index) => {
+    return vehicles.map((vehicle) => {
       const categoryLabel =
         vehicle.category === 'suv'
           ? 'SUV'
@@ -72,27 +83,22 @@ export function BrowseCarsPage() {
             : vehicle.category === 'luxury'
               ? 'Luxury'
               : 'Sedan'
-      const generatedFeatures = FEATURE_OPTIONS.filter((_, featureIndex) => {
-        return (index + featureIndex) % 2 === 0
-      }).slice(0, 4)
+      const transmissionLabel = vehicle.transmission === 'manual' ? 'Manual' : 'Automatic'
 
       return {
         id: vehicle.id,
         name: vehicle.name,
         type: categoryLabel,
         price: Math.round(vehicle.pricePerDay * 6),
-        rating: 4.2 + (index % 5) * 0.1,
-        reviews: 18 + index * 4,
         seats: vehicle.seats,
-        transmission: vehicle.transmission === 'manual' ? 'Manual' : 'Automatic',
+        transmission: transmissionLabel,
         fuelType: vehicle.fuelType,
-        isPopular: index % 2 === 0,
         isElectric: vehicle.fuelType === 'electric',
         make: vehicle.make,
         model: vehicle.model,
         mileage: vehicle.mileage,
         year: vehicle.year,
-        features: generatedFeatures,
+        image: vehicle.imageUrl,
       }
     })
   }, [vehicles])
@@ -130,18 +136,13 @@ export function BrowseCarsPage() {
         return selectedSeats.includes(car.seats)
       })
       .filter((car) => car.price >= priceMin && car.price <= priceMax)
-      .filter((car) => car.rating >= minRating)
       .filter((car) => car.mileage <= maxMileage)
       .filter((car) => car.year >= yearMin && car.year <= yearMax)
-      .filter((car) => {
-        if (selectedFeatures.length === 0) return true
-        return selectedFeatures.some((feature) => car.features.includes(feature))
-      })
       .sort((a, b) => {
         if (sortBy === 'Price: Low to High') return a.price - b.price
         if (sortBy === 'Price: High to Low') return b.price - a.price
         if (sortBy === 'Newest') return b.year - a.year
-        return b.rating - a.rating
+        return 0
       })
   }, [
     cars,
@@ -151,10 +152,8 @@ export function BrowseCarsPage() {
     selectedFuelTypes,
     selectedTransmissions,
     selectedSeats,
-    selectedFeatures,
     priceMin,
     priceMax,
-    minRating,
     maxMileage,
     yearMin,
     yearMax,
@@ -175,10 +174,8 @@ export function BrowseCarsPage() {
     setSelectedFuelTypes([])
     setSelectedTransmissions([])
     setSelectedSeats([])
-    setSelectedFeatures([])
     setPriceMin(0)
-    setPriceMax(1000)
-    setMinRating(0)
+    setPriceMax(5000)
     setMaxMileage(50000)
     setYearMin(2020)
     setYearMax(2024)
@@ -193,14 +190,10 @@ export function BrowseCarsPage() {
           </Link>
           <nav className="browse-nav__links">
             <Link to="/browse" className="browse-nav__link">Browse Cars</Link>
-            <Link to="/how-it-works" className="browse-nav__link">How it works</Link>
             <Link to="/contact" className="browse-nav__link">Contact</Link>
             <Link to="/faqs" className="browse-nav__link">FAQ's</Link>
           </nav>
           <div className="browse-nav__actions">
-            <button className="browse-nav__icon" type="button" aria-label="Account">
-              <User size={14} />
-            </button>
             <button
               className="browse-nav__menu"
               type="button"
@@ -223,9 +216,6 @@ export function BrowseCarsPage() {
             </button>
             <Link to="/browse" className="browse-menu__link" onClick={() => setIsMenuOpen(false)}>
               Browse Cars
-            </Link>
-            <Link to="/how-it-works" className="browse-menu__link" onClick={() => setIsMenuOpen(false)}>
-              How it works
             </Link>
             <Link to="/contact" className="browse-menu__link" onClick={() => setIsMenuOpen(false)}>
               Contact
@@ -252,14 +242,16 @@ export function BrowseCarsPage() {
               type="text"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search by brand, model, features, or anything..."
+              placeholder="Search by brand, model, or name..."
             />
           </div>
         </div>
       </section>
 
       <section className="browse-content">
-        <div className="browse-content__inner">
+        <div
+          className={`browse-content__inner${showFilters ? '' : ' browse-content__inner--no-filters'}`}
+        >
           <aside className={`browse-filters ${showFilters ? '' : 'hidden'}`}>
             <div className="filter-section">
               <label>Sort By</label>
@@ -284,7 +276,7 @@ export function BrowseCarsPage() {
                 <input
                   type="range"
                   min={0}
-                  max={1000}
+                  max={5000}
                   value={priceMin}
                   onChange={(event) => {
                     const next = Number(event.target.value)
@@ -294,7 +286,7 @@ export function BrowseCarsPage() {
                 <input
                   type="range"
                   min={0}
-                  max={1000}
+                  max={5000}
                   value={priceMax}
                   onChange={(event) => {
                     const next = Number(event.target.value)
@@ -399,20 +391,6 @@ export function BrowseCarsPage() {
             <div className="filter-divider" />
 
             <div className="filter-section">
-              <label>Minimum Rating: {minRating.toFixed(1)}</label>
-              <input
-                type="range"
-                min={0}
-                max={5}
-                step={0.1}
-                value={minRating}
-                onChange={(event) => setMinRating(Number(event.target.value))}
-              />
-            </div>
-
-            <div className="filter-divider" />
-
-            <div className="filter-section">
               <label>Maximum Mileage: {maxMileage.toLocaleString()} km</label>
               <input
                 type="range"
@@ -454,24 +432,6 @@ export function BrowseCarsPage() {
 
             <div className="filter-divider" />
 
-            <div className="filter-section">
-              <label>Features</label>
-              <div className="filter-list">
-                {FEATURE_OPTIONS.map((feature) => (
-                  <label key={feature} className="filter-option">
-                    <input
-                      type="checkbox"
-                      checked={selectedFeatures.includes(feature)}
-                      onChange={() => toggleValue(selectedFeatures, feature, setSelectedFeatures)}
-                    />
-                    <span>{feature}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="filter-divider" />
-
             <button type="button" className="clear-filters" onClick={handleClearFilters}>
               <X size={14} />
               Clear All Filters
@@ -489,7 +449,11 @@ export function BrowseCarsPage() {
                 {showFilters ? 'Hide Filters' : 'Show Filters'}
               </button>
             </div>
-            {filteredCars.length === 0 ? (
+            {isLoading ? (
+              <div className="empty-state">Loading vehicles…</div>
+            ) : isError ? (
+              <div className="empty-state">Failed to load vehicles. Please try again later.</div>
+            ) : filteredCars.length === 0 ? (
               <div className="empty-state">No cars match your filters yet.</div>
             ) : (
               <div className="browse-grid">
@@ -500,14 +464,12 @@ export function BrowseCarsPage() {
                     name={car.name}
                     type={car.type}
                     price={car.price}
-                    rating={car.rating}
-                    reviews={car.reviews}
                     seats={car.seats}
                     transmission={car.transmission}
                     fuelType={car.fuelType}
-                    isPopular={car.isPopular}
+                    image={car.image}
                     isElectric={car.isElectric}
-                    onConfigure={() => navigate('/cart')}
+                    onConfigure={() => handleConfigure(car)}
                     onFavorite={() => handleFavorite(car.id)}
                     pricePeriod="month"
                   />

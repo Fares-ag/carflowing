@@ -15,6 +15,10 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --app-shell-sidebar-width: 224px;
+  --app-shell-header-height: 54px;
+  --app-shell-content-padding: 21px;
+  --app-shell-content-padding-mobile: 16px;
 }
 
 body {

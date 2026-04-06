@@ -84,6 +84,18 @@
   color: #856404;
 }
 
+.status-badge.neutral {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.verification-phone-note {
+  font-size: 13px;
+  color: #666;
+  margin: -8px 0 0 0;
+  padding-left: 4px;
+}
+
 .verification-upload-section {
   padding: 24px;
   background: #f9f9f9;
@@ -117,6 +129,35 @@
   font-weight: 500;
 }
 
+.upload-status.uploaded {
+  background: #d4edda;
+  color: #155724;
+}
+
+.verification-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.upload-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.upload-loading {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #666;
+}
+
 .upload-area {
   text-align: center;
   padding: 24px;
@@ -125,6 +166,10 @@
 .upload-icon {
   font-size: 56px;
   margin-bottom: 16px;
+}
+
+.verification-upload-check {
+  color: #155724;
 }
 
 .upload-title {

@@ -18,10 +18,9 @@ import {
   Search,
   Settings,
   Users,
-  Zap,
 } from 'lucide-react'
 import { CarflowLogo } from '@carflow/shared'
-import { logout } from '../services/authService'
+import { useAuth } from '../contexts/AuthContext'
 import './AdminLayout.css'
 
 export interface AdminLayoutProps {
@@ -38,6 +37,7 @@ const NAV_ITEMS: Array<{ to: string; label: string; icon: ReactNode }> = [
   { to: '/dealers', label: 'Dealers', icon: <Building2 size={18} /> },
   { to: '/payments', label: 'Payments', icon: <CreditCard size={18} /> },
   { to: '/plans', label: 'Plans', icon: <Package size={18} /> },
+  { to: '/booking-requests', label: 'Booking Requests', icon: <Receipt size={18} /> },
   { to: '/complaints', label: 'Complaints', icon: <AlertTriangle size={18} /> },
   { to: '/messages', label: 'Messages', icon: <MessagesSquare size={18} /> },
   { to: '/analytics', label: 'Analytics', icon: <LineChart size={18} /> },
@@ -45,6 +45,7 @@ const NAV_ITEMS: Array<{ to: string; label: string; icon: ReactNode }> = [
 
 export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
   const navigate = useNavigate()
+  const { logout } = useAuth()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   return (
     <div className={`adminDash ${isSidebarCollapsed ? 'adminDash--collapsed' : ''}`}>
@@ -79,8 +80,7 @@ export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
               className="adminNavItem adminNavItem--danger"
               type="button"
               onClick={async () => {
-                await logout()
-                navigate('/login')
+                await logout().then(() => navigate('/login'))
               }}
             >
               <span className="adminNavIcon" aria-hidden="true">
@@ -113,8 +113,8 @@ export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
             Home
           </button>
           <button className="adminPillBtn" type="button" onClick={() => navigate('/cars')}>
-            <Zap size={16} />
-            Quick Select
+            <Car size={16} />
+            Cars
           </button>
           <button
             className="adminIconBtn"
@@ -127,8 +127,8 @@ export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
           <button
             className="adminIconBtn adminIconBtn--dot"
             type="button"
-            aria-label="Notifications"
-            onClick={() => navigate('/complaints')}
+            aria-label="Messages"
+            onClick={() => navigate('/messages')}
           >
             <Bell size={18} />
           </button>

@@ -44,11 +44,35 @@ const buildAdminDashboard = (): AdminDashboardData => {
     { date: '2026-01', value: 7100 },
   ]
 
+  const recentRentals = db.rentals.slice(0, 5).map((rental) => {
+    const vehicle = db.vehicles.find((v) => v.id === rental.vehicleId)
+    const customer = db.users.find((u) => u.id === rental.customerId)
+    return {
+      ...rental,
+      customerName: customer?.name ?? null,
+      customerEmail: customer?.email ?? null,
+      vehicleName: vehicle?.name ?? null,
+      vehicleYear: vehicle?.year ?? null,
+    }
+  })
+  const bookingStatusCounts = {
+    active: db.rentals.filter((r) => r.status === 'active').length,
+    reserved: db.rentals.filter((r) => r.status === 'reserved').length,
+    completed: db.rentals.filter((r) => r.status === 'completed').length,
+    cancelled: db.rentals.filter((r) => r.status === 'cancelled').length,
+  }
+  const today = new Date().toISOString().slice(0, 10)
+  const todayBookingsCount = db.rentals.filter((r) => {
+    const created = (r as { createdAt?: string; created_at?: string }).createdAt ?? (r as { createdAt?: string; created_at?: string }).created_at ?? ''
+    return String(created).startsWith(today)
+  }).length
   return {
     kpis,
     rentalsTrend,
     revenueTrend,
-    recentRentals: db.rentals.slice(0, 5),
+    recentRentals,
+    bookingStatusCounts,
+    todayBookingsCount,
   }
 }
 
