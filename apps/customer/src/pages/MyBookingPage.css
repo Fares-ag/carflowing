@@ -1,0 +1,253 @@
+.my-booking-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8f9fc;
+}
+
+.my-booking-main {
+  flex: 1;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.my-booking-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.my-booking-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  color: #0f172a;
+}
+
+.my-booking-header p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.my-booking-success {
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 14px;
+}
+
+.my-booking-section-title {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  color: #475569;
+}
+
+.my-booking-current {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.my-booking-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.my-booking-empty,
+.my-booking-empty-card {
+  text-align: center;
+  padding: 48px 16px;
+  color: #64748b;
+}
+
+.my-booking-empty-card {
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.my-booking-cta {
+  display: inline-block;
+  margin-top: 16px;
+  padding: 12px 20px;
+  background: #4f46e5;
+  color: #fff;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.my-booking-past {
+  margin-top: 32px;
+}
+
+.my-booking-past h2 {
+  font-size: 1.1rem;
+  margin-bottom: 16px;
+}
+
+.journey-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.05);
+}
+
+.journey-card--compact {
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+.journey-card-top {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.journey-card-image {
+  width: 88px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.journey-card-image--placeholder {
+  background: #e2e8f0;
+}
+
+.journey-card-top h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.journey-card-meta {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.journey-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.journey-step {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-left: 2px solid #e2e8f0;
+  margin-left: 11px;
+  padding-left: 20px;
+  opacity: 0.45;
+}
+
+.journey-step.done,
+.journey-step.active {
+  opacity: 1;
+}
+
+.journey-step.done {
+  border-left-color: #4f46e5;
+}
+
+.journey-step.active {
+  border-left-color: #4f46e5;
+}
+
+.journey-step-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: -33px;
+  flex-shrink: 0;
+}
+
+.journey-step.done .journey-step-icon,
+.journey-step.active .journey-step-icon {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.journey-step p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.journey-pickup {
+  font-weight: 500;
+  color: #0f172a !important;
+}
+
+.journey-declined {
+  color: #b91c1c;
+  font-size: 14px;
+}
+
+.journey-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+  align-items: center;
+}
+
+.journey-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+}
+
+.journey-btn--wa {
+  background: #25d366;
+  color: #fff;
+}
+
+.journey-btn--primary {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.journey-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}

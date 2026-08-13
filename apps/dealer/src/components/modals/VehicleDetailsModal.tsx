@@ -19,9 +19,9 @@ export type VehicleDetailsVehicle = {
   fuelType: 'gas' | 'diesel' | 'electric' | 'hybrid'
   transmission: 'automatic' | 'manual'
   seats: number
-  rating: number
-  totalBookings: number
-  totalRevenueQar: number
+  rating?: number
+  totalBookings?: number
+  totalRevenueQar?: number
   imageUrl?: string
 }
 
@@ -187,28 +187,41 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
                 <div className="vfdSectionTitle">Performance Metrics</div>
                 <div className="vfdDivider" />
                 <div className="vfdMetricGrid">
-                  <div className="vfdMetricCard vfdMetricCard--blue">
-                    <div className="vfdMetricLabel">Total Bookings</div>
-                    <div className="vfdMetricValue">{vehicle.totalBookings}</div>
-                  </div>
-                  <div className="vfdMetricCard vfdMetricCard--green">
-                    <div className="vfdMetricLabel">Total Revenue</div>
-                    <div className="vfdMetricValue">QAR {vehicle.totalRevenueQar.toLocaleString()}</div>
-                  </div>
-                  <div className="vfdMetricCard vfdMetricCard--yellow">
-                    <div className="vfdMetricLabel">Customer Rating</div>
-                    <div className="vfdMetricValue">
-                      <span className="vfdStar" aria-hidden="true">
-                        ★
-                      </span>{' '}
-                      {vehicle.rating.toFixed(1)}
+                  {(vehicle.totalBookings ?? 0) > 0 && (
+                    <div className="vfdMetricCard vfdMetricCard--blue">
+                      <div className="vfdMetricLabel">Total Bookings</div>
+                      <div className="vfdMetricValue">{vehicle.totalBookings}</div>
                     </div>
-                  </div>
+                  )}
+                  {(vehicle.totalRevenueQar ?? 0) > 0 && (
+                    <div className="vfdMetricCard vfdMetricCard--green">
+                      <div className="vfdMetricLabel">Total Revenue</div>
+                      <div className="vfdMetricValue">
+                        QAR {(vehicle.totalRevenueQar ?? 0).toLocaleString()}
+                      </div>
+                    </div>
+                  )}
+                  {(vehicle.rating ?? 0) > 0 && (
+                    <div className="vfdMetricCard vfdMetricCard--yellow">
+                      <div className="vfdMetricLabel">Customer Rating</div>
+                      <div className="vfdMetricValue">
+                        <span className="vfdStar" aria-hidden="true">
+                          ★
+                        </span>{' '}
+                        {(vehicle.rating ?? 0).toFixed(1)}
+                      </div>
+                    </div>
+                  )}
                   <div className="vfdMetricCard vfdMetricCard--purple">
                     <div className="vfdMetricLabel">Status</div>
                     <div className="vfdMetricValue vfdMetricValue--small">{vehicle.status}</div>
                   </div>
                 </div>
+                {(vehicle.totalBookings ?? 0) === 0 &&
+                  (vehicle.totalRevenueQar ?? 0) === 0 &&
+                  (vehicle.rating ?? 0) === 0 && (
+                    <p className="vfdPlaceholderMsg">No performance data yet for this vehicle.</p>
+                  )}
               </section>
             </div>
           </div>

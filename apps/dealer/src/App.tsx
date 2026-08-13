@@ -15,6 +15,7 @@ const SubscriptionBilling = lazy(() => import('./pages/SubscriptionBilling').the
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })))
 const LoginPage = lazy(() => import('./pages/LoginPage').then(module => ({ default: module.LoginPage })))
 const SignUpPage = lazy(() => import('./pages/SignUpPage').then(m => ({ default: m.SignUpPage })))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })))
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -49,6 +50,7 @@ function App() {
               <Route path="/subscription" element={<SubscriptionBilling />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
       </BrowserRouter>
@@ -57,4 +59,3 @@ function App() {
 }
 
 export default App
-

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatCurrency } from '@carflow/shared'
 import { toast } from 'sonner'
-import { listPaymentsWithDetails, type PaymentWithDetails } from '../services/adminService'
+import {
+  getPaymentSummary,
+  listPaymentsWithDetails,
+  refundPayment,
+  type PaymentSummary,
+  type PaymentWithDetails,
+} from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { InfoModal } from '../components/InfoModal'
 import {
@@ -50,14 +56,20 @@ export function PaymentsPage() {
   const [methodFilter, setMethodFilter] = useState('all')
   const [minAmount, setMinAmount] = useState('')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [summary, setSummary] = useState<PaymentSummary | null>(null)
+  const [refundingId, setRefundingId] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
     setIsLoading(true)
     setError(null)
-    listPaymentsWithDetails({ page, pageSize })
-      .then((data) => {
+    Promise.all([
+      listPaymentsWithDetails({ page, pageSize }),
+      getPaymentSummary(),
+    ])
+      .then(([data, summaryData]) => {
         setPayments(data.items)
         setTotal(data.total)
+        setSummary(summaryData)
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : 'Failed to load payments'
@@ -74,16 +86,13 @@ export function PaymentsPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const stats = useMemo(() => {
-    const completed = payments.filter(payment => payment.status === 'completed')
-    const pending = payments.filter(payment => payment.status === 'pending')
-    const refunds = payments.filter(payment => payment.status === 'refunded')
-    const revenueTotal = completed.reduce((sum, payment) => sum + payment.amount, 0)
-    const refundTotal = refunds.reduce((sum, payment) => sum + payment.amount, 0)
-
+    if (!summary) {
+      return []
+    }
     return [
       {
         label: 'Total Revenue',
-        value: formatCurrency(revenueTotal),
+        value: formatCurrency(summary.totalRevenue),
         sub: 'From completed payments',
         icon: <CircleDollarSign size={18} />,
         badgeTone: 'success' as const,
@@ -91,17 +100,17 @@ export function PaymentsPage() {
       },
       {
         label: 'Pending Payments',
-        value: String(pending.length),
+        value: String(summary.pendingCount),
         sub: 'Awaiting confirmation',
         icon: <Clock size={18} />,
         badgeIcon: <BadgeX size={14} />,
-        badge: String(pending.length),
+        badge: String(summary.pendingCount),
         badgeTone: 'warning' as const,
         iconTone: 'amber' as const,
       },
       {
         label: 'Completed',
-        value: String(completed.length),
+        value: String(summary.completedCount),
         sub: 'Successful transactions',
         icon: <CheckCircle size={18} />,
         badgeTone: 'purple' as const,
@@ -109,29 +118,28 @@ export function PaymentsPage() {
       },
       {
         label: 'Refunds',
-        value: String(refunds.length),
-        sub: 'Total refunded transactions',
+        value: String(summary.refundedCount),
+        sub: summary.needsRefundCount
+          ? `${summary.needsRefundCount} need manual refund`
+          : 'Total refunded transactions',
         icon: <WalletCards size={18} />,
         badgeIcon: <BadgeX size={14} />,
-        badge: formatCurrency(refundTotal),
+        badge: formatCurrency(summary.refundTotal),
         badgeTone: 'danger' as const,
         iconTone: 'violet' as const,
       },
     ]
-  }, [payments])
+  }, [summary])
 
   const transactions = useMemo(() => {
     return payments.map((payment) => {
       const created = new Date(payment.createdAt)
       const days = Math.max(0, Math.floor((Date.now() - created.getTime()) / 86400000))
       const customer =
-        payment.customerName?.trim() ||
-        payment.customerEmail?.trim() ||
+        payment.customer?.name?.trim() ||
+        payment.customer?.email?.trim() ||
         '—'
-      const car =
-        payment.type === 'subscription'
-          ? 'Plan subscription'
-          : payment.vehicleName?.trim() || '—'
+      const car = payment.type === 'subscription' ? 'Plan subscription' : '—'
       return {
         paymentId: payment.id,
         id: payment.id.slice(0, 8).toUpperCase(),
@@ -143,6 +151,7 @@ export function PaymentsPage() {
         method: payment.method.replace('_', ' '),
         amount: formatCurrency(payment.amount),
         age: `${days} day${days === 1 ? '' : 's'}`,
+        needsRefund: payment.needsRefund === true,
       }
     })
   }, [payments])
@@ -352,8 +361,30 @@ export function PaymentsPage() {
                     <div className="paymentsRowRight">
                       <div className="paymentsRowAmount">
                         <div>{txn.amount}</div>
+                        {txn.needsRefund ? <span className="paymentsBadge paymentsBadge--failed">needs refund</span> : null}
                         {txn.age && <span>{txn.age}</span>}
                       </div>
+                      {txn.needsRefund || txn.status === 'failed' ? (
+                        <button
+                          className="paymentsRowAction"
+                          type="button"
+                          disabled={refundingId === txn.paymentId}
+                          onClick={() => {
+                            setRefundingId(txn.paymentId)
+                            refundPayment(txn.paymentId)
+                              .then(() => {
+                                toast.success('Payment marked refunded')
+                                refresh()
+                              })
+                              .catch((err) =>
+                                toast.error(err instanceof Error ? err.message : 'Refund failed')
+                              )
+                              .finally(() => setRefundingId(null))
+                          }}
+                        >
+                          Refund
+                        </button>
+                      ) : null}
                       <button
                         className="paymentsRowAction"
                         type="button"

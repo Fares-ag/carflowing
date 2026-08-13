@@ -73,6 +73,8 @@ export interface Vehicle {
   fuelType: 'gas' | 'diesel' | 'electric' | 'hybrid'
   seats: number
   imageUrl?: string
+  color?: string
+  licensePlate?: string
 }
 
 export type RentalStatus = 'reserved' | 'active' | 'completed' | 'cancelled'
@@ -83,11 +85,15 @@ export interface Rental {
   customerId: string
   dealerId: string
   vehicleId: string
+  bookingRequestId?: string
   startDate: string
   endDate: string
   status: RentalStatus
   totalAmount: number
   paymentStatus: PaymentStatus
+  pickupLocation?: string
+  pickupDate?: string
+  pickupTime?: string
   createdAt: string
 }
 
@@ -103,6 +109,18 @@ export interface Payment {
   status: PaymentStatus
   type: PaymentType
   method: PaymentMethodType
+  /** Payment gateway that processed this payment, e.g. `manual` (offline) or `skipcash`. */
+  provider?: string
+  /** Gateway-side transaction/payment id, when processed by an online provider. */
+  externalTransactionId?: string
+  /** Vehicle the payment intent was created for, before a booking request exists. */
+  vehicleId?: string
+  /** Booking request created once an online payment is confirmed. */
+  bookingRequestId?: string
+  /** Checkout cart JSON, carried over to the booking request created on payment success. */
+  note?: string
+  /** Ops flag when customer paid but booking creation failed. */
+  needsRefund?: boolean
   createdAt: string
 }
 
@@ -160,6 +178,7 @@ export interface Notification {
 }
 
 export type LeadStage = 'new' | 'contacted' | 'qualified' | 'converted' | 'closed'
+export type LeadPriority = 'low' | 'medium' | 'high'
 
 export interface Lead {
   id: string
@@ -169,6 +188,8 @@ export interface Lead {
   phone?: string
   source: string
   stage: LeadStage
+  priority?: LeadPriority
+  notes?: string
   createdAt: string
 }
 

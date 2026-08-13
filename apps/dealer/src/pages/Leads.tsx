@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createLead, listLeads, listInventory, removeLead, updateLead } from '../services/dealerService'
+import { toast } from 'sonner'
 import { Sidebar } from '../components/Sidebar'
 import { Header } from '../components/Header'
 import {
@@ -35,6 +36,27 @@ interface VehicleOption {
   name: string
 }
 
+function mapLeadPriority(priority?: string): LeadRow['priority'] {
+  if (priority === 'high') return 'High'
+  if (priority === 'low') return 'Low'
+  return 'Medium'
+}
+
+function vehicleInterestFromNotes(notes?: string): string {
+  if (!notes) return '—'
+  const match = notes.match(/^Vehicle interest:\s*(.+)$/m)
+  return match?.[1]?.trim() || '—'
+}
+
+function buildLeadNotes(vehicleInterest: string, notes: string): string | undefined {
+  const interest = vehicleInterest.trim()
+  const body = notes.trim()
+  const parts: string[] = []
+  if (interest) parts.push(`Vehicle interest: ${interest}`)
+  if (body) parts.push(body)
+  return parts.length ? parts.join('\n') : undefined
+}
+
 export function Leads() {
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
@@ -56,32 +78,47 @@ export function Leads() {
   const [manageScore, setManageScore] = useState(0)
   const [manageSource, setManageSource] = useState('Website')
   const [manageNotes, setManageNotes] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  const refreshLeads = useCallback(() => {
-    listLeads({ pageSize: 12 }).then((data) => {
-      const mapped = data.items.map((lead) => ({
-        id: lead.id,
-        name: lead.name,
-        email: lead.email,
-        phone: lead.phone ?? '—',
-        vehicle: lead.source ?? '—',
-        score: 0,
-        status: (lead.stage === 'contacted' ? 'Contacted' : lead.stage === 'qualified' ? 'Qualified' : 'New') as LeadRow['status'],
-        priority: (lead.stage === 'qualified' ? 'High' : lead.stage === 'contacted' ? 'Medium' : 'Low') as LeadRow['priority'],
-        source: lead.source ?? 'Website',
-        createdAt: lead.createdAt,
-        avatar: lead.name
-          .split(' ')
-          .map(part => part[0])
-          .join('')
-          .slice(0, 2),
-      }))
-      setLeads(mapped)
-    })
+  const refreshLeads = useCallback((showLoading = false) => {
+    if (showLoading) setLoading(true)
+    setLoadError(null)
+    return listLeads({ pageSize: 100 })
+      .then((data) => {
+        const mapped = data.items.map((lead) => ({
+          id: lead.id,
+          name: lead.name,
+          email: lead.email,
+          phone: lead.phone ?? '—',
+          vehicle: vehicleInterestFromNotes(lead.notes),
+          score: 0,
+          status: (lead.stage === 'contacted'
+            ? 'Contacted'
+            : lead.stage === 'qualified'
+              ? 'Qualified'
+              : 'New') as LeadRow['status'],
+          priority: mapLeadPriority(lead.priority),
+          source: lead.source ?? 'Website',
+          createdAt: lead.createdAt,
+          avatar: lead.name
+            .split(' ')
+            .map((part) => part[0])
+            .join('')
+            .slice(0, 2),
+        }))
+        setLeads(mapped)
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : 'Failed to load leads'
+        setLoadError(message)
+        toast.error(message)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
-    refreshLeads()
+    void refreshLeads(true)
   }, [refreshLeads])
 
   useEffect(() => {
@@ -157,13 +194,13 @@ export function Leads() {
       source: newLeadSource,
       stage:
         newLeadStatus === 'Qualified' ? 'qualified' : newLeadStatus === 'Contacted' ? 'contacted' : 'new',
-      priority: newLeadPriority.toLowerCase(),
-      notes: newLeadNotes.trim() || undefined,
+      priority: newLeadPriority.toLowerCase() as 'low' | 'medium' | 'high',
+      notes: buildLeadNotes(newLeadVehicle, newLeadNotes),
     }).then(() => {
-      refreshLeads()
+      void refreshLeads()
       handleCloseAddModal()
     }).catch((err) => {
-      alert(err instanceof Error ? err.message : 'Failed to create lead')
+      toast.error(err instanceof Error ? err.message : 'Failed to create lead')
     })
   }, [
     handleCloseAddModal,
@@ -174,6 +211,7 @@ export function Leads() {
     newLeadPriority,
     newLeadSource,
     newLeadStatus,
+    newLeadVehicle,
     refreshLeads,
   ])
 
@@ -182,13 +220,13 @@ export function Leads() {
     updateLead(selectedLead.id, {
       stage: manageStatus === 'Qualified' ? 'qualified' : manageStatus === 'Contacted' ? 'contacted' : 'new',
       source: manageSource,
-      priority: managePriority.toLowerCase(),
+      priority: managePriority.toLowerCase() as 'low' | 'medium' | 'high',
       notes: manageNotes.trim() || undefined,
     }).then(() => {
       refreshLeads()
       handleCloseManageModal()
     }).catch((err) => {
-      alert(err instanceof Error ? err.message : 'Failed to update lead')
+      toast.error(err instanceof Error ? err.message : 'Failed to update lead')
     })
   }, [handleCloseManageModal, manageNotes, managePriority, manageSource, manageStatus, refreshLeads, selectedLead])
 
@@ -272,7 +310,21 @@ export function Leads() {
           </div>
 
           <div className="leads-list">
-            {filteredLeads.map((lead) => (
+            {loading ? <p className="page-subtitle">Loading leads…</p> : null}
+            {loadError && !loading ? (
+              <p className="page-subtitle" role="alert">
+                {loadError}{' '}
+                <button type="button" className="add-lead-btn" onClick={() => void refreshLeads(true)}>
+                  Retry
+                </button>
+              </p>
+            ) : null}
+            {!loading && !loadError && filteredLeads.length === 0 ? (
+              <p className="page-subtitle">No leads yet.</p>
+            ) : null}
+            {!loading &&
+              !loadError &&
+              filteredLeads.map((lead) => (
               <div key={lead.id} className="lead-item">
                 <div className="lead-info">
                   <div className="lead-avatar">{lead.avatar}</div>

@@ -34,13 +34,17 @@ export function PlansPage() {
   const [featureList, setFeatureList] = useState<string[]>([])
   const [isPopular, setIsPopular] = useState(false)
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [deletePlanId, setDeletePlanId] = useState<string | null>(null)
+  const [deletePlanName, setDeletePlanName] = useState('')
   const [planStats, setPlanStats] = useState<Awaited<ReturnType<typeof getPlanStats>> | null>(null)
 
   const refreshPlans = () => {
-    Promise.all([listPlans(), getPlanStats()]).then(([plansData, stats]) => {
-      setPlans(plansData)
-      setPlanStats(stats)
-    })
+    Promise.all([listPlans(), getPlanStats()])
+      .then(([plansData, stats]) => {
+        setPlans(plansData)
+        setPlanStats(stats)
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load plans'))
   }
 
   const openEditPlan = (planId: string) => {
@@ -60,11 +64,7 @@ export function PlansPage() {
   }, [])
 
   const planCards = useMemo(() => {
-    const subByPlan = planStats?.subscriberCountByPlanId ?? {}
-    const revByPlan = planStats?.revenueByPlanId ?? {}
     return plans.map((plan) => {
-      const subscribers = subByPlan[plan.id] ?? 0
-      const revenue = revByPlan[plan.id] ?? 0
       const description =
         plan.tier === 'starter'
           ? 'Perfect for small dealerships getting started'
@@ -81,8 +81,8 @@ export function PlansPage() {
         price: formatCurrency(plan.priceMonthly),
         yearly: `${formatCurrency(plan.priceYearly)}/year`,
         save: '(Save 17%)',
-        subscribers: String(subscribers),
-        revenue: revenue >= 1000 ? `${(revenue / 1000).toFixed(1)}K` : String(revenue),
+        subscribers: '—',
+        revenue: '—',
         features: [
           ...plan.features.map(label => ({ label, enabled: true })),
           { label: 'Custom branding', enabled: plan.tier !== 'starter' },
@@ -93,7 +93,7 @@ export function PlansPage() {
         popular: plan.tier === 'professional',
       }
     })
-  }, [plans, planStats])
+  }, [plans])
 
   const filteredCards = useMemo(() => {
     let base = planCards
@@ -128,23 +128,16 @@ export function PlansPage() {
   }
 
   const stats = useMemo(() => {
-    const total = filteredCards.length
-    const active = filteredCards.filter(plan => plan.status === 'Active').length
-    const subscribers = planStats?.totalSubscribers ?? filteredCards.reduce((sum, plan) => sum + Number(plan.subscribers), 0)
-    const revenue = planStats?.totalRevenue ?? filteredCards.reduce((sum, plan) => {
-      const r = plan.revenue.replace(/[^\d.]/g, '')
-      return sum + (r.endsWith('K') ? parseFloat(r) * 1000 : parseFloat(r || '0'))
-    }, 0)
-    const growthRate = planStats?.growthRate ?? 0
+    const totalPlans = planStats?.totalPlans ?? plans.length
+    const activePlans = planStats?.activePlans ?? plans.filter((p) => p.status === 'active').length
+    const activeSubscriptions = planStats?.activeSubscriptions ?? 0
 
     return {
-      total,
-      active,
-      subscribers,
-      revenue,
-      growthRate,
+      totalPlans,
+      activePlans,
+      activeSubscriptions,
     }
-  }, [filteredCards, planStats])
+  }, [plans, planStats])
 
   return (
     <AdminLayout title="Plans" subtitle="Subscription plans management">
@@ -215,10 +208,10 @@ export function PlansPage() {
               <div className="plansStatIcon plansStatIcon--blue">
                 <Users size={18} />
               </div>
-              <div className="plansStatBadge plansStatBadge--blue">{stats.active} Active</div>
+              <div className="plansStatBadge plansStatBadge--blue">{stats.activePlans} Active</div>
             </div>
             <div className="plansStatLabel">Total Plans</div>
-            <div className="plansStatValue">{stats.total}</div>
+            <div className="plansStatValue">{stats.totalPlans}</div>
             <div className="plansStatMeta">Across all categories</div>
           </div>
           <div className="plansStatCard">
@@ -227,9 +220,9 @@ export function PlansPage() {
                 <Users size={18} />
               </div>
             </div>
-            <div className="plansStatLabel">Total Subscribers</div>
-            <div className="plansStatValue">{stats.subscribers}</div>
-            <div className="plansStatMeta">Active subscriptions</div>
+            <div className="plansStatLabel">Active Subscriptions</div>
+            <div className="plansStatValue">{stats.activeSubscriptions}</div>
+            <div className="plansStatMeta">Platform-wide count</div>
           </div>
           <div className="plansStatCard">
             <div className="plansStatTop">
@@ -237,9 +230,9 @@ export function PlansPage() {
                 <LineChart size={18} />
               </div>
             </div>
-            <div className="plansStatLabel">Monthly Revenue</div>
-            <div className="plansStatValue">{formatCurrency(stats.revenue)}</div>
-            <div className="plansStatMeta">From subscriptions</div>
+            <div className="plansStatLabel">Plans Shown</div>
+            <div className="plansStatValue">{filteredCards.length}</div>
+            <div className="plansStatMeta">After filters</div>
           </div>
           <div className="plansStatCard">
             <div className="plansStatTop">
@@ -247,9 +240,9 @@ export function PlansPage() {
                 <TrendingUp size={18} />
               </div>
             </div>
-            <div className="plansStatLabel">Growth Rate</div>
-            <div className="plansStatValue">{stats.growthRate}%</div>
-            <div className="plansStatMeta">Month over month</div>
+            <div className="plansStatLabel">Per-plan metrics</div>
+            <div className="plansStatValue">—</div>
+            <div className="plansStatMeta">Not tracked by API yet</div>
           </div>
         </div>
 
@@ -339,16 +332,8 @@ export function PlansPage() {
                   className="plansBtn plansBtn--ghost plansBtn--danger"
                   type="button"
                   onClick={() => {
-                    if (window.confirm(`Delete plan "${plan.name}"?`)) {
-                      deletePlan(plan.id)
-                        .then(() => refreshPlans())
-                        .catch((err) =>
-                          setInfoModal({
-                            title: 'Error',
-                            message: err instanceof Error ? err.message : 'Failed to delete plan',
-                          })
-                        )
-                    }
+                    setDeletePlanId(plan.id)
+                    setDeletePlanName(plan.name)
                   }}
                 >
                   <X size={16} />
@@ -525,6 +510,27 @@ export function PlansPage() {
         title={infoModal?.title ?? ''}
         message={infoModal?.message ?? ''}
         onClose={() => setInfoModal(null)}
+      />
+      <InfoModal
+        open={!!deletePlanId}
+        title="Delete plan?"
+        message={`Delete plan "${deletePlanName}"? This cannot be undone.`}
+        onClose={() => setDeletePlanId(null)}
+        onConfirm={() => {
+          if (!deletePlanId) return
+          deletePlan(deletePlanId)
+            .then(() => {
+              setDeletePlanId(null)
+              refreshPlans()
+            })
+            .catch((err) =>
+              setInfoModal({
+                title: 'Error',
+                message: err instanceof Error ? err.message : 'Failed to delete plan',
+              })
+            )
+        }}
+        confirmLabel="Delete"
       />
     </AdminLayout>
   )

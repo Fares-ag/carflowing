@@ -132,27 +132,13 @@ export default function PreferencesSection() {
 
           <div className="preference-item">
             <div className="preference-info">
-              <label className="preference-label">Show Profile to Other Users</label>
-              <p className="preference-description">Allow dealers to see your basic profile information</p>
+              <label className="preference-label">Show Profile to Dealers</label>
+              <p className="preference-description">Allow dealers to see your basic profile when reviewing requests</p>
             </div>
             <button
               type="button"
               className={`toggle-switch ${preferences.showProfile ? 'active' : ''}`}
               onClick={() => setPreferences({ ...preferences, showProfile: !preferences.showProfile })}
-            >
-              <span className="toggle-slider"></span>
-            </button>
-          </div>
-
-          <div className="preference-item">
-            <div className="preference-info">
-              <label className="preference-label">Auto-renew Subscriptions</label>
-              <p className="preference-description">Automatically renew premium features</p>
-            </div>
-            <button
-              type="button"
-              className={`toggle-switch ${preferences.autoRenew ? 'active' : ''}`}
-              onClick={() => setPreferences({ ...preferences, autoRenew: !preferences.autoRenew })}
             >
               <span className="toggle-slider"></span>
             </button>

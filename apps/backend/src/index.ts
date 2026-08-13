@@ -1,25 +1,20 @@
-import express from 'express'
-import cors from 'cors'
 import dotenv from 'dotenv'
-import { figmaRouter } from './routes/figma.js'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import { createApp } from './app.js'
+import { assertProductionSecrets } from './utils/productionGuards.js'
+import { initObservability } from './utils/observability.js'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') })
 dotenv.config()
 
-const app = express()
-const PORT = process.env.PORT || 3001
+assertProductionSecrets()
+await initObservability('carflow-api')
 
-app.use(cors())
-app.use(express.json())
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'CarFlow Backend API' })
-})
-
-// Routes
-app.use('/api/figma', figmaRouter)
+const app = createApp()
+const PORT = Number(process.env.PORT) || 3001
 
 app.listen(PORT, () => {
-  console.log(`🚀 Backend server running on http://localhost:${PORT}`)
+  console.log(`Backend running on http://localhost:${PORT}`)
 })
-

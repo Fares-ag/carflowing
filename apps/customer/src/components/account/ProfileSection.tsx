@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Image, Pencil } from 'lucide-react'
-import { uploadAvatar, supabase } from '@carflow/shared'
+import { apiRequest, uploadAvatar } from '@carflow/shared'
 import { getProfileAvatar, getUserId, updateProfileAvatar } from '../../services/authService'
 import { useAuth } from '../../contexts/AuthContext'
 import './ProfileSection.css'
 
 export default function ProfileSection() {
-  const { session } = useAuth()
+  const { session, refetch } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [avatarError, setAvatarError] = useState<string | null>(null)
@@ -35,13 +35,9 @@ export default function ProfileSection() {
     })
 
     getProfileAvatar().then(setAvatarUrl).catch((err) => console.error('Failed to load avatar:', err))
-    supabase
-      .from('profiles')
-      .select('phone')
-      .eq('id', session.userId)
-      .maybeSingle()
-      .then(({ data }) => {
-        setFormData((prev) => ({ ...prev, phone: data?.phone || '' }))
+    apiRequest<{ profile: { phone?: string | null } | null }>('/customer/profile/full')
+      .then((data) => {
+        setFormData((prev) => ({ ...prev, phone: data.profile?.phone || '' }))
       })
       .catch((err) => console.error('Failed to load phone:', err))
   }, [session?.userId, session?.name, session?.email])
@@ -170,16 +166,14 @@ export default function ProfileSection() {
                   setSaveError(null)
                   setSaving(true)
                   try {
-                    const userId = await getUserId()
-                    if (!userId) throw new Error('Not authenticated')
-                    const { error } = await supabase
-                      .from('profiles')
-                      .update({
+                    await apiRequest('/customer/profile', {
+                      method: 'PATCH',
+                      body: {
                         name: formData.fullName.trim(),
                         phone: formData.phone.trim() || null,
-                      })
-                      .eq('id', userId)
-                    if (error) throw new Error(error.message)
+                      },
+                    })
+                    await refetch()
                     setIsEditing(false)
                   } catch (err) {
                     setSaveError(err instanceof Error ? err.message : 'Failed to save')

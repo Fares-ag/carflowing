@@ -105,6 +105,19 @@ const buildDealerAnalytics = () => {
 }
 
 export const handlers = [
+  http.get('/api/auth/me', async () => {
+    const user = getDb().users.find((u) => u.role === 'dealer') ?? getDb().users[0]
+    return HttpResponse.json(
+      await withLatency({
+        userId: user.id,
+        role: user.role,
+        name: user.name,
+        email: user.email,
+        email_confirmed_at: new Date().toISOString(),
+        user,
+      })
+    )
+  }),
   http.post('/api/auth/login', async ({ request }) => {
     const payload = (await request.json()) as { email?: string; role?: string }
     const db = getDb()
@@ -141,7 +154,7 @@ export const handlers = [
     updateDb(db => ({ ...db, vehicles: [vehicle, ...db.vehicles] }))
     return HttpResponse.json(await withLatency(vehicle), { status: 201 })
   }),
-  http.put('/api/dealer/vehicles/:id', async ({ params, request }) => {
+  http.patch('/api/dealer/vehicles/:id', async ({ params, request }) => {
     const updates = (await request.json()) as Partial<Vehicle>
     const id = String(params.id)
     let updated: Vehicle | null = null
@@ -158,7 +171,7 @@ export const handlers = [
     }
     return HttpResponse.json(await withLatency(updated))
   }),
-  http.put('/api/dealer/vehicles/:id/status', async ({ params, request }) => {
+  http.patch('/api/dealer/vehicles/:id/status', async ({ params, request }) => {
     const { status } = (await request.json()) as { status: VehicleStatus }
     const id = String(params.id)
     let updated: Vehicle | null = null
@@ -180,6 +193,80 @@ export const handlers = [
     updateDb(db => ({ ...db, vehicles: db.vehicles.filter(vehicle => vehicle.id !== id) }))
     return HttpResponse.json(await withLatency({ ok: true }))
   }),
+  http.get('/api/dealer/booking-requests', async ({ request }) => {
+    const { page, pageSize } = parseListParams(request)
+    const db = getDb()
+    const items = db.bookingRequests.map((br) => ({
+      ...br,
+      vehicle: db.vehicles.find((v) => v.id === br.vehicleId),
+      customer: db.users.find((u) => u.id === br.customerId),
+    }))
+    return HttpResponse.json(await withLatency(paginate(items, page, pageSize)))
+  }),
+  http.patch('/api/dealer/booking-requests/:id/status', async ({ params, request }) => {
+    const { status, declineReason } = (await request.json()) as {
+      status: string
+      declineReason?: string
+    }
+    const id = String(params.id)
+    let updated: Record<string, unknown> | null = null
+    updateDb((db) => {
+      const bookingRequests = db.bookingRequests.map((br) => {
+        if (br.id !== id) return br
+        updated = { ...br, status, declineReason }
+        return updated as typeof br
+      })
+      return { ...db, bookingRequests }
+    })
+    if (!updated) {
+      return HttpResponse.json({ message: 'Request not found' }, { status: 404 })
+    }
+    return HttpResponse.json(await withLatency(updated))
+  }),
+  http.post('/api/dealer/payments/offline', async ({ request }) => {
+    const payload = (await request.json()) as { rentalId?: string; amount?: number; method?: string }
+    updateDb((db) => ({
+      ...db,
+      payments: [
+        {
+          id: createId('pay'),
+          rentalId: payload.rentalId,
+          amount: payload.amount ?? 0,
+          status: 'completed',
+          type: 'rental',
+          method: (payload.method as 'card' | 'bank' | 'wallet') ?? 'bank',
+          provider: 'manual',
+          createdAt: new Date().toISOString(),
+        },
+        ...db.payments,
+      ],
+      rentals: db.rentals.map((r) =>
+        r.id === payload.rentalId ? { ...r, paymentStatus: 'completed' as const, status: 'active' as const } : r
+      ),
+    }))
+    return HttpResponse.json(await withLatency({ ok: true }), { status: 201 })
+  }),
+  http.get('/api/dealer/customer-documents/:customerId', async () =>
+    HttpResponse.json(
+      await withLatency({ qidDocumentPath: null, driversLicensePath: null })
+    )
+  ),
+  http.get('/api/dealer/settings', async () => {
+    const dealer = getDb().dealers[0]
+    return HttpResponse.json(
+      await withLatency({
+        id: dealer?.id ?? 'dealer_1',
+        name: dealer?.name ?? 'Dealer',
+        contactEmail: dealer?.contactEmail ?? 'dealer@carflow.dev',
+        businessHours: [],
+      })
+    )
+  }),
+  http.patch('/api/dealer/settings', async ({ request }) => {
+    const updates = (await request.json()) as Record<string, unknown>
+    return HttpResponse.json(await withLatency({ ...updates, id: 'dealer_1' }))
+  }),
+
   http.get('/api/dealer/leads', async ({ request }) => {
     const { page, pageSize } = parseListParams(request)
     return HttpResponse.json(await withLatency(paginate(getDb().leads, page, pageSize)))
@@ -190,7 +277,7 @@ export const handlers = [
     updateDb(db => ({ ...db, leads: [lead, ...db.leads] }))
     return HttpResponse.json(await withLatency(lead), { status: 201 })
   }),
-  http.put('/api/dealer/leads/:id', async ({ params, request }) => {
+  http.patch('/api/dealer/leads/:id', async ({ params, request }) => {
     const updates = (await request.json()) as Partial<Lead>
     const id = String(params.id)
     let updated: Lead | null = null
@@ -216,7 +303,7 @@ export const handlers = [
     const { page, pageSize } = parseListParams(request)
     return HttpResponse.json(await withLatency(paginate(getDb().notifications, page, pageSize)))
   }),
-  http.put('/api/dealer/notifications/:id/read', async ({ params }) => {
+  http.post('/api/dealer/notifications/:id/read', async ({ params }) => {
     const id = String(params.id)
     let updated: Notification | null = null
     updateDb(db => {
@@ -232,7 +319,7 @@ export const handlers = [
     }
     return HttpResponse.json(await withLatency(updated))
   }),
-  http.put('/api/dealer/notifications/read-all', async () => {
+  http.post('/api/dealer/notifications/read-all', async () => {
     let updated: Notification[] = []
     updateDb(db => {
       updated = db.notifications.map(notification => ({ ...notification, read: true }))
@@ -240,6 +327,9 @@ export const handlers = [
     })
     return HttpResponse.json(await withLatency(updated))
   }),
+  http.get('/api/dealer/vehicle-count', async () =>
+    HttpResponse.json(await withLatency({ count: getDb().vehicles.length }))
+  ),
   http.get('/api/dealer/subscription', async () => {
     const subscription = getDb().subscriptions.find(sub => sub.ownerType === 'dealer')
     return HttpResponse.json(await withLatency(subscription as Subscription))
@@ -247,6 +337,14 @@ export const handlers = [
   http.get('/api/dealer/payment-methods', async () =>
     HttpResponse.json(await withLatency(getDb().paymentMethods))
   ),
+  http.delete('/api/dealer/payment-methods/:id', async ({ params }) => {
+    const id = String(params.id)
+    updateDb((db) => ({
+      ...db,
+      paymentMethods: db.paymentMethods.filter((pm) => pm.id !== id),
+    }))
+    return new HttpResponse(null, { status: 204 })
+  }),
   http.get('/api/dealer/billing-history', async () => {
     const history: BillingHistoryItem[] = getDb().invoices
       .filter(invoice => invoice.ownerType === 'dealer')

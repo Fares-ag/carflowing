@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: carflow-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: carflow
+      POSTGRES_PASSWORD: carflow
+      POSTGRES_DB: carflow
+    volumes:
+      - carflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U carflow -d carflow']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  carflow_pgdata:

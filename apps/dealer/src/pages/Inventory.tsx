@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { VehicleCategory } from '@carflow/shared'
 import { createVehicle, listInventory, updateVehicle } from '../services/dealerService'
+import { toast } from 'sonner'
 import { Sidebar } from '../components/Sidebar'
 import { Header } from '../components/Header'
 import { AddVehicleModal } from '../components/modals/AddVehicleModal'
@@ -63,35 +64,46 @@ export const Inventory = memo(function Inventory() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState('name')
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  const refreshInventory = useCallback(() => {
-    listInventory({ pageSize: 12 }).then((data) => {
-      const mapped = data.items.map((vehicle) => ({
-        id: vehicle.id,
-        name: vehicle.name,
-        make: vehicle.make ?? '',
-        model: vehicle.model ?? '',
-        category: vehicle.category,
-        year: vehicle.year,
-        status:
-          vehicle.status === 'available'
-            ? ('Available' as const)
-            : vehicle.status === 'rented'
-              ? ('Rented' as const)
-              : ('Maintenance' as const),
-        dailyRateQar: vehicle.pricePerDay,
-        mileage: vehicle.mileage ?? 0,
-        fuelType: vehicle.fuelType ?? 'gas',
-        transmission: vehicle.transmission ?? 'automatic',
-        seats: vehicle.seats ?? 5,
-        imageUrl: vehicle.imageUrl,
-      }))
-      setVehicles(mapped)
-    })
+  const refreshInventory = useCallback((showLoading = false) => {
+    if (showLoading) setLoading(true)
+    setLoadError(null)
+    return listInventory({ pageSize: 100 })
+      .then((data) => {
+        const mapped = data.items.map((vehicle) => ({
+          id: vehicle.id,
+          name: vehicle.name,
+          make: vehicle.make ?? '',
+          model: vehicle.model ?? '',
+          category: vehicle.category,
+          year: vehicle.year,
+          status:
+            vehicle.status === 'available'
+              ? ('Available' as const)
+              : vehicle.status === 'rented'
+                ? ('Rented' as const)
+                : ('Maintenance' as const),
+          dailyRateQar: vehicle.pricePerDay,
+          mileage: vehicle.mileage ?? 0,
+          fuelType: vehicle.fuelType ?? 'gas',
+          transmission: vehicle.transmission ?? 'automatic',
+          seats: vehicle.seats ?? 5,
+          imageUrl: vehicle.imageUrl,
+        }))
+        setVehicles(mapped)
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : 'Failed to load inventory'
+        setLoadError(message)
+        toast.error(message)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
-    refreshInventory()
+    void refreshInventory(true)
   }, [refreshInventory])
 
   const stats = useMemo(() => {
@@ -344,7 +356,21 @@ export const Inventory = memo(function Inventory() {
           <div className="inv-resultsRow">Showing {filteredVehicles.length} of {vehicles.length} vehicles</div>
         </div>
 
-        {view === 'grid' ? (
+        {loading ? <p className="inventory-subtitle">Loading inventory…</p> : null}
+        {loadError && !loading ? (
+          <p className="inventory-subtitle" role="alert">
+            {loadError}{' '}
+            <button type="button" className="inv-btn inv-btn--ghost" onClick={() => void refreshInventory(true)}>
+              Retry
+            </button>
+          </p>
+        ) : null}
+        {!loading && !loadError && vehicles.length === 0 ? (
+          <p className="inventory-subtitle">No vehicles yet. Add your first vehicle to get started.</p>
+        ) : null}
+
+        {!loading && !loadError ? (
+          view === 'grid' ? (
           <div className="inv-grid">
             {filteredVehicles.map(vehicle => (
               <article key={vehicle.id} className="inv-vehicleCard">
@@ -465,36 +491,40 @@ export const Inventory = memo(function Inventory() {
               </article>
             ))}
           </div>
-        )}
+        )
+        ) : null}
       </div>
 
       <AddVehicleModal
         isOpen={isAddOpen}
         onClose={() => setIsAddOpen(false)}
-        onCreate={(values) => {
-          createVehicle({
-            name: values.name,
-            make: values.make,
-            model: values.model,
-            year: values.year,
-            category: values.category.toLowerCase() as VehicleCategory,
-            status:
-              values.status === 'Available'
-                ? 'available'
-                : values.status === 'Rented'
-                  ? 'rented'
-                  : 'maintenance',
-            pricePerDay: values.dailyRateQar,
-            mileage: values.mileage ?? 0,
-            transmission: values.transmission ?? 'automatic',
-            fuelType: values.fuelType ?? 'gas',
-            seats: values.seats ?? 5,
-            imageUrl: values.imageUrl,
-          }).then(() => {
-            refreshInventory()
-          }).catch((err) => {
-            alert(err instanceof Error ? err.message : 'Failed to add vehicle')
-          })
+        onCreate={async (values) => {
+          try {
+            await createVehicle({
+              name: values.name,
+              make: values.make,
+              model: values.model,
+              year: values.year,
+              category: values.category,
+              status:
+                values.status === 'Available'
+                  ? 'available'
+                  : values.status === 'Rented'
+                    ? 'rented'
+                    : 'maintenance',
+              pricePerDay: values.dailyRateQar,
+              mileage: values.mileage ?? 0,
+              transmission: values.transmission ?? 'automatic',
+              fuelType: values.fuelType ?? 'gas',
+              seats: values.seats ?? 5,
+              imageUrl: values.imageUrl,
+            })
+            await refreshInventory()
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to add vehicle'
+            toast.error(message)
+            throw err instanceof Error ? err : new Error(message)
+          }
         }}
       />
       {viewingVehicle && (
@@ -524,7 +554,7 @@ export const Inventory = memo(function Inventory() {
               refreshInventory()
               setViewingId(null)
             }).catch((err) => {
-              alert(err instanceof Error ? err.message : 'Failed to duplicate vehicle')
+              toast.error(err instanceof Error ? err.message : 'Failed to duplicate vehicle')
             })
           }}
         />
@@ -556,7 +586,7 @@ export const Inventory = memo(function Inventory() {
           }).then(() => {
             refreshInventory()
           }).catch((err) => {
-            alert(err instanceof Error ? err.message : 'Failed to update vehicle')
+            toast.error(err instanceof Error ? err.message : 'Failed to update vehicle')
           })
         }}
       />

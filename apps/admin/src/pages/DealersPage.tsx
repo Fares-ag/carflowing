@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dealer } from '@carflow/shared'
 import { toast } from 'sonner'
-import { createDealer, listDealers, updateDealerStatus } from '../services/adminService'
+import { createDealer, deleteDealer, listDealers, updateDealerStatus } from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { InfoModal } from '../components/InfoModal'
 import {
@@ -14,6 +14,7 @@ import {
   Power,
   Search,
   Star,
+  Trash2,
   UserCheck,
   UserPlus,
   Users,
@@ -53,6 +54,11 @@ export function DealersPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: 'toggle'; row: typeof dealerRows[0] }
+    | { type: 'delete'; row: typeof dealerRows[0] }
+    | null
+  >(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addName, setAddName] = useState('')
   const [addOwnerEmail, setAddOwnerEmail] = useState('')
@@ -84,10 +90,10 @@ export function DealersPage() {
     setAddError('')
     setAddSubmitting(true)
     try {
-      await createDealer({
+      const created = await createDealer({
         name: addName,
-        ownerEmail: addOwnerEmail,
-        contactEmail: addContactEmail,
+        email: addOwnerEmail.trim(),
+        contactEmail: addContactEmail.trim() || addOwnerEmail.trim(),
         contactPhone: addContactPhone || undefined,
         address: addAddress || undefined,
       })
@@ -98,6 +104,13 @@ export function DealersPage() {
       setAddAddress('')
       closeAddModal()
       refreshDealers()
+      if (created.accountCreated && created.temporaryPassword) {
+        toast.success(
+          `Dealer created. Temporary password for ${created.contactEmail}: ${created.temporaryPassword}`
+        )
+      } else {
+        toast.success('Dealer created and linked to existing account.')
+      }
     } catch (err) {
       setAddError(err instanceof Error ? err.message : 'Unable to create dealer')
     } finally {
@@ -151,7 +164,6 @@ export function DealersPage() {
   }, [dealerRows])
 
   const stats = useMemo(() => {
-    const totalCount = dealerRows.length
     const active = dealerRows.filter(row => row.status === 'Active').length
     const pending = dealerRows.filter(row => row.status === 'Pending Approval').length
     const revenue = dealerRows.reduce((sum, row) => {
@@ -160,20 +172,41 @@ export function DealersPage() {
     }, 0)
 
     return {
-      total: totalCount,
+      total,
       active,
       pending,
       revenue,
     }
-  }, [dealerRows])
+  }, [dealerRows, total])
 
   const handleToggleStatus = (row: typeof dealerRows[0]) => {
-    const nextStatus = row.status === 'Active' ? 'suspended' : 'active'
-    const action = nextStatus === 'suspended' ? 'suspend' : 'activate'
-    if (!window.confirm(`Are you sure you want to ${action} this dealer "${row.name}"?`)) return
-    updateDealerStatus(row.sourceId, nextStatus)
-      .then(() => refreshDealers())
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to update dealer status'))
+    setConfirmAction({ type: 'toggle', row })
+  }
+
+  const handleDeleteDealer = (row: typeof dealerRows[0]) => {
+    setConfirmAction({ type: 'delete', row })
+  }
+
+  const confirmDealerAction = () => {
+    if (!confirmAction) return
+    const { row } = confirmAction
+    if (confirmAction.type === 'toggle') {
+      const nextStatus = row.status === 'Active' ? 'suspended' : 'active'
+      updateDealerStatus(row.sourceId, nextStatus)
+        .then(() => {
+          setConfirmAction(null)
+          refreshDealers()
+        })
+        .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to update dealer status'))
+      return
+    }
+    deleteDealer(row.sourceId)
+      .then(() => {
+        setConfirmAction(null)
+        toast.success('Dealer deleted')
+        refreshDealers()
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to delete dealer'))
   }
 
   return (
@@ -193,6 +226,7 @@ export function DealersPage() {
               <UserCheck size={18} className="dealersStatIcon" />
             </div>
             <div className="dealersStatValue dealersStatValue--green">{stats.active}</div>
+            <div className="dealersStatSub">on this page</div>
           </div>
           <div className="dealersStatCard">
             <div className="dealersStatHeader">
@@ -202,6 +236,7 @@ export function DealersPage() {
             <div className="dealersStatValue dealersStatValue--blue">
               QAR {stats.revenue.toLocaleString('en-US')}
             </div>
+            <div className="dealersStatSub">on this page</div>
           </div>
           <div className="dealersStatCard">
             <div className="dealersStatHeader">
@@ -209,6 +244,7 @@ export function DealersPage() {
               <Clock size={18} className="dealersStatIcon" />
             </div>
             <div className="dealersStatValue dealersStatValue--orange">{stats.pending}</div>
+            <div className="dealersStatSub">on this page</div>
           </div>
         </div>
 
@@ -373,6 +409,14 @@ export function DealersPage() {
                             >
                               <Power size={16} />
                             </button>
+                            <button
+                              type="button"
+                              className="dealersActionBtn dealersActionBtn--danger"
+                              title="Delete dealer"
+                              onClick={() => handleDeleteDealer(row)}
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -411,6 +455,26 @@ export function DealersPage() {
         message={infoModal?.message ?? ''}
         onClose={() => setInfoModal(null)}
       />
+      <InfoModal
+        open={!!confirmAction}
+        title={
+          confirmAction?.type === 'delete'
+            ? 'Delete dealer?'
+            : confirmAction?.row.status === 'Active'
+              ? 'Suspend dealer?'
+              : 'Activate dealer?'
+        }
+        message={
+          confirmAction?.type === 'delete'
+            ? `Delete dealer "${confirmAction.row.name}"? This removes the dealer record but keeps the owner profile.`
+            : confirmAction?.row.status === 'Active'
+              ? `Are you sure you want to suspend "${confirmAction.row.name}"?`
+              : `Activate dealer "${confirmAction?.row.name}"?`
+        }
+        onClose={() => setConfirmAction(null)}
+        onConfirm={confirmDealerAction}
+        confirmLabel={confirmAction?.type === 'delete' ? 'Delete' : 'Confirm'}
+      />
 
       {addOpen ? (
         <div className="dealersAddOverlay" role="dialog" aria-modal="true" aria-labelledby="dealersAddTitle">
@@ -427,7 +491,8 @@ export function DealersPage() {
               Add dealer
             </h3>
             <p className="dealersAddHint">
-              Look up the owner by the email they used to sign up. Their role will be set to dealer.
+              Enter the owner email. If they do not have an account yet, one will be created
+              automatically and a temporary password will be shown.
             </p>
             <form className="dealersAddForm" onSubmit={handleCreateDealer}>
               <label className="dealersAddLabel">

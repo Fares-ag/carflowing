@@ -77,6 +77,9 @@ export function ComplaintsPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const pageSize = 50
 
   const selectedComplaint = useMemo(
     () => complaints.find((c) => c.id === selectedComplaintId) ?? null,
@@ -87,8 +90,9 @@ export function ComplaintsPage() {
     setLoading(true)
     setLoadError(null)
     try {
-      const data = await listComplaints({ pageSize: 500 })
+      const data = await listComplaints({ page, pageSize })
       setComplaints(data.items)
+      setTotal(data.total)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load complaints')
     } finally {
@@ -98,7 +102,7 @@ export function ComplaintsPage() {
 
   useEffect(() => {
     void refreshComplaints()
-  }, [])
+  }, [page])
 
   const complaintRows = useMemo(() => {
     return complaints.map((complaint) => {
@@ -374,7 +378,8 @@ export function ComplaintsPage() {
             <div>
               <div className="complaintsListTitle">Complaints List</div>
               <div className="complaintsListSub">
-                Click on any complaint to view details ({complaintRows.length} results)
+                Click on any complaint to view details ({complaintRows.length} on this page
+                {total > complaintRows.length ? ` · ${total} total` : ''})
               </div>
             </div>
           </div>
@@ -451,6 +456,29 @@ export function ComplaintsPage() {
               </tbody>
             </table>
           </div>
+          {total > pageSize && (
+            <div className="complaintsPagination">
+              <button
+                type="button"
+                className="complaintsRetryBtn"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <span>
+                Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
+              </span>
+              <button
+                type="button"
+                className="complaintsRetryBtn"
+                disabled={page >= Math.ceil(total / pageSize) || loading}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
           </>
         )}

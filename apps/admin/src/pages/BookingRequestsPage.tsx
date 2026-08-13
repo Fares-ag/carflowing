@@ -13,10 +13,15 @@ import './BookingRequestsPage.css'
 
 export function BookingRequestsPage() {
   const [requests, setRequests] = useState<BookingRequest[]>([])
+  const [requestsTotal, setRequestsTotal] = useState(0)
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [declineId, setDeclineId] = useState<string | null>(null)
+  const [declineReason, setDeclineReason] = useState('')
+  const [declineSubmitting, setDeclineSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isError, setIsError] = useState(false)
 
@@ -26,11 +31,12 @@ export function BookingRequestsPage() {
       setIsError(false)
     }
     return Promise.all([
-      listBookingRequests({ pageSize: 50 }),
-      listVehicles({ pageSize: 200 }),
+      listBookingRequests({ pageSize: 100 }),
+      listVehicles({ pageSize: 100 }),
     ])
       .then(([reqData, vehicleData]) => {
         setRequests(reqData.items)
+        setRequestsTotal(reqData.total)
         setVehicles(vehicleData.items)
         setIsError(false)
       })
@@ -88,16 +94,41 @@ export function BookingRequestsPage() {
   }
 
   const handleDecline = (id: string) => {
-    updateBookingRequestStatus(id, 'declined')
-      .then(() => refresh({ silent: true }))
+    setDeclineId(id)
+    setDeclineReason('')
+  }
+
+  const submitDecline = () => {
+    if (!declineId) return
+    const trimmed = declineReason.trim()
+    if (trimmed.length < 8) {
+      setInfoModal({ title: 'Decline reason required', message: 'Please enter a clear reason (at least 8 characters) for the customer.' })
+      return
+    }
+    setDeclineSubmitting(true)
+    updateBookingRequestStatus(declineId, 'declined', trimmed)
+      .then(() => {
+        setDeclineId(null)
+        setDeclineReason('')
+        refresh({ silent: true })
+      })
       .catch((err) =>
         setInfoModal({ title: 'Error', message: err instanceof Error ? err.message : 'Failed to decline' })
       )
+      .finally(() => setDeclineSubmitting(false))
   }
 
   const handleDelete = (id: string) => {
-    deleteBookingRequest(id)
-      .then(() => refresh({ silent: true }))
+    setDeleteConfirmId(id)
+  }
+
+  const confirmDelete = () => {
+    if (!deleteConfirmId) return
+    deleteBookingRequest(deleteConfirmId)
+      .then(() => {
+        setDeleteConfirmId(null)
+        refresh({ silent: true })
+      })
       .catch((err) =>
         setInfoModal({ title: 'Error', message: err instanceof Error ? err.message : 'Failed to delete' })
       )
@@ -153,6 +184,11 @@ export function BookingRequestsPage() {
         </div>
 
         <div className="brTableCard">
+          {!isLoading && !isError && requestsTotal > requests.length ? (
+            <div className="brListMeta">
+              Showing {requests.length} of {requestsTotal} booking requests
+            </div>
+          ) : null}
           {isLoading ? (
             <div className="brEmpty" role="status">
               Loading booking requests…
@@ -235,6 +271,72 @@ export function BookingRequestsPage() {
         message={infoModal?.message ?? ''}
         onClose={() => setInfoModal(null)}
       />
+      <InfoModal
+        open={!!deleteConfirmId}
+        title="Delete booking request?"
+        message="This permanently removes the booking request. This cannot be undone."
+        onClose={() => setDeleteConfirmId(null)}
+        onConfirm={confirmDelete}
+        confirmLabel="Delete"
+      />
+      {declineId && (
+        <div
+          className="brModalOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="br-decline-title"
+          onClick={() => !declineSubmitting && setDeclineId(null)}
+        >
+          <div className="brModal brModal--narrow" onClick={(e) => e.stopPropagation()}>
+            <div className="brModalHeader">
+              <h2 id="br-decline-title">Decline request</h2>
+              <button
+                type="button"
+                className="brModalClose"
+                disabled={declineSubmitting}
+                onClick={() => setDeclineId(null)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="brModalBody">
+              <p className="brModalHint">
+                The customer will see this message in their account. Be clear and professional.
+              </p>
+              <label className="brDeclineLabel">
+                Reason for the customer
+                <textarea
+                  className="brDeclineTextarea"
+                  rows={5}
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                  placeholder="e.g. We could not verify your driver’s license against our requirements."
+                  disabled={declineSubmitting}
+                />
+              </label>
+              <div className="brModalFooter">
+                <button
+                  type="button"
+                  className="brModalBtn brModalBtn--secondary"
+                  disabled={declineSubmitting}
+                  onClick={() => setDeclineId(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="brModalBtn brModalBtn--danger"
+                  disabled={declineSubmitting}
+                  onClick={() => void submitDecline()}
+                >
+                  {declineSubmitting ? 'Submitting…' : 'Decline request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   )
 }

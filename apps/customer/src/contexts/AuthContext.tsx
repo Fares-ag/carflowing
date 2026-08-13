@@ -9,7 +9,6 @@ import {
 import type { AuthSession } from '../services/authService'
 import { getSession, logout as authLogout } from '../services/authService'
 import { useCartStore } from '../stores/cartStore'
-import { supabase } from '@carflow/shared'
 
 interface AuthContextValue {
   session: AuthSession | null
@@ -43,18 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refetch()
-  }, [refetch])
-
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      refetch()
-      if (event === 'SIGNED_OUT') {
-        useCartStore.getState().clearCart()
-      }
-    })
-    return () => subscription.unsubscribe()
   }, [refetch])
 
   return (

@@ -1,0 +1,241 @@
+.hiw-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+}
+
+.hiw-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.hiw-hero {
+  padding: 4rem 1.5rem 2rem;
+  text-align: center;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 0%, rgba(104, 95, 247, 0.22), transparent 60%),
+    #1a1a1a;
+}
+
+.hiw-hero__inner {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.hiw-pill {
+  display: inline-block;
+  margin-bottom: 1rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(104, 95, 247, 0.2);
+  border: 1px solid rgba(104, 95, 247, 0.35);
+  color: #c7d2fe;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.hiw-hero h1 {
+  margin: 0 0 0.85rem;
+  font-size: clamp(2rem, 5vw, 2.75rem);
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.hiw-hero p {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hiw-steps {
+  padding: 2rem 1.5rem 4rem;
+}
+
+.hiw-steps__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.hiw-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.hiw-card {
+  position: relative;
+  padding: 2.25rem 1.5rem 2rem;
+  border-radius: 16px;
+  border: 1px solid rgba(104, 95, 247, 0.45);
+  background: rgba(255, 255, 255, 0.02);
+  text-align: center;
+}
+
+.hiw-card__step {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: #685ff7;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hiw-card__connector {
+  display: none;
+}
+
+.hiw-card__icon {
+  width: 4.5rem;
+  height: 4.5rem;
+  margin: 0.5rem auto 1.25rem;
+  border-radius: 50%;
+  border: 1.5px solid rgba(104, 95, 247, 0.55);
+  background: rgba(104, 95, 247, 0.12);
+  color: #a5b4fc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 32px rgba(104, 95, 247, 0.18);
+}
+
+.hiw-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.hiw-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.hiw-cta {
+  margin-top: auto;
+  padding: 0 1.5rem 4rem;
+}
+
+.hiw-cta__inner {
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+  padding: 2.25rem 1.5rem;
+  border-radius: 16px;
+  border: 1px solid rgba(104, 95, 247, 0.35);
+  background: linear-gradient(180deg, rgba(104, 95, 247, 0.16) 0%, rgba(104, 95, 247, 0.06) 100%);
+}
+
+.hiw-cta h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+  color: #fff;
+}
+
+.hiw-cta p {
+  margin: 0 auto 1.35rem;
+  max-width: 420px;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.hiw-cta__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.hiw-cta__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.8rem 1.2rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.hiw-cta__btn--primary {
+  background: #685ff7;
+  color: #fff;
+  border: 1px solid #685ff7;
+}
+
+.hiw-cta__btn--primary:hover {
+  background: #574fd6;
+}
+
+.hiw-cta__btn--ghost {
+  background: transparent;
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.hiw-cta__btn--ghost:hover {
+  border-color: rgba(104, 95, 247, 0.55);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+@media (min-width: 1000px) {
+  .hiw-card__connector {
+    display: block;
+    position: absolute;
+    top: calc(1rem + 1.125rem);
+    left: calc(100% - 0.25rem);
+    width: calc(1.5rem + 0.5rem);
+    height: 2px;
+    background: linear-gradient(90deg, #685ff7, rgba(104, 95, 247, 0.25));
+    z-index: 2;
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 999px) {
+  .hiw-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .hiw-hero {
+    padding: 2.5rem 1rem 1.5rem;
+  }
+
+  .hiw-steps {
+    padding: 1.25rem 1rem 2.5rem;
+  }
+
+  .hiw-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hiw-cta {
+    padding: 0 1rem 3rem;
+  }
+
+  .hiw-cta__actions {
+    flex-direction: column;
+  }
+
+  .hiw-cta__btn {
+    width: 100%;
+  }
+}

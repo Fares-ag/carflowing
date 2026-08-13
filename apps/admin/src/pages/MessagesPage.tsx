@@ -4,6 +4,7 @@ import {
   archiveMessage,
   createMessage,
   getMessageFolderCounts,
+  listCustomers,
   listMessages,
   listMessagesActivitySample,
   starMessage,
@@ -45,6 +46,22 @@ import './MessagesPage.css'
 
 const PAGE_SIZE = 50
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+async function resolveToUserId(input: string): Promise<string> {
+  const trimmed = input.trim()
+  if (!trimmed) throw new Error('Recipient is required')
+  if (UUID_RE.test(trimmed)) return trimmed
+  const email = trimmed.toLowerCase()
+  const data = await listCustomers({ pageSize: 100 })
+  const match = data.items.find((u) => u.email.toLowerCase() === email)
+  if (!match) {
+    throw new Error(`No user found for "${trimmed}". Enter a valid email or user id.`)
+  }
+  return match.id
+}
+
 const WEEKDAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 
 function formatRelativeTime(iso: string): string {
@@ -63,15 +80,15 @@ function formatRelativeTime(iso: string): string {
 }
 
 function senderDisplayName(msg: MessageWithSender): string {
-  const n = msg.sender?.name?.trim()
+  const n = msg.sender?.name?.trim() || msg.fromName?.trim()
   if (n) return n
-  const e = msg.sender?.email?.trim()
+  const e = msg.sender?.email?.trim() || msg.fromEmail?.trim()
   if (e) return e
   return 'Unknown sender'
 }
 
 function senderType(msg: MessageWithSender): string {
-  const r = (msg.sender?.role ?? '').toLowerCase()
+  const r = (msg.sender?.role ?? msg.fromRole ?? '').toLowerCase()
   if (r === 'dealer' || r === 'customer') return r
   if (r === 'admin') return 'admin'
   return r || 'user'
@@ -92,6 +109,8 @@ export function MessagesPage() {
     unreadInbox: 0,
     starred: 0,
     archived: 0,
+    inbox: 0,
+    sent: 0,
   })
   const [activitySample, setActivitySample] = useState<
     Array<{ createdAt: string; folder: MessageWithSender['folder'] }>
@@ -119,7 +138,18 @@ export function MessagesPage() {
       ])
       setMessages(listRes.items)
       setMessagesTotal(listRes.total)
-      setFolderCounts(counts)
+      setFolderCounts({
+        inbox: counts.inbox ?? 0,
+        sent: counts.sent ?? 0,
+        starred: counts.starred ?? 0,
+        archived: counts.archived ?? 0,
+        unreadInbox: counts.unread ?? 0,
+        total:
+          (counts.inbox ?? 0) +
+          (counts.sent ?? 0) +
+          (counts.starred ?? 0) +
+          (counts.archived ?? 0),
+      })
       setActivitySample(activity)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load messages')
@@ -529,10 +559,11 @@ export function MessagesPage() {
                     setComposeError(null)
                     setComposeSending(true)
                     try {
+                      const toUserId = await resolveToUserId(composeTo)
                       await createMessage(session.userId, {
-                        to: composeTo,
-                        subject: composeSubject,
-                        body: composeBody,
+                        toUserId,
+                        subject: composeSubject.trim(),
+                        body: composeBody.trim(),
                       })
                       setComposeTo('')
                       setComposeSubject('')

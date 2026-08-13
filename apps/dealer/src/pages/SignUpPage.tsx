@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@carflow/shared'
+import { apiRequest, MIN_PASSWORD_LENGTH, validatePassword } from '@carflow/shared'
 import './SignUpPage.css'
 
 export function SignUpPage() {
@@ -17,29 +17,28 @@ export function SignUpPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError('')
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+    const passwordError = validatePassword(password)
+    if (passwordError) {
+      setError(passwordError)
       return
     }
 
     setIsSubmitting(true)
     try {
-      const email = contactEmail.trim()
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: ownerName.trim(),
-            business_name: businessName.trim(),
+      await apiRequest('/auth/signup', {
+        method: 'POST',
+        body: {
+          email: contactEmail.trim(),
+          password,
+          name: ownerName.trim() || businessName.trim(),
+          expectedRole: 'dealer',
+          meta: {
+            businessName: businessName.trim(),
             phone: contactPhone.trim(),
             address: address.trim(),
           },
         },
       })
-      if (signUpError) {
-        throw new Error(signUpError.message)
-      }
       setSubmitted(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to submit application')
@@ -130,10 +129,10 @@ export function SignUpPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
+                placeholder={`At least ${MIN_PASSWORD_LENGTH} characters, with a letter and number`}
                 required
                 autoComplete="new-password"
-                minLength={6}
+                minLength={MIN_PASSWORD_LENGTH}
               />
             </label>
 

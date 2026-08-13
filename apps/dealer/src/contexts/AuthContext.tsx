@@ -8,7 +8,6 @@ import {
 } from 'react'
 import type { AuthSession } from '../services/authService'
 import { getSession, logout as authLogout } from '../services/authService'
-import { supabase } from '@carflow/shared'
 
 interface AuthContextValue {
   session: AuthSession | null
@@ -41,15 +40,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refetch()
-  }, [refetch])
-
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      refetch()
-    })
-    return () => subscription.unsubscribe()
   }, [refetch])
 
   return (

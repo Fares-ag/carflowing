@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   LineChart,
   LogOut,
-  Package,
   Settings,
   Users,
   Wrench,
@@ -80,15 +79,6 @@ export const Sidebar = memo(function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <Link 
-          to="/settings" 
-          className={`nav-item ${isActive('/settings') ? 'active' : ''}`}
-        >
-          <span className="nav-icon">
-            <Settings size={16} />
-          </span>
-          <span className="nav-label">Settings</span>
-        </Link>
         <button
           className="nav-item logout"
           type="button"

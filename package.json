@@ -12,17 +12,32 @@
     "dev:customer": "npm run dev --workspace=apps/customer",
     "dev:dealer": "npm run dev --workspace=apps/dealer",
     "dev:backend": "npm run dev --workspace=apps/backend",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:push": "npm run db:push --workspace=apps/backend",
+    "db:seed": "npm run db:seed --workspace=apps/backend",
+    "db:migrate": "npm run db:migrate --workspace=apps/backend",
     "build": "npm run build --workspaces --if-present",
     "build:admin": "npm run build --workspace=apps/admin",
     "build:customer": "npm run build --workspace=apps/customer",
     "build:dealer": "npm run build --workspace=apps/dealer",
     "build:backend": "npm run build --workspace=apps/backend",
     "lint": "npm run lint --workspaces --if-present",
-    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules"
+    "lint:strict": "eslint . --max-warnings 0",
+    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules",
+    "typecheck": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:api": "npm run test --workspace=apps/backend",
+    "test:conventions": "vitest run --config vitest.conventions.config.ts",
+    "test:gaps": "vitest run --config vitest.conventions.config.ts tests/gaps",
+    "test:e2e": "playwright test",
+    "test:ci": "npm run lint:strict && npm run typecheck && npm run test:conventions && npm run test && npm run test:e2e"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "@types/node": "^20.10.0",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "vitest": "^2.1.8"
   },
   "msw": {
     "workerDirectory": [
@@ -30,5 +45,14 @@
       "apps\\admin\\public",
       "apps\\dealer\\public"
     ]
+  },
+  "allowScripts": {
+    "@embedded-postgres/windows-x64@18.4.0-beta.17": true
+  },
+  "dependencies": {
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-security": "^4.0.1"
   }
 }

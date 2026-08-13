@@ -4,7 +4,7 @@ import { Sidebar } from '../components/Sidebar'
 import { Header } from '../components/Header'
 import { getCurrentUser } from '../services/authService'
 import { getDealerSettings, listNotifications, updateDealerSettings } from '../services/dealerService'
-import { supabase } from '@carflow/shared'
+import { uploadAvatar } from '@carflow/shared'
 import {
   Bell,
   Building2,
@@ -110,7 +110,7 @@ export const Settings = memo(function Settings() {
     if (!settingsId) return
     setError(null)
     try {
-      await updateDealerSettings(settingsId, {
+      await updateDealerSettings({
         name: businessName,
         contactEmail,
         contactPhone: contactPhone || undefined,
@@ -355,19 +355,17 @@ export const Settings = memo(function Settings() {
                   onChange={async (event) => {
                     if (!event.target.files?.length || !settingsId) return
                     const file = event.target.files[0]
-                    const filePath = `dealers/${settingsId}/logo-${Date.now()}-${file.name}`
-                    const { error: uploadError } = await supabase
-                      .storage
-                      .from('user-avatars')
-                      .upload(filePath, file, { upsert: true })
-                    if (uploadError) {
-                      setError(uploadError.message)
-                      return
+                    try {
+                      const user = await getCurrentUser()
+                      if (!user) throw new Error('Not authenticated')
+                      const publicUrl = await uploadAvatar(file, user.id)
+                      setLogoUrl(publicUrl)
+                      await updateDealerSettings({ logoUrl: publicUrl })
+                      setSaveMessage('Logo uploaded successfully.')
+                      window.setTimeout(() => setSaveMessage(null), 2500)
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Upload failed')
                     }
-                    const { data } = supabase.storage.from('user-avatars').getPublicUrl(filePath)
-                    setLogoUrl(data.publicUrl)
-                    setSaveMessage('Logo uploaded successfully.')
-                    window.setTimeout(() => setSaveMessage(null), 2500)
                   }}
                 />
                 {saveMessage && <div className="settings-action-message">{saveMessage}</div>}
@@ -378,7 +376,7 @@ export const Settings = memo(function Settings() {
           {activeTab === 'notifications' && (
             <div className="notifications-settings-tab">
               <div className="settings-info-banner">
-                Notification preferences are managed through your dealer profile. More controls coming soon.
+                Notification preferences are read-only in this release.
               </div>
               {recentNotifications.length === 0 ? (
                 <p>No recent notifications.</p>
@@ -403,7 +401,7 @@ export const Settings = memo(function Settings() {
           {activeTab === 'preferences' && (
             <div className="preferences-settings-tab">
               <div className="settings-info-banner">
-                These settings are managed through your dealer profile. Changes coming soon.
+                Preferences editing is not available in this release.
               </div>
               <p>Business hours are applied across your listings.</p>
               <div className="settings-list">
@@ -419,7 +417,7 @@ export const Settings = memo(function Settings() {
           {activeTab === 'security' && (
             <div className="security-settings-tab">
               <div className="settings-info-banner">
-                These settings are managed through your dealer profile. Changes coming soon.
+                Preferences editing is not available in this release.
               </div>
               <p>Signed in as {currentUser?.email ?? 'dealer'}.</p>
               <p>

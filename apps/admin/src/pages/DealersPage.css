@@ -54,6 +54,12 @@
   color: #e17100;
 }
 
+.dealersStatSub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
 .dealersControlCard {
   background: white;
   border-radius: 16.4px;

@@ -62,6 +62,7 @@ export function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [statusConfirmUser, setStatusConfirmUser] = useState<typeof customerRows[0] | null>(null)
   const [viewCustomer, setViewCustomer] = useState<CustomerWithStats | null>(null)
   const [editCustomer, setEditCustomer] = useState<CustomerWithStats | null>(null)
   const [editForm, setEditForm] = useState({ name: '', phone: '', verification: 'verified' as 'verified' | 'unverified' })
@@ -130,10 +131,12 @@ export function CustomersPage() {
   }, [customerStatsData, total])
 
   const handleView = useCallback((user: typeof customerRows[0]) => {
-    getCustomerDetails(user.id).then((detail) => {
-      if (detail) setViewCustomer(detail)
-      else setInfoModal({ title: 'Error', message: 'Customer not found' })
-    })
+    getCustomerDetails(user.id)
+      .then((detail) => {
+        if (detail) setViewCustomer(detail)
+        else setInfoModal({ title: 'Error', message: 'Customer not found' })
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load customer details'))
   }, [])
 
   const handleEdit = useCallback((user: typeof customerRows[0]) => {
@@ -162,11 +165,16 @@ export function CustomersPage() {
     }
   }, [editCustomer, editForm, refresh])
 
-  const handleToggleStatus = useCallback(async (user: typeof customerRows[0]) => {
-    const newStatus = user.status === 'active' ? 'suspended' : 'active'
-    if (!window.confirm(`${newStatus === 'suspended' ? 'Suspend' : 'Activate'} ${user.name}?`)) return
+  const handleToggleStatus = useCallback((user: typeof customerRows[0]) => {
+    setStatusConfirmUser(user)
+  }, [])
+
+  const confirmToggleStatus = useCallback(async () => {
+    if (!statusConfirmUser) return
+    const newStatus = statusConfirmUser.status === 'active' ? 'suspended' : 'active'
     try {
-      await updateCustomerStatus(user.id, newStatus)
+      await updateCustomerStatus(statusConfirmUser.id, newStatus)
+      setStatusConfirmUser(null)
       refresh()
     } catch (e) {
       setInfoModal({
@@ -174,7 +182,7 @@ export function CustomersPage() {
         message: e instanceof Error ? e.message : 'Failed to update status',
       })
     }
-  }, [refresh])
+  }, [refresh, statusConfirmUser])
 
   return (
     <AdminLayout title="Customers" subtitle="Customer database and management">
@@ -457,6 +465,18 @@ export function CustomersPage() {
         title={infoModal?.title ?? ''}
         message={infoModal?.message ?? ''}
         onClose={() => setInfoModal(null)}
+      />
+      <InfoModal
+        open={!!statusConfirmUser}
+        title={statusConfirmUser?.status === 'active' ? 'Suspend customer?' : 'Activate customer?'}
+        message={
+          statusConfirmUser
+            ? `${statusConfirmUser.status === 'active' ? 'Suspend' : 'Activate'} ${statusConfirmUser.name}?`
+            : ''
+        }
+        onClose={() => setStatusConfirmUser(null)}
+        onConfirm={() => void confirmToggleStatus()}
+        confirmLabel={statusConfirmUser?.status === 'active' ? 'Suspend' : 'Activate'}
       />
     </AdminLayout>
   )

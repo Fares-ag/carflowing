@@ -194,3 +194,114 @@
   color: #9ca3af;
   font-size: 14px;
 }
+
+.brListMeta {
+  padding: 12px 16px 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.brModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+}
+
+.brModal {
+  background: #fff;
+  border-radius: 12px;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+}
+
+.brModal--narrow {
+  width: min(480px, 100%);
+}
+
+.brModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.brModalHeader h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 650;
+  color: #111827;
+}
+
+.brModalClose {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px;
+}
+
+.brModalBody {
+  padding: 16px 20px 20px;
+}
+
+.brModalHint {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.brDeclineLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.brDeclineTextarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  resize: vertical;
+}
+
+.brModalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.brModalBtn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.brModalBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.brModalBtn--secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.brModalBtn--danger {
+  background: #dc2626;
+  color: #fff;
+}

@@ -1,0 +1,49 @@
+.dealerNotFound {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f6f7f9;
+}
+
+.dealerNotFoundCard {
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 32px 28px;
+}
+
+.dealerNotFoundTitle {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+  font-weight: 650;
+  color: #111827;
+}
+
+.dealerNotFoundSubtitle {
+  margin: 0 0 20px;
+  font-size: 0.95rem;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.dealerNotFoundCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 560;
+}
+
+.dealerNotFoundCta:hover {
+  background: #1f2937;
+}

@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Download, Trash2, X } from 'lucide-react'
-import { supabase } from '@carflow/shared'
+import { apiRequest } from '@carflow/shared'
+import { logout } from '../../services/authService'
 import { toast } from '../../hooks/useToast'
 import './PrivacySection.css'
 
@@ -15,28 +16,15 @@ export default function PrivacySection() {
   const handleExportData = async () => {
     setExporting(true)
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-      if (userError || !user) {
-        toast.error(userError?.message ?? 'You must be signed in to export data.')
-        return
-      }
-
-      const [profileRes, customerRes] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('customer_profiles').select('*').eq('user_id', user.id).maybeSingle(),
-      ])
-
-      if (profileRes.error) {
-        throw new Error(profileRes.error.message)
-      }
+      const data = await apiRequest<{
+        profile: unknown
+        customerProfile: unknown
+      }>('/customer/profile/full')
 
       const payload = {
         exportedAt: new Date().toISOString(),
-        profile: profileRes.data,
-        customer_profile: customerRes.data ?? null,
+        profile: data.profile,
+        customer_profile: data.customerProfile ?? null,
       }
 
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
@@ -61,13 +49,14 @@ export default function PrivacySection() {
     if (deleteConfirm !== 'DELETE') return
     setDeleting(true)
     try {
-      await supabase.auth.signOut()
+      await apiRequest('/customer/account', { method: 'DELETE' })
+      await logout()
       setShowDeleteModal(false)
       setDeleteConfirm('')
-      toast.info('You have been signed out. Your account is deactivated from this session.')
+      toast.success('Your account has been deleted.')
       navigate('/')
-    } catch {
-      toast.error('Something went wrong. Please try again.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete account.')
     } finally {
       setDeleting(false)
     }
@@ -114,7 +103,7 @@ export default function PrivacySection() {
             <div className="danger-info">
               <h5 className="danger-item-title">Delete Account</h5>
               <p className="danger-item-description">
-                Deactivate this session and sign out. Contact support for full data removal.
+                Permanently delete your profile, favorites, and saved payment methods. Active rentals block deletion.
               </p>
             </div>
             <button type="button" className="danger-button" onClick={() => setShowDeleteModal(true)}>
@@ -141,8 +130,7 @@ export default function PrivacySection() {
               <div className="delete-alert">
                 <AlertTriangle size={14} />
                 <p>
-                  Your account will be deactivated and you will be signed out. To permanently delete your data,
-                  contact support@carflow.ai.
+                  This permanently deletes your CarFlow account and signs you out. This action cannot be undone.
                 </p>
               </div>
               <div className="delete-confirm">
@@ -163,7 +151,7 @@ export default function PrivacySection() {
                   disabled={deleteConfirm !== 'DELETE' || deleting}
                   onClick={handleDeleteConfirm}
                 >
-                  {deleting ? 'Signing out…' : 'Deactivate & Sign Out'}
+                  {deleting ? 'Deleting…' : 'Delete Account'}
                 </button>
                 <button
                   type="button"

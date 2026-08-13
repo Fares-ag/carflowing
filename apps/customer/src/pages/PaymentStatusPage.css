@@ -1,0 +1,94 @@
+.payment-status-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f9fafb;
+}
+
+.payment-status-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+}
+
+.payment-status-content > div {
+  max-width: 480px;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 40px;
+  text-align: center;
+}
+
+.payment-status-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.payment-status-icon--success {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.payment-status-icon--pending {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.payment-status-icon--failed {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.payment-status-content h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  color: #111827;
+}
+
+.payment-status-content p {
+  margin: 0 0 20px;
+  font-size: 15px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.payment-status-booking-id {
+  font-weight: 600;
+  color: #111827 !important;
+}
+
+.payment-status-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.payment-status-content .btn-primary {
+  padding: 12px 24px;
+  background: #685ff7;
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.payment-status-content .btn-secondary {
+  padding: 12px 24px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  color: #374151;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}

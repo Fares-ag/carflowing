@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
-import { supabase } from '@carflow/shared'
+import { requestPasswordReset } from '../services/authService'
 import './LoginPage.css'
 
 export function ForgotPasswordPage() {
@@ -16,10 +16,7 @@ export function ForgotPasswordPage() {
     setError('')
     setIsSubmitting(true)
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login`,
-      })
-      if (resetError) throw resetError
+      await requestPasswordReset(email)
       setSuccess(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to send reset email')

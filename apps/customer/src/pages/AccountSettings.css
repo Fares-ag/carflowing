@@ -83,6 +83,23 @@
   color: #007bff;
 }
 
+.account-sign-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  color: #b91c1c;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.account-sign-out:hover {
+  background: #fef2f2;
+}
+
 .settings-layout {
   display: flex;
   gap: 28px;

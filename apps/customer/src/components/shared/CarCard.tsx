@@ -1,4 +1,4 @@
-import { Bolt, Droplets, MapPin, Settings2, Star, Users, X } from 'lucide-react'
+import { Bolt, Droplets, Heart, MapPin, Settings2, Star, Users, X } from 'lucide-react'
 import './CarCard.css'
 
 interface CarCardProps {
@@ -112,16 +112,18 @@ export function CarCard({
             <div className="price-period">per {pricePeriod}</div>
           </div>
           <div className="car-actions">
-            <button className="icon-button-small" type="button" onClick={onFavorite} aria-label="Save to favorites">
-              <Star size={14} />
-            </button>
+            {onFavorite && (
+              <button className="icon-button-small" type="button" onClick={onFavorite} aria-label="Save car">
+                <Heart size={14} />
+              </button>
+            )}
             {onRemove && (
               <button className="icon-button-small" type="button" onClick={onRemove} aria-label="Remove favorite">
                 <X size={14} />
               </button>
             )}
             <button className="configure-button" type="button" onClick={onConfigure}>
-              Configure
+              Book
             </button>
           </div>
         </div>

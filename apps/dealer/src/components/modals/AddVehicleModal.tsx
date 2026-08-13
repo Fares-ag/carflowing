@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { VehicleCategory } from '@carflow/shared'
 import { Modal } from './Modal'
 import { Car, CheckCircle2, DollarSign, FileText, ImagePlus, Wrench } from 'lucide-react'
 import { uploadVehicleImage } from '@carflow/shared'
@@ -11,31 +12,48 @@ function splitNameToMakeModel(fullName: string): { make: string; model: string }
   return { make: parts[0], model: parts.slice(1).join(' ') }
 }
 
+const CATEGORY_OPTIONS: { value: VehicleCategory; label: string }[] = [
+  { value: 'sedan', label: 'Sedan' },
+  { value: 'suv', label: 'SUV' },
+  { value: 'truck', label: 'Truck' },
+  { value: 'luxury', label: 'Luxury' },
+  { value: 'ev', label: 'EV' },
+  { value: 'other', label: 'Other' },
+]
+
+const CURRENT_YEAR = new Date().getFullYear()
+
+export type AddVehicleValues = {
+  name: string
+  make: string
+  model: string
+  category: VehicleCategory
+  year: number
+  dailyRateQar: number
+  status: 'Available' | 'Rented' | 'Maintenance'
+  imageUrl?: string
+  mileage?: number
+  fuelType?: 'gas' | 'diesel' | 'electric' | 'hybrid'
+  transmission?: 'automatic' | 'manual'
+  seats?: number
+}
+
 export interface AddVehicleModalProps {
   isOpen: boolean
   onClose: () => void
-  onCreate?: (values: {
-    name: string
-    make: string
-    model: string
-    category: 'SUV' | 'Sedan'
-    year: number
-    dailyRateQar: number
-    status: 'Available' | 'Rented' | 'Maintenance'
-    imageUrl?: string
-    mileage?: number
-    fuelType?: 'gas' | 'diesel' | 'electric' | 'hybrid'
-    transmission?: 'automatic' | 'manual'
-    seats?: number
-  }) => void
+  onCreate?: (values: AddVehicleValues) => void | Promise<void>
+}
+
+function categoryLabel(category: VehicleCategory): string {
+  return CATEGORY_OPTIONS.find((o) => o.value === category)?.label ?? category
 }
 
 export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, onCreate }: AddVehicleModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [pendingSlot, setPendingSlot] = useState<number | null>(null)
   const [name, setName] = useState('')
-  const [category, setCategory] = useState<'SUV' | 'Sedan'>('SUV')
-  const [year, setYear] = useState('2024')
+  const [category, setCategory] = useState<VehicleCategory>('suv')
+  const [year, setYear] = useState(String(CURRENT_YEAR))
   const [dailyRate, setDailyRate] = useState('300')
   const [status, setStatus] = useState<'Available' | 'Rented' | 'Maintenance'>('Available')
   const [mileage, setMileage] = useState('15000')
@@ -45,11 +63,24 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState('')
+  const [formError, setFormError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (!isOpen) {
       setImageUrls([])
       setUploadError('')
+      setFormError('')
+      setSubmitting(false)
+      setName('')
+      setCategory('suv')
+      setYear(String(CURRENT_YEAR))
+      setDailyRate('300')
+      setStatus('Available')
+      setMileage('15000')
+      setFuelType('gas')
+      setTransmission('automatic')
+      setSeats('5')
     }
   }, [isOpen])
 
@@ -94,10 +125,54 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
     }
   }, [category, dailyRate, mileage, name, status, year])
 
+  const handleSubmit = async () => {
+    if (submitting) return
+    const trimmed = name.trim()
+    if (!trimmed) {
+      setFormError('Vehicle name is required.')
+      return
+    }
+    const yearNum = Number(year)
+    if (!Number.isFinite(yearNum) || yearNum < 1990 || yearNum > CURRENT_YEAR + 1) {
+      setFormError(`Year must be between 1990 and ${CURRENT_YEAR + 1}.`)
+      return
+    }
+    const rateNum = Number(dailyRate)
+    if (!Number.isFinite(rateNum) || rateNum <= 0) {
+      setFormError('Daily rate must be a positive number.')
+      return
+    }
+
+    setFormError('')
+    setSubmitting(true)
+    const { make, model } = splitNameToMakeModel(trimmed)
+    try {
+      await onCreate?.({
+        name: trimmed,
+        make,
+        model,
+        category,
+        year: yearNum,
+        dailyRateQar: rateNum,
+        status,
+        imageUrl: imageUrls[0],
+        mileage: Number(mileage.replace(/\D/g, '')) || 0,
+        fuelType,
+        transmission,
+        seats: Number(seats) || 5,
+      })
+      onClose()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to add vehicle')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   if (!isOpen) return null
 
   return (
-    <Modal open={isOpen} title="Add New Vehicle" size="lg" onClose={onClose}>
+    <Modal open={isOpen} title="Add New Vehicle" size="lg" onClose={submitting ? () => undefined : onClose}>
       <div className="addVehicleModal">
         <div className="avHeader">
           <div className="avHeaderTitle">Add New Vehicle</div>
@@ -135,7 +210,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                     className="avPhotoSlot"
                     type="button"
                     onClick={() => handlePhotoClick(i)}
-                    disabled={isUploading}
+                    disabled={isUploading || submitting}
                   >
                     <div className="avPhotoSlotInner">
                       {url ? (
@@ -177,6 +252,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                     placeholder="e.g., BMW X3 2024 Premium"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
+                    disabled={submitting}
                   />
                 </label>
 
@@ -185,10 +261,14 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                   <select
                     className="avSelect"
                     value={category}
-                    onChange={(event) => setCategory(event.target.value as 'SUV' | 'Sedan')}
+                    onChange={(event) => setCategory(event.target.value as VehicleCategory)}
+                    disabled={submitting}
                   >
-                    <option value="SUV">SUV</option>
-                    <option value="Sedan">Sedan</option>
+                    {CATEGORY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
 
@@ -198,7 +278,8 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                     <input
                       className="avInput avInputTall"
                       value={year}
-                      onChange={(event) => setYear(event.target.value)}
+                      onChange={(event) => setYear(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                      disabled={submitting}
                     />
                   </label>
                   <label className="avField">
@@ -209,6 +290,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                         className="avInput avInputTall avCurrencyInput"
                         value={dailyRate}
                         onChange={(event) => setDailyRate(event.target.value)}
+                        disabled={submitting}
                       />
                     </div>
                   </label>
@@ -233,6 +315,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                       className="avInput avInputTall"
                       value={mileage}
                       onChange={(e) => setMileage(e.target.value.replace(/\D/g, ''))}
+                      disabled={submitting}
                     />
                     <span className="avUnit">km</span>
                   </div>
@@ -245,6 +328,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                       className="avSelect"
                       value={fuelType}
                       onChange={(e) => setFuelType(e.target.value as 'gas' | 'diesel' | 'electric' | 'hybrid')}
+                      disabled={submitting}
                     >
                       <option value="gas">Petrol</option>
                       <option value="diesel">Diesel</option>
@@ -258,6 +342,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                       className="avSelect"
                       value={transmission}
                       onChange={(e) => setTransmission(e.target.value as 'automatic' | 'manual')}
+                      disabled={submitting}
                     >
                       <option value="automatic">Automatic</option>
                       <option value="manual">Manual</option>
@@ -272,6 +357,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                       className="avSelect"
                       value={seats}
                       onChange={(e) => setSeats(e.target.value)}
+                      disabled={submitting}
                     >
                       {[2, 4, 5, 6, 7, 8].map((n) => (
                         <option key={n} value={n}>
@@ -288,6 +374,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                       onChange={(event) =>
                         setStatus(event.target.value as 'Available' | 'Rented' | 'Maintenance')
                       }
+                      disabled={submitting}
                     >
                       <option value="Available">Available</option>
                       <option value="Rented">Rented</option>
@@ -316,7 +403,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                   </div>
                   <div className="avPreviewCardLabel">Vehicle Details</div>
                   <div className="avPreviewCardValue">{summary.name || 'Name not specified'}</div>
-                  <div className="avPreviewCardMeta">{summary.category || 'Category not selected'}</div>
+                  <div className="avPreviewCardMeta">{categoryLabel(summary.category)}</div>
                   <div className="avPreviewCardSub">
                     {summary.mileage ? `${Number(summary.mileage).toLocaleString()} km` : 'Mileage not set'}
                   </div>
@@ -359,37 +446,28 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
         <div className="avFooter">
           <div className="avFooterNote">
             <div className="avFooterNoteTop">* Required fields must be completed</div>
-            <div className="avFooterNoteBottom">All mandatory information should be provided before submission</div>
+            <div className="avFooterNoteBottom">
+              {formError ? <span className="avUploadError">{formError}</span> : 'All mandatory information should be provided before submission'}
+            </div>
           </div>
           <div className="avFooterActions">
-            <button className="avFooterBtn avFooterBtn--ghost" type="button" onClick={onClose}>
+            <button
+              className="avFooterBtn avFooterBtn--ghost"
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+            >
               Cancel
             </button>
             <button
               className="avFooterBtn avFooterBtn--primary"
               type="button"
-              onClick={() => {
-                const trimmed = name.trim() || 'New Vehicle'
-                const { make, model } = splitNameToMakeModel(trimmed)
-                onCreate?.({
-                  name: trimmed,
-                  make,
-                  model,
-                  category,
-                  year: Number(year) || 2024,
-                  dailyRateQar: Number(dailyRate) || 300,
-                  status,
-                  imageUrl: imageUrls[0],
-                  mileage: Number(mileage.replace(/\D/g, '')) || 0,
-                  fuelType,
-                  transmission,
-                  seats: Number(seats) || 5,
-                })
-                onClose()
-              }}
+              onClick={() => void handleSubmit()}
+              disabled={submitting}
+              aria-busy={submitting}
             >
               <Car size={14} />
-              Add Vehicle to Inventory
+              {submitting ? 'Adding…' : 'Add Vehicle to Inventory'}
             </button>
           </div>
         </div>

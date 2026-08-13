@@ -1,6 +1,6 @@
 import { useState, useCallback, memo, useEffect, useMemo } from 'react'
 import type { Invoice, PaymentMethod } from '@carflow/shared'
-import { supabase } from '@carflow/shared'
+import { apiRequest } from '@carflow/shared'
 import {
   listInvoices,
   listPaymentMethods,
@@ -30,11 +30,13 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
     ;(async () => {
       try {
         setLoadError(null)
-        const [inv, pm, rentalsRes, authRes] = await Promise.all([
+        const [inv, pm, rentalsRes, full] = await Promise.all([
           listInvoices(),
           listPaymentMethods(),
           listRentalsWithDetails({ pageSize: 200 }),
-          supabase.auth.getUser(),
+          apiRequest<{ profile: { createdAt?: string; created_at?: string } | null }>(
+            '/customer/profile/full'
+          ),
         ])
         if (cancelled) return
         setInvoices(inv)
@@ -43,7 +45,7 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
           (r) => r.status === 'active' || r.status === 'reserved'
         ).length
         setActiveRentalsCount(active)
-        const created = authRes.data.user?.created_at
+        const created = full.profile?.createdAt || (full.profile as any)?.created_at
         setMemberSince(
           created
             ? new Date(created).toLocaleDateString(undefined, { dateStyle: 'medium' })
@@ -108,6 +110,10 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
               View rental charges, invoices, and saved payment methods.
             </p>
           </div>
+
+          <p className="billing-platform-notice">
+            Customer subscription plans are not active yet. This page shows your rental billing history only.
+          </p>
 
           {loadError && <p className="billing-load-error">{loadError}</p>}
 

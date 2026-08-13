@@ -1,77 +1,49 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useState, useRef, useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CarflowLogo, formatDate } from '@carflow/shared'
-import { Bell, Menu, Search, User } from 'lucide-react'
+import { CarflowLogo } from '@carflow/shared'
+import { ChevronDown, Heart, Menu } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import {
-  getUnreadNotificationCount,
-  listNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
-} from '../../services/customerService'
-import { InfoModal } from './InfoModal'
 import './Header.css'
 
+const CAR_CATEGORIES = [
+  { label: 'All cars', to: '/browse' },
+  { label: 'Sedan', to: '/browse?category=Sedan' },
+  { label: 'SUV', to: '/browse?category=SUV' },
+  { label: 'Electric', to: '/browse?category=Electric' },
+]
+
+const SAVED_PATH = '/settings?section=saved'
+const SAVED_LOGIN_REDIRECT = `/login?redirect=${encodeURIComponent(SAVED_PATH)}`
+
 export function Header() {
-  const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const panelRef = useRef<HTMLDivElement>(null)
+  const [isCarsOpen, setIsCarsOpen] = useState(false)
+  const carsRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { session } = useAuth()
-
-  const { data: unreadCount = 0 } = useQuery({
-    queryKey: ['notifications', 'unread'],
-    queryFn: getUnreadNotificationCount,
-    enabled: !!session,
-  })
-
-  const { data: notificationsData, isLoading } = useQuery({
-    queryKey: ['notifications', 'list'],
-    queryFn: () => listNotifications({ pageSize: 15 }),
-    enabled: !!session && isNotificationsOpen,
-  })
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
-        setIsNotificationsOpen(false)
+      if (carsRef.current && !carsRef.current.contains(event.target as Node)) {
+        setIsCarsOpen(false)
       }
     }
-    if (isNotificationsOpen) {
+    if (isCarsOpen) {
       document.addEventListener('click', handleClickOutside)
       return () => document.removeEventListener('click', handleClickOutside)
     }
-  }, [isNotificationsOpen])
+  }, [isCarsOpen])
 
-  const handleNotifications = () => {
-    if (!session) {
-      setInfoModal({
-        title: 'Notifications',
-        message: 'Sign in to view your notifications.',
-      })
+  const closeMenu = () => setIsMenuOpen(false)
+
+  const handleSavedClick = () => {
+    if (session) {
+      navigate(SAVED_PATH)
       return
     }
-    setIsNotificationsOpen((open) => !open)
+    navigate(SAVED_LOGIN_REDIRECT)
   }
 
-  const handleMarkAllRead = async () => {
-    try {
-      await markAllNotificationsRead()
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-    } catch {
-      console.error('Failed to mark notifications as read')
-    }
-  }
-
-  const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const query = searchQuery.trim()
-    navigate(query ? `/browse?search=${encodeURIComponent(query)}` : '/browse')
-  }
   return (
     <>
       <header className="header">
@@ -79,86 +51,73 @@ export function Header() {
           <Link to="/" className="logo">
             <img src={CarflowLogo} alt="Carflow" />
           </Link>
-          
-          <nav className="navigation">
-            <Link to="/browse" className="nav-link">Browse Cars</Link>
-            <Link to="/contact" className="nav-link">Contact</Link>
-            <Link to="/faqs" className="nav-link">FAQ's</Link>
-          </nav>
 
-          <div className="header-actions">
-            <form className="search-container" onSubmit={handleSearchSubmit}>
-              <input
-                type="text"
-                placeholder="Search..."
-                className="search-input"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-              <button type="submit" className="search-submit" aria-label="Search">
-                <Search className="search-icon" size={16} />
-              </button>
-            </form>
-            <div className="header-notifications" ref={panelRef}>
+          <nav className="navigation" aria-label="Primary">
+            <div className="nav-dropdown" ref={carsRef}>
               <button
-                className="icon-button"
                 type="button"
-                onClick={handleNotifications}
-                aria-label="Notifications"
-                aria-expanded={isNotificationsOpen}
+                className={`nav-link nav-link--button ${isCarsOpen ? 'open' : ''}`}
+                aria-expanded={isCarsOpen}
+                aria-haspopup="true"
+                onClick={() => setIsCarsOpen((open) => !open)}
               >
-                <Bell size={20} />
-                {session && unreadCount > 0 && (
-                  <span className="badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
-                )}
+                Cars
+                <ChevronDown size={14} />
               </button>
-              {isNotificationsOpen && session && (
-                <div className="header-notifications-panel">
-                  <div className="header-notifications-header">
-                    <h3>Notifications</h3>
-                    {unreadCount > 0 && (
-                      <button
-                        type="button"
-                        className="header-notifications-mark-all"
-                        onClick={handleMarkAllRead}
-                      >
-                        Mark all read
-                      </button>
-                    )}
-                  </div>
-                  <div className="header-notifications-list">
-                    {isLoading ? (
-                      <p className="header-notifications-empty">Loading…</p>
-                    ) : !notificationsData?.items.length ? (
-                      <p className="header-notifications-empty">No notifications yet.</p>
-                    ) : (
-                      notificationsData.items.map((n) => (
-                        <div
-                          key={n.id}
-                          className={`header-notification-item ${n.read ? 'read' : ''}`}
-                          onClick={() => {
-                            if (!n.read) {
-                              markNotificationRead(n.id).then(() =>
-                                queryClient.invalidateQueries({ queryKey: ['notifications'] })
-                              )
-                            }
-                          }}
-                        >
-                          <div className="header-notification-title">{n.title}</div>
-                          <div className="header-notification-message">{n.message}</div>
-                          <div className="header-notification-date">{formatDate(n.createdAt)}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+              {isCarsOpen && (
+                <div className="nav-dropdown__menu" role="menu">
+                  {CAR_CATEGORIES.map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="nav-dropdown__item"
+                      role="menuitem"
+                      onClick={() => setIsCarsOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
                 </div>
               )}
             </div>
-            <Link to={session ? '/settings' : '/login'} className="profile-button">
-              <div className="profile-avatar">
-                <User size={16} />
-              </div>
+            <Link to="/browse" className="nav-link">
+              Browse Cars
             </Link>
+            <Link to="/how-it-works" className="nav-link">
+              How it works
+            </Link>
+            <Link to="/contact" className="nav-link">
+              Contact
+            </Link>
+            <Link to="/faqs" className="nav-link">
+              FAQ&apos;s
+            </Link>
+            {session && (
+              <Link to="/my-booking" className="nav-link">
+                My booking
+              </Link>
+            )}
+          </nav>
+
+          <div className="header-actions">
+            <button
+              type="button"
+              className="header-saved"
+              aria-label={session ? 'Saved cars' : 'Sign in to view saved cars'}
+              title={session ? 'Saved cars' : 'Sign in to save cars'}
+              onClick={handleSavedClick}
+            >
+              <Heart size={18} />
+            </button>
+            {session ? (
+              <Link to="/settings" className="header-signin-btn">
+                Account
+              </Link>
+            ) : (
+              <Link to="/login" className="header-signin-btn">
+                Sign In
+              </Link>
+            )}
             <button className="menu-button" type="button" aria-label="Open menu" onClick={() => setIsMenuOpen(true)}>
               <Menu size={18} />
             </button>
@@ -168,38 +127,53 @@ export function Header() {
 
       {isMenuOpen && (
         <div className="header-menu">
-          <div className="header-menu__backdrop" onClick={() => setIsMenuOpen(false)} />
+          <div className="header-menu__backdrop" onClick={closeMenu} />
           <div className="header-menu__panel">
-            <button className="header-menu__close" type="button" onClick={() => setIsMenuOpen(false)}>
+            <button className="header-menu__close" type="button" onClick={closeMenu}>
               Close
             </button>
-            <Link to="/browse" className="header-menu__link" onClick={() => setIsMenuOpen(false)}>
+            <Link to="/browse" className="header-menu__link" onClick={closeMenu}>
               Browse Cars
             </Link>
-            <Link to="/contact" className="header-menu__link" onClick={() => setIsMenuOpen(false)}>
+            {CAR_CATEGORIES.filter((c) => c.label !== 'All cars').map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                className="header-menu__link header-menu__link--sub"
+                onClick={closeMenu}
+              >
+                {item.label}
+              </Link>
+            ))}
+            <Link to="/how-it-works" className="header-menu__link" onClick={closeMenu}>
+              How it works
+            </Link>
+            <Link to="/contact" className="header-menu__link" onClick={closeMenu}>
               Contact
             </Link>
-            <Link to="/faqs" className="header-menu__link" onClick={() => setIsMenuOpen(false)}>
-              FAQ's
+            <Link to="/faqs" className="header-menu__link" onClick={closeMenu}>
+              FAQ&apos;s
             </Link>
-            <Link
-              to={session ? '/settings' : '/login'}
-              className="header-menu__cta"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              {session ? 'Profile' : 'Sign in'}
-            </Link>
+            {session ? (
+              <>
+                <Link to="/my-booking" className="header-menu__link" onClick={closeMenu}>
+                  My booking
+                </Link>
+                <Link to={SAVED_PATH} className="header-menu__link" onClick={closeMenu}>
+                  Saved cars
+                </Link>
+                <Link to="/settings" className="header-menu__cta" onClick={closeMenu}>
+                  Account
+                </Link>
+              </>
+            ) : (
+              <Link to="/login" className="header-menu__cta" onClick={closeMenu}>
+                Sign In
+              </Link>
+            )}
           </div>
         </div>
       )}
-
-      <InfoModal
-        open={!!infoModal}
-        title={infoModal?.title ?? ''}
-        message={infoModal?.message ?? ''}
-        onClose={() => setInfoModal(null)}
-      />
     </>
   )
 }
-

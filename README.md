@@ -1,187 +1,108 @@
 # CarFlow Monorepo
 
-A monorepo containing the CarFlow platform with three main applications: **Admin**, **Customer**, and **Dealer**, plus a shared backend API server.
+CarFlow platform: **Admin**, **Customer**, and **Dealer** Vite apps plus an Express API (`apps/backend`).
 
-## Project Structure
+## Stack
 
-```
-carflow-monorepo/
-├── apps/
-│   ├── admin/          # Admin dashboard application
-│   ├── customer/       # Customer-facing application
-│   ├── dealer/         # Dealer portal application
-│   └── backend/        # Backend API server (MCP integration)
-├── packages/
-│   └── shared/         # Shared types and utilities
-├── package.json        # Root workspace configuration
-└── README.md
-```
+| Layer | Tech |
+|-------|------|
+| Database | PostgreSQL (Docker locally, Neon in production) via Drizzle |
+| Auth | JWT in httpOnly cookies + RBAC (`admin` / `dealer` / `customer`) |
+| Uploads | Local disk in dev, Vercel Blob in production |
+| Frontends | React 18 + TypeScript + Vite |
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
+- Node.js 18+
+- Docker (for local Postgres)
 
-- Node.js 18+ and npm/yarn/pnpm
-- Figma MCP server configured (for design integration)
+## Setup
 
-### Installation
-
-1. Install all dependencies:
 ```bash
+# 1. Env
+cp .env.example .env
+
+# 2. Install
 npm install
+
+# 3. Start Postgres
+# Preferred: Docker
+npm run db:up
+
+# Or use local Postgres 16/17: create role/db then set DATABASE_URL
+#   "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -f apps/backend/src/db/create-db.sql
+
+# 4. Push schema + seed demo users
+npm run db:push
+npm run db:seed
 ```
 
-This will install dependencies for all workspaces.
+Demo accounts (password `password123`):
+- `admin@carflow.dev`
+- `dealer@carflow.dev`
+- `customer@carflow.dev`
 
-### Development
+> If `db:push` fails with `ECONNREFUSED`, Postgres is not listening on `localhost:5432`. Start Docker Desktop and run `npm run db:up`, or enable TCP in your local Postgres `postgresql.conf` (`listen_addresses = '*'` / `localhost`) and restart the service.
 
-#### Run all apps (recommended for development):
+## Development
+
 ```bash
-npm run dev
-```
-
-#### Run individual apps:
-
-**Backend API Server** (required for Figma integration):
-```bash
+# API (required)
 npm run dev:backend
-# Runs on http://localhost:3001
+# http://localhost:3001
+
+# Frontends
+npm run dev:customer   # http://localhost:5173
+npm run dev:admin      # http://localhost:5174
+npm run dev:dealer     # http://localhost:5175
 ```
 
-**Customer App**:
+Vite proxies `/api` and `/uploads` to the backend.
+
+## Production notes
+
+See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) for the full launch checklist.
+
+- Set `DATABASE_URL` to your Neon connection string
+- Set strong `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET`
+- Set `COOKIE_SECURE=true` behind HTTPS
+- Set `UPLOAD_DRIVER=blob` and `BLOB_READ_WRITE_TOKEN`
+- Set `CORS_ORIGINS` to your three Vercel frontend origins
+- Set `PUBLIC_API_URL`, `CUSTOMER_APP_URL`, and SkipCash / Resend keys on Fly.io
+- Per Vercel project: `VITE_API_URL=https://api.yourdomain.com/api`, `VITE_USE_MOCK_API=false`
+- Deploy API: `cd apps/backend && fly deploy` (see `fly.toml` + `Dockerfile`)
+- Run migrations: `npm run db:migrate` (uses `apps/backend/drizzle/`)
+- Tag release `v*` to trigger `.github/workflows/deploy.yml`
+
+## Testing
+
+Automated tests cover API integration, unit/component tests, E2E flows, conventions, and documented product gaps.
+
 ```bash
-npm run dev:customer
-# Runs on http://localhost:5173
+npm run test              # all workspace unit/component/API tests
+npm run test:api          # backend integration only (embedded Postgres)
+npm run test:conventions  # architecture/security convention checks
+npm run test:gaps         # gap registry validation
+npm run test:e2e          # Playwright (starts backend + 3 Vite apps)
+npm run lint:strict       # ESLint with zero warnings (root)
+npm run typecheck         # TypeScript build across workspaces
 ```
 
-**Admin App**:
-```bash
-npm run dev:admin
-# Runs on http://localhost:5174
-```
+**Seed credentials for E2E/manual QA** (password `password123`):
 
-**Dealer App**:
-```bash
-npm run dev:dealer
-# Runs on http://localhost:5175
-```
+| Role | Email |
+|------|-------|
+| Admin | `admin@carflow.dev` |
+| Dealer | `dealer@carflow.dev` |
+| Customer | `customer@carflow.dev` |
 
-### Building
+**Conventions**
 
-Build all apps:
-```bash
-npm run build
-```
+- API tests: `apps/backend/src/routes/__tests__/*.test.ts`
+- Component tests: `apps/*/src/**/__tests__/*`
+- E2E: `e2e/<app>/<feature>.spec.ts`
+- Gap registry: `tests/gap-registry.json` (tag failing assertions with `@gap` until fixed)
 
-Build individual apps:
-```bash
-npm run build:backend
-npm run build:customer
-npm run build:admin
-npm run build:dealer
-```
+## Legacy
 
-## Figma Integration
-
-The project uses **MCP (Model Context Protocol)** for Figma design integration. The backend API server handles all Figma MCP calls.
-
-### Setup
-
-1. **Configure MCP Server**: Ensure your Figma MCP server is properly configured in your MCP settings.
-
-2. **Backend API**: The backend server (`apps/backend`) provides REST endpoints that use MCP tools:
-   - `GET /api/figma/design?url={figmaUrl}` - Fetch design context
-   - `GET /api/figma/metadata?url={figmaUrl}` - Fetch metadata
-   - `GET /api/figma/screenshot?url={figmaUrl}` - Get screenshot
-
-3. **Frontend Integration**: All frontend apps are configured to proxy `/api` requests to the backend server.
-
-### Using Figma Integration
-
-1. Start the backend server: `npm run dev:backend`
-2. Start the customer app: `npm run dev:customer`
-3. Enter a Figma URL in the customer app's Figma integration UI
-4. The app will fetch designs through the backend API using MCP
-
-### Example Figma URLs
-
-- Design URL: `https://www.figma.com/design/ABC123xyz/MyDesign?node-id=123-456`
-- File URL: `https://www.figma.com/file/ABC123xyz/MyDesign`
-
-## Supabase Backend
-
-The platform uses **Supabase** for auth, database, storage, and realtime.
-
-### Quick Setup
-
-1. Create a Supabase project at [supabase.com](https://supabase.com).
-2. Copy `.env.example` to `.env` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-3. Run SQL in order: `schema.sql` → `trigger.sql` → `rls.sql` → `seed.sql` (after creating auth users).
-
-📖 **Full guide:** [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)
-
-### Edge Functions
-
-Supabase Edge Functions are in `supabase/functions/`:
-- `payments-webhook` - Payment gateway webhook handler
-- `send-email` - Email sending (Resend/SendGrid integration)
-- `analytics-rollup` - Analytics aggregation
-
-Deploy with: `supabase functions deploy <function-name>`
-
-## Workspace Scripts
-
-### Root Level
-
-- `npm run dev` - Start all apps in development mode
-- `npm run build` - Build all apps
-- `npm run lint` - Lint all workspaces
-- `npm run clean` - Clean all node_modules and build artifacts
-
-### Individual Workspaces
-
-Each app has its own scripts defined in its `package.json`:
-- `dev` - Development server
-- `build` - Production build
-- `preview` - Preview production build
-- `lint` - Run linter
-
-## Technologies
-
-### Frontend Apps
-- **React 18** - UI library
-- **TypeScript** - Type safety
-- **Vite** - Build tool and dev server
-
-### Backend
-- **Express** - Web framework
-- **TypeScript** - Type safety
-- **MCP** - Model Context Protocol for Figma integration
-
-### Monorepo
-- **npm workspaces** - Package management
-
-## Development Workflow
-
-1. **Start the backend first**: `npm run dev:backend`
-2. **Start the frontend apps** you need: `npm run dev:customer`, `npm run dev:admin`, etc.
-3. **Make changes** in any workspace - hot reloading is enabled
-4. **Shared code**: Use `@carflow/shared` package for common types and utilities
-
-## Next Steps
-
-1. ✅ Monorepo structure created
-2. ✅ Backend API server with MCP integration setup
-3. ✅ Customer app with Figma integration
-4. ✅ Admin and Dealer apps scaffolded
-5. ⏳ Implement MCP client in backend (connect to your MCP server)
-6. ⏳ Build out admin dashboard features
-7. ⏳ Build out dealer portal features
-8. ⏳ Add shared components and utilities
-9. ⏳ Set up authentication and routing
-
-## Notes
-
-- The backend MCP integration (`apps/backend/src/services/figmaMCP.ts`) currently has placeholder implementations. You'll need to integrate with your actual MCP client library.
-- All frontend apps proxy API requests to the backend server automatically.
-- The customer app contains the Figma design integration UI from the original project.
+The `supabase/` folder is archived reference SQL/edge functions from the previous backend. The runtime no longer depends on Supabase.

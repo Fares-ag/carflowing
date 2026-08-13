@@ -151,3 +151,122 @@
 .car-detail-configure:active {
   transform: translateY(0);
 }
+
+.car-detail-price {
+  margin: 12px 0 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #4f46e5;
+}
+
+.car-detail-price span {
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.car-detail-specs--compact {
+  margin-top: 16px;
+}
+
+.car-book-form {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.car-book-heading {
+  margin: 0 0 16px;
+  font-size: 1.15rem;
+}
+
+.car-book-field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.car-book-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 8px;
+}
+
+.car-book-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.car-book-chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.car-book-chip.active {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.car-book-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.car-book-payment {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.car-book-payment strong {
+  display: block;
+  font-size: 14px;
+}
+
+.car-book-payment small {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.car-book-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  margin: 16px 0;
+}
+
+.car-book-total strong {
+  font-size: 1.2rem;
+  color: #0f172a;
+}
+
+.car-book-error {
+  color: #b91c1c;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.car-book-guest-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+}

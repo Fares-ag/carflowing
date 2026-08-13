@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { clearFavorites, listCatalogVehicles, listFavorites, removeFavorite } from '../services/customerService'
-import { useCartStore } from '../stores/cartStore'
+import { vehicleCategoryLabel } from '@carflow/shared'
+import { clearFavorites, listFavoriteVehicles, removeFavorite } from '../services/customerService'
 import { toast } from '../hooks/useToast'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
@@ -10,26 +10,26 @@ import { CarCard } from '../components/shared/CarCard'
 import { ArrowLeft, ChevronDown, Grid, Heart, List, Search } from 'lucide-react'
 import './MyFavorites.css'
 
+function unavailableLabel(reason: string | null | undefined): string | undefined {
+  if (reason === 'pending_booking') return 'Pending your booking'
+  if (reason === 'unavailable') return 'Currently unavailable'
+  if (reason === 'removed') return 'No longer listed'
+  return undefined
+}
+
 export function MyFavorites() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const setVehicle = useCartStore((s) => s.setVehicle)
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState('name')
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
 
-  const { data: favoritesData, isLoading: favoritesLoading, error: favoritesError } = useQuery({
-    queryKey: ['favorites', 'list'],
-    queryFn: () => listFavorites({ pageSize: 12 }),
+  const { data, isLoading, error: queryError } = useQuery({
+    queryKey: ['favorites', 'vehicles'],
+    queryFn: listFavoriteVehicles,
   })
-  const { data: vehiclesData, isLoading: vehiclesLoading, error: vehiclesError } = useQuery({
-    queryKey: ['catalog', 'favorites'],
-    queryFn: () => listCatalogVehicles({ pageSize: 12 }),
-  })
-
-  const isLoading = favoritesLoading || vehiclesLoading
-  const queryError = favoritesError || vehiclesError
+  const favoriteItems = data?.items ?? []
 
   const removeMutation = useMutation({
     mutationFn: removeFavorite,
@@ -40,19 +40,16 @@ export function MyFavorites() {
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to remove'),
   })
 
-  const favorites = favoritesData?.items ?? []
-  const vehicles = vehiclesData?.items ?? []
-
   const favoriteCards = useMemo(() => {
-    const vehicleMap = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]))
-    return favorites.map((favorite) => {
-      const vehicle = vehicleMap.get(favorite.vehicleId)
+    return favoriteItems.map((item) => {
+      const vehicle = item.vehicle
+      const badge = unavailableLabel(item.unavailableReason)
       return {
-        id: favorite.id,
-        vehicleId: favorite.vehicleId,
-        name: vehicle ? vehicle.name : 'Unknown vehicle',
+        id: item.favorite.id,
+        vehicleId: item.favorite.vehicleId,
+        name: vehicle ? vehicle.name : 'Saved vehicle',
         make: vehicle?.make ?? '',
-        type: vehicle?.category === 'suv' ? 'SUV' : vehicle?.category === 'ev' ? 'Electric' : vehicle?.category === 'sedan' ? 'Sedan' : 'Other',
+        type: vehicle ? vehicleCategoryLabel(vehicle.category) : 'Other',
         price: vehicle ? Math.round(vehicle.pricePerDay) : 0,
         seats: vehicle?.seats ?? 5,
         transmission: vehicle?.transmission === 'manual' ? 'Manual' : 'Automatic',
@@ -60,10 +57,12 @@ export function MyFavorites() {
         image: vehicle?.imageUrl,
         isElectric: vehicle?.fuelType === 'electric',
         pricePeriod: 'day' as const,
-        favoriteId: favorite.id,
+        favoriteId: item.favorite.id,
+        unavailable: Boolean(item.unavailableReason),
+        unavailableLabel: badge,
       }
     })
-  }, [favorites, vehicles])
+  }, [favoriteItems])
 
   const filteredCards = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -96,7 +95,7 @@ export function MyFavorites() {
       <div className="favorites-container">
         <div className="favorites-content">
           <div className="page-header">
-            <Link to="/dashboard" className="back-button">
+            <Link to="/browse" className="back-button">
               <ArrowLeft size={14} />
               Back to Dashboard
             </Link>
@@ -111,7 +110,7 @@ export function MyFavorites() {
               <div>
                 <h1 className="page-title">My Favorites</h1>
                 <p className="page-description">
-                  {isEmpty ? '0 saved vehicles' : `${favorites.length} saved vehicle${favorites.length !== 1 ? 's' : ''}`}
+                  {isEmpty ? '0 saved vehicles' : `${favoriteItems.length} saved vehicle${favoriteItems.length !== 1 ? 's' : ''}`}
                 </p>
               </div>
               {!isEmpty && (
@@ -136,7 +135,6 @@ export function MyFavorites() {
               )}
             </div>
 
-            {/* Search and Filters */}
             <div className="filters-section">
               <div className="search-input-wrapper">
                 <Search size={14} className="search-icon" />
@@ -205,7 +203,6 @@ export function MyFavorites() {
               </div>
             )}
 
-            {/* Empty State */}
             {!isLoading && !queryError && isEmpty ? (
               <div className="empty-state">
                 <div className="empty-icon">
@@ -221,25 +218,20 @@ export function MyFavorites() {
             ) : !isLoading && !queryError ? (
               <div className={`favorites-grid ${viewMode === 'list' ? 'favorites-grid--list' : ''}`}>
                 {filteredCards.map((car) => {
-                  const { favoriteId, vehicleId, make, ...cardProps } = car
+                  const { favoriteId, vehicleId, make, unavailable, unavailableLabel: badge, ...cardProps } = car
                   return (
                     <div key={car.id} className="favorite-card-wrapper">
+                      {badge && <span className="favorite-unavailable-badge">{badge}</span>}
                       <CarCard
                         {...cardProps}
                         onRemove={() => removeMutation.mutate(favoriteId)}
                         onFavorite={() => removeMutation.mutate(favoriteId)}
                         onConfigure={() => {
-                          setVehicle({
-                            id: vehicleId,
-                            name: car.name,
-                            make,
-                            fuelType: car.fuelType,
-                            transmission: car.transmission,
-                            seats: car.seats,
-                            image: car.image,
-                            pricePerDay: car.price,
-                          })
-                          navigate('/cart')
+                          if (unavailable) {
+                            toast.info(badge ?? 'This vehicle is not available to configure right now.')
+                            return
+                          }
+                          navigate(`/car/${vehicleId}`)
                         }}
                       />
                     </div>
@@ -255,4 +247,3 @@ export function MyFavorites() {
     </div>
   )
 }
-

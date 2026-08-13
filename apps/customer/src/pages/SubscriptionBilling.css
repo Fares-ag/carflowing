@@ -890,6 +890,16 @@
   margin: 0 0 16px;
 }
 
+.billing-platform-notice {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #475569;
+  font-size: 14px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+}
+
 .billing-overview-root {
   display: flex;
   flex-direction: column;

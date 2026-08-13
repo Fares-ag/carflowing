@@ -6,9 +6,11 @@ type InfoModalProps = {
   title: string
   message: string
   onClose: () => void
+  onConfirm?: () => void
+  confirmLabel?: string
 }
 
-export function InfoModal({ open, title, message, onClose }: InfoModalProps) {
+export function InfoModal({ open, title, message, onClose, onConfirm, confirmLabel }: InfoModalProps) {
   if (!open) return null
 
   return (
@@ -20,8 +22,13 @@ export function InfoModal({ open, title, message, onClose }: InfoModalProps) {
         <h3 className="adminInfoModalTitle">{title}</h3>
         <p className="adminInfoModalMessage">{message}</p>
         <div className="adminInfoModalActions">
+          {onConfirm ? (
+            <button className="adminInfoModalBtn adminInfoModalBtn--danger" type="button" onClick={onConfirm}>
+              {confirmLabel ?? 'Confirm'}
+            </button>
+          ) : null}
           <button className="adminInfoModalBtn" type="button" onClick={onClose}>
-            Close
+            {onConfirm ? 'Cancel' : 'Close'}
           </button>
         </div>
       </div>

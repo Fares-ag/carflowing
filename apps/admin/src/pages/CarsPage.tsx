@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Dealer, Vehicle } from '@carflow/shared'
-import { createVehicle, deleteVehicle, listDealers, listRentalsWithDetails, listVehicles, updateRentalStatus } from '../services/adminService'
+import type { Dealer, Vehicle, VehicleStatus } from '@carflow/shared'
+import { createVehicle, deleteVehicle, listDealers, listRentalsWithDetails, listVehicles, updateRentalStatus, updateVehicleStatus } from '../services/adminService'
 import type { RentalWithDetails } from '../services/adminService'
 import { AdminLayout } from '../layout/AdminLayout'
 import { AddCarModal } from '../components/AddCarModal'
@@ -66,17 +66,28 @@ export function CarsPage() {
   const [sortOrder, setSortOrder] = useState('newest')
   const [showAddModal, setShowAddModal] = useState(false)
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null)
+  const [deleteVehicleName, setDeleteVehicleName] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const refreshRequests = () => {
+    setIsLoading(true)
+    setLoadError(null)
     Promise.all([
       listRentalsWithDetails({ pageSize: 50 }),
       listVehicles({ pageSize: 100 }),
       listDealers({ pageSize: 100 }),
-    ]).then(([rentalData, vehicleData, dealerData]) => {
-      setRentals(rentalData.items)
-      setVehicles(vehicleData.items)
-      setDealers(dealerData.items)
-    })
+    ])
+      .then(([rentalData, vehicleData, dealerData]) => {
+        setRentals(rentalData.items)
+        setVehicles(vehicleData.items)
+        setDealers(dealerData.items)
+      })
+      .catch((err) => {
+        setLoadError(err instanceof Error ? err.message : 'Failed to load cars data')
+      })
+      .finally(() => setIsLoading(false))
   }
 
   useEffect(() => {
@@ -153,6 +164,20 @@ export function CarsPage() {
   return (
     <AdminLayout title="Cars" subtitle="Manage your vehicle inventory">
       <div className="carsPage">
+        {loadError && (
+          <div className="carsErrorBanner" role="alert">
+            <span>{loadError}</span>
+            <button type="button" className="carsActionBtn" onClick={() => refreshRequests()}>
+              Retry
+            </button>
+          </div>
+        )}
+        {isLoading ? (
+          <div className="carsEmpty" role="status">
+            Loading cars data…
+          </div>
+        ) : (
+          <>
         <section className="carsToolbarCard">
           <div className="carsToolbarRow">
             <div className="carsToolbarLeft">
@@ -354,7 +379,14 @@ export function CarsPage() {
                           type="button"
                           aria-label="Approve"
                           onClick={() => {
-                            updateRentalStatus(r.sourceId, 'completed').then(() => refreshRequests())
+                            updateRentalStatus(r.sourceId, 'completed')
+                              .then(() => refreshRequests())
+                              .catch((err) =>
+                                setInfoModal({
+                                  title: 'Error',
+                                  message: err instanceof Error ? err.message : 'Failed to approve rental',
+                                })
+                              )
                           }}
                         >
                           <Check size={14} />
@@ -404,18 +436,36 @@ export function CarsPage() {
                     <td>{v.year}</td>
                     <td>QAR {v.pricePerDay?.toLocaleString() ?? 0}</td>
                     <td>
-                      <span className={`carsVehicleStatus carsVehicleStatus--${v.status}`}>{v.status}</span>
+                      <label className="carsSelectBtn">
+                        <select
+                          aria-label={`Status for ${v.name}`}
+                          value={v.status}
+                          onChange={(event) => {
+                            const nextStatus = event.target.value as VehicleStatus
+                            updateVehicleStatus(v.id, nextStatus)
+                              .then(() => refreshRequests())
+                              .catch((err) =>
+                                setInfoModal({
+                                  title: 'Error',
+                                  message: err instanceof Error ? err.message : 'Failed to update vehicle status',
+                                })
+                              )
+                          }}
+                        >
+                          <option value="available">available</option>
+                          <option value="rented">rented</option>
+                          <option value="maintenance">maintenance</option>
+                          <option value="inactive">inactive</option>
+                        </select>
+                      </label>
                     </td>
                     <td>
                       <button
                         type="button"
                         className="carsActionBtn carsActionBtn--danger"
                         onClick={() => {
-                          if (window.confirm(`Delete ${v.name}?`)) {
-                            deleteVehicle(v.id).then(() => refreshRequests()).catch((err) =>
-                              setInfoModal({ title: 'Error', message: err instanceof Error ? err.message : 'Delete failed' })
-                            )
-                          }
+                          setDeleteVehicleId(v.id)
+                          setDeleteVehicleName(v.name)
                         }}
                         title="Delete"
                       >
@@ -431,12 +481,32 @@ export function CarsPage() {
             <div className="carsEmpty">No vehicles yet. Add a car above.</div>
           )}
         </section>
+          </>
+        )}
       </div>
       <InfoModal
         open={!!infoModal}
         title={infoModal?.title ?? ''}
         message={infoModal?.message ?? ''}
         onClose={() => setInfoModal(null)}
+      />
+      <InfoModal
+        open={!!deleteVehicleId}
+        title="Delete vehicle?"
+        message={`Delete ${deleteVehicleName}? This cannot be undone.`}
+        onClose={() => setDeleteVehicleId(null)}
+        onConfirm={() => {
+          if (!deleteVehicleId) return
+          deleteVehicle(deleteVehicleId)
+            .then(() => {
+              setDeleteVehicleId(null)
+              refreshRequests()
+            })
+            .catch((err) =>
+              setInfoModal({ title: 'Error', message: err instanceof Error ? err.message : 'Delete failed' })
+            )
+        }}
+        confirmLabel="Delete"
       />
       <AddCarModal
         open={showAddModal}

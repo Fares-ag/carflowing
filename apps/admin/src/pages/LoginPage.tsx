@@ -1,14 +1,23 @@
 import { FormEvent, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { login } from '../services/authService'
+import { useAuth } from '../contexts/AuthContext'
+import { getRedirectTarget } from '../utils/authRedirect'
 import './LoginPage.css'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const { refetch, session, isLoading } = useAuth()
+  const [searchParams] = useSearchParams()
+  const redirect = searchParams.get('redirect')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  if (!isLoading && session?.role === 'admin') {
+    return <Navigate to={getRedirectTarget(redirect)} replace />
+  }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -17,7 +26,8 @@ export function LoginPage() {
 
     try {
       await login(email, password)
-      navigate('/dashboard')
+      await refetch()
+      navigate(getRedirectTarget(redirect))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to login')
     } finally {

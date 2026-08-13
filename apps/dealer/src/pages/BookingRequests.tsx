@@ -50,6 +50,8 @@ export function BookingRequests() {
   const [declineId, setDeclineId] = useState<string | null>(null)
   const [declineReason, setDeclineReason] = useState('')
   const [declineSubmitting, setDeclineSubmitting] = useState(false)
+  const [approveConfirmId, setApproveConfirmId] = useState<string | null>(null)
+  const [approvingId, setApprovingId] = useState<string | null>(null)
 
   const refresh = (showLoading = false) => {
     if (showLoading) setLoading(true)
@@ -95,11 +97,13 @@ export function BookingRequests() {
       const q = searchQuery.toLowerCase()
       const vName = (r: BookingRequestWithVehicle) => r.vehicle?.name?.toLowerCase() ?? ''
       const cEmail = (r: BookingRequestWithVehicle) => r.customer?.email?.toLowerCase() ?? ''
+      const cName = (r: BookingRequestWithVehicle) => r.customer?.name?.toLowerCase() ?? ''
       rows = rows.filter(
         (r) =>
           r.id.toLowerCase().includes(q) ||
           vName(r).includes(q) ||
           cEmail(r).includes(q) ||
+          cName(r).includes(q) ||
           (r.note ?? '').toLowerCase().includes(q)
       )
     }
@@ -113,11 +117,25 @@ export function BookingRequests() {
     return { total: requests.length, pending, approved, declined }
   }, [requests])
 
-  const handleApprove = (id: string) => {
+  const openApprove = (id: string) => {
+    if (approvingId) return
+    setError(null)
+    setApproveConfirmId(id)
+  }
+
+  const submitApprove = () => {
+    if (!approveConfirmId || approvingId) return
+    const id = approveConfirmId
+    setApprovingId(id)
     setError(null)
     updateBookingRequestStatus(id, 'approved')
-      .then(() => void refresh(false))
+      .then(() => {
+        setApproveConfirmId(null)
+        setDetailRow((row) => (row?.id === id ? null : row))
+        return refresh(false)
+      })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to approve'))
+      .finally(() => setApprovingId(null))
   }
 
   const openDecline = (id: string) => {
@@ -135,7 +153,7 @@ export function BookingRequests() {
     }
     setDeclineSubmitting(true)
     setError(null)
-    updateBookingRequestStatus(declineId, 'declined', { declineReason: trimmed })
+    updateBookingRequestStatus(declineId, 'declined', trimmed)
       .then(() => {
         setDeclineId(null)
         setDeclineReason('')
@@ -266,6 +284,7 @@ export function BookingRequests() {
                           className="brActionBtn brActionBtn--view"
                           onClick={() => setDetailRow(row)}
                           title="View details & documents"
+                          aria-label="View details"
                         >
                           <Eye size={16} />
                         </button>
@@ -274,6 +293,7 @@ export function BookingRequests() {
                           className="brActionBtn brActionBtn--mail"
                           onClick={() => mailtoCustomer(row)}
                           title="Email customer"
+                          aria-label="Email customer"
                         >
                           <Mail size={16} />
                         </button>
@@ -282,6 +302,7 @@ export function BookingRequests() {
                           className="brActionBtn brActionBtn--copy"
                           onClick={() => void copyRequestId(row.id)}
                           title="Copy full request ID"
+                          aria-label="Copy request ID"
                         >
                           <Copy size={16} />
                         </button>
@@ -290,8 +311,11 @@ export function BookingRequests() {
                             <button
                               type="button"
                               className="brActionBtn brActionBtn--approve"
-                              onClick={() => handleApprove(row.id)}
+                              onClick={() => openApprove(row.id)}
                               title="Approve"
+                              aria-label="Approve"
+                              disabled={!!approvingId || !!approveConfirmId}
+                              aria-busy={approvingId === row.id}
                             >
                               <Check size={16} />
                             </button>
@@ -300,6 +324,8 @@ export function BookingRequests() {
                               className="brActionBtn brActionBtn--decline"
                               onClick={() => openDecline(row.id)}
                               title="Decline"
+                              aria-label="Decline"
+                              disabled={!!approvingId || !!approveConfirmId}
                             >
                               <X size={16} />
                             </button>
@@ -392,6 +418,7 @@ export function BookingRequests() {
                   <button
                     type="button"
                     className="brModalBtn brModalBtn--danger"
+                    disabled={!!approvingId || !!approveConfirmId}
                     onClick={() => {
                       openDecline(detailRow.id)
                       setDetailRow(null)
@@ -402,8 +429,9 @@ export function BookingRequests() {
                   <button
                     type="button"
                     className="brModalBtn brModalBtn--primary"
+                    disabled={!!approvingId || !!approveConfirmId}
                     onClick={() => {
-                      handleApprove(detailRow.id)
+                      openApprove(detailRow.id)
                       setDetailRow(null)
                     }}
                   >
@@ -411,6 +439,55 @@ export function BookingRequests() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {approveConfirmId && (
+        <div
+          className="brModalOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="br-approve-title"
+          onClick={() => !approvingId && setApproveConfirmId(null)}
+        >
+          <div className="brModal brModal--narrow" onClick={(e) => e.stopPropagation()}>
+            <div className="brModalHeader">
+              <h2 id="br-approve-title">Approve request</h2>
+              <button
+                type="button"
+                className="brModalClose"
+                disabled={!!approvingId}
+                onClick={() => setApproveConfirmId(null)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="brModalBody">
+              <p className="brModalHint">
+                Approve this booking request? The customer may be charged after you approve.
+              </p>
+              <div className="brModalFooter">
+                <button
+                  type="button"
+                  className="brModalBtn brModalBtn--secondary"
+                  disabled={!!approvingId}
+                  onClick={() => setApproveConfirmId(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="brModalBtn brModalBtn--primary"
+                  disabled={!!approvingId}
+                  aria-busy={!!approvingId}
+                  onClick={() => void submitApprove()}
+                >
+                  {approvingId ? 'Approving…' : 'Approve'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

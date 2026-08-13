@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect } from 'react'
+import { useState, FormEvent, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
@@ -10,26 +10,77 @@ import {
   getCustomerProfile,
   updateCustomerDocuments,
 } from '../services/customerService'
-import { uploadCustomerDocument, supabase, type CustomerDocumentType } from '@carflow/shared'
-import { Check, ChevronRight, FileCheck, MapPin, Store, User } from 'lucide-react'
+import { createSkipCashPaymentIntent } from '../services/paymentService'
+import { formatCurrency, formatTaxRatePercent, uploadCustomerDocument, type CustomerDocumentType } from '@carflow/shared'
+import { useAuth } from '../contexts/AuthContext'
+import {
+  SUPPORT_EMAIL,
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_TEL,
+} from '../constants/support'
+import {
+  CheckCircle2,
+  FileText,
+  Gift,
+  IdCard,
+  ListOrdered,
+  Mail,
+  MapPin,
+  Phone,
+  ShieldCheck,
+  Upload,
+  User,
+} from 'lucide-react'
 import './CheckoutPage.css'
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 export type { CartItem } from '../stores/cartStore'
 
-const STEPS = ['Details', 'Documents', 'Confirm'] as const
-
 export function CheckoutPage() {
   const navigate = useNavigate()
+  const { session } = useAuth()
   const { cart, clearCart } = useCartStore()
-  const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [billingComplete, setBillingComplete] = useState(false)
-  const [documentsComplete, setDocumentsComplete] = useState(false)
   const [formError, setFormError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isProcessing, setIsProcessing] = useState(false)
-  const [profile, setProfile] = useState<{ qid_document_path: string | null; drivers_license_path: string | null } | null>(null)
+  const [profile, setProfile] = useState<{
+    qid_document_path: string | null
+    drivers_license_path: string | null
+  } | null>(null)
   const [uploadingDoc, setUploadingDoc] = useState<'qid' | 'drivers_license' | null>(null)
   const [documentError, setDocumentError] = useState('')
+  const qidInputRef = useRef<HTMLInputElement>(null)
+  const licenseInputRef = useRef<HTMLInputElement>(null)
+
+  const [contact, setContact] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    dateOfBirth: '',
+    nationality: 'Qatari',
+  })
+  const [license, setLicense] = useState({
+    number: '',
+    expiry: '',
+  })
+  const [address, setAddress] = useState({
+    street: '',
+    city: '',
+    state: '',
+    zip: '',
+    country: 'Qatar',
+  })
+  const [emergency, setEmergency] = useState({
+    name: '',
+    phone: '',
+  })
+  const [paymentMethod, setPaymentMethod] = useState<'pay_at_shop' | 'skipcash_online'>('pay_at_shop')
+
+  useEffect(() => {
+    if (!cart) navigate('/browse', { replace: true })
+  }, [cart, navigate])
 
   useEffect(() => {
     getCustomerProfile()
@@ -37,95 +88,82 @@ export function CheckoutPage() {
       .catch(() => setProfile(null))
   }, [])
 
-  const [contact, setContact] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-  })
-  const [address, setAddress] = useState({
-    street: '',
-    city: '',
-    state: '',
-    zip: '',
-  })
-  const [payment] = useState<{ method: 'pay_at_shop' }>({ method: 'pay_at_shop' })
-  const [delivery, setDelivery] = useState({
-    location: '',
-    date: cart?.startDate ?? '',
-    time: '10:00',
-  })
+  useEffect(() => {
+    if (!session) return
+    const first = session.name.split(/\s+/)[0] || ''
+    const last = session.name.split(/\s+/).slice(1).join(' ') || ''
+    const email = session.email || ''
+    setContact((c) => ({
+      ...c,
+      firstName: c.firstName || first,
+      lastName: c.lastName || last,
+      email: c.email || email,
+    }))
+  }, [session?.userId, session?.email, session?.name])
 
   useEffect(() => {
-    if (!cart) navigate('/cart', { replace: true })
-  }, [cart, navigate])
+    if (!cart?.notes) return
+    try {
+      const parsed = JSON.parse(cart.notes) as { paymentMethod?: 'pay_at_shop' | 'skipcash_online' }
+      if (parsed.paymentMethod === 'pay_at_shop' || parsed.paymentMethod === 'skipcash_online') {
+        setPaymentMethod(parsed.paymentMethod)
+      }
+    } catch {
+      /* ignore non-JSON notes */
+    }
+  }, [cart?.notes])
 
   if (!cart) {
     return (
       <div className="checkout-page">
         <Header />
-        <div style={{ padding: '4rem', textAlign: 'center' }}>Redirecting to cart…</div>
+        <div className="checkout-empty">Redirecting…</div>
         <Footer />
       </div>
     )
   }
 
-  const validateBilling = (): boolean => {
-    const errs: Record<string, string> = {}
-    if (!contact.firstName.trim()) errs.firstName = 'This field is required'
-    if (!contact.lastName.trim()) errs.lastName = 'This field is required'
-    if (!contact.email.trim()) errs.email = 'This field is required'
-    if (!contact.phone.trim()) errs.phone = 'This field is required'
-    if (!address.street.trim()) errs.street = 'This field is required'
-    if (!address.city.trim()) errs.city = 'This field is required'
-    if (!address.state.trim()) errs.state = 'This field is required'
-    if (!address.zip.trim()) errs.zip = 'This field is required'
-    setFieldErrors(errs)
-    return Object.keys(errs).length === 0
-  }
-
-  const validatePayment = (): boolean => {
-    setFieldErrors({})
-    return true
-  }
-
-  const validateDelivery = (): boolean => {
-    const errs: Record<string, string> = {}
-    if (!delivery.location.trim()) errs.location = 'This field is required'
-    if (!delivery.date.trim()) errs.date = 'This field is required'
-    if (!delivery.time.trim()) errs.time = 'This field is required'
-    setFieldErrors(errs)
-    return Object.keys(errs).length === 0
-  }
-
-  const handleBillingNext = (e: FormEvent) => {
-    e.preventDefault()
-    setFormError('')
-    if (!validateBilling()) {
-      setFormError('Please fill in all required fields to proceed.')
-      return
-    }
-    setBillingComplete(true)
-    setStep(2)
-  }
-
   const hasQid = !!profile?.qid_document_path
   const hasDriversLicense = !!profile?.drivers_license_path
-  const canProceedFromDocuments = hasQid && hasDriversLicense
+  const savings = 0
+
+  const validate = (): boolean => {
+    const errs: Record<string, string> = {}
+    if (!contact.firstName.trim()) errs.firstName = 'Required'
+    if (!contact.lastName.trim()) errs.lastName = 'Required'
+    if (!contact.email.trim()) errs.email = 'Required'
+    if (!contact.phone.trim()) errs.phone = 'Required'
+    if (!contact.dateOfBirth.trim()) errs.dateOfBirth = 'Required'
+    if (!contact.nationality.trim()) errs.nationality = 'Required'
+    if (!license.number.trim()) errs.licenseNumber = 'Required'
+    if (!license.expiry.trim()) errs.licenseExpiry = 'Required'
+    if (!address.street.trim()) errs.street = 'Required'
+    if (!address.city.trim()) errs.city = 'Required'
+    if (!address.country.trim()) errs.country = 'Required'
+    if (!hasQid) errs.qid = 'Upload required'
+    if (!hasDriversLicense) errs.licenseDoc = 'Upload required'
+    setFieldErrors(errs)
+    return Object.keys(errs).length === 0
+  }
 
   const handleDocumentUpload = async (type: CustomerDocumentType, file: File) => {
     setDocumentError('')
+    if (file.size > MAX_FILE_BYTES) {
+      const msg = 'File must be 10MB or smaller.'
+      setDocumentError(msg)
+      toast.error(msg)
+      return
+    }
     setUploadingDoc(type === 'qid' ? 'qid' : 'drivers_license')
     try {
-      const { data } = await supabase.auth.getUser()
-      const userId = data.user?.id
+      const userId = session?.userId
       if (!userId) throw new Error('Not authenticated')
       const path = await uploadCustomerDocument(file, userId, type)
       const updated = await updateCustomerDocuments(
         type === 'qid' ? { qid_document_path: path } : { drivers_license_path: path }
       )
       setProfile(updated)
-      toast.success(type === 'qid' ? 'QID document uploaded' : 'Driver\'s license uploaded')
+      toast.success(type === 'qid' ? 'QID uploaded' : "Driver's license uploaded")
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed'
       setDocumentError(msg)
@@ -135,50 +173,55 @@ export function CheckoutPage() {
     }
   }
 
-  const handleDocumentsNext = (e: FormEvent) => {
-    e.preventDefault()
-    setDocumentError('')
-    if (!canProceedFromDocuments) {
-      setDocumentError('Please upload both your QID and driver\'s license to continue.')
-      return
-    }
-    setDocumentsComplete(true)
-    setStep(3)
-  }
-
-  const handleConfirmBooking = async (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setFormError('')
-    if (!validateDelivery()) {
-      setFormError('Please fill in delivery details to proceed.')
+    if (!validate()) {
+      setFormError('Please complete all required fields and upload both documents.')
       return
     }
-    if (!validatePayment()) return
     setIsProcessing(true)
+    const note = JSON.stringify({
+      duration: cart.durationLabel,
+      durationMonths: cart.durationMonths,
+      startDate: cart.startDate,
+      quantity: cart.quantity,
+      notes: cart.notes,
+      contact,
+      license,
+      address,
+      emergency,
+      paymentMethod,
+      total: cart.total,
+    })
     try {
-      const note = JSON.stringify({
-        duration: cart.durationLabel,
-        durationMonths: cart.durationMonths,
-        startDate: cart.startDate,
-        quantity: cart.quantity,
-        notes: cart.notes,
-        delivery,
-        contact,
-        paymentMethod: payment.method,
-        total: cart.total,
-      })
+      if (paymentMethod === 'skipcash_online') {
+        const intent = await createSkipCashPaymentIntent({
+          vehicleId: cart.vehicleId,
+          note,
+          contact: {
+            firstName: contact.firstName,
+            lastName: contact.lastName,
+            email: contact.email,
+            phone: contact.phone,
+          },
+        })
+        window.location.href = intent.payUrl
+        return
+      }
       const booking = await createBookingRequest({
         vehicleId: cart.vehicleId,
         note,
       })
       clearCart()
       toast.success('Request submitted — pending dealer approval')
-      navigate('/booking-confirmed', {
+      navigate('/my-booking', {
         state: {
+          justBooked: true,
           booking,
-          cart,
-          delivery: { location: delivery.location, date: delivery.date, time: delivery.time },
-          paymentDisplay: 'Pay at Shop',
+          vehicleName: cart.vehicleName,
+          total: cart.total,
+          startDate: cart.startDate,
         },
       })
     } catch (err) {
@@ -193,328 +236,373 @@ export function CheckoutPage() {
   return (
     <div className="checkout-page">
       <Header />
+      {isProcessing && <ProcessingOverlay />}
 
-      <section className="checkout-header">
-        <div className="checkout-header__inner">
-          <Link className="checkout-back" to="/cart">
-            ← Back to Cart
-          </Link>
-          <h1>Checkout</h1>
-        </div>
-      </section>
+      <main className="checkout-main-wrap">
+        <div className="checkout-layout">
+          <form className="checkout-form-col" onSubmit={handleSubmit} noValidate>
+            {formError && <div className="checkout-alert checkout-alert--error">{formError}</div>}
 
-      <div className="checkout-progress">
-        <div className="checkout-progress__inner">
-          {STEPS.map((label, i) => {
-            const stepNum = i + 1
-            const isActive = stepNum <= step
-            const isDone =
-              (billingComplete && stepNum === 1) ||
-              (documentsComplete && stepNum === 2)
-            return (
-              <div
-                key={label}
-                className={`checkout-progress__step ${isActive ? 'active' : ''}`}
-              >
-                <span className="checkout-progress__dot">
-                  {isDone ? <Check size={14} /> : stepNum}
+            <section className="checkout-card">
+              <h2 className="checkout-card__title">
+                <User size={18} />
+                Personal Information
+              </h2>
+              <div className="checkout-grid-2">
+                <label className="checkout-field">
+                  <span>First Name *</span>
+                  <input
+                    value={contact.firstName}
+                    onChange={(e) => setContact((c) => ({ ...c, firstName: e.target.value }))}
+                    className={fieldErrors.firstName ? 'is-error' : ''}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>Last Name *</span>
+                  <input
+                    value={contact.lastName}
+                    onChange={(e) => setContact((c) => ({ ...c, lastName: e.target.value }))}
+                    className={fieldErrors.lastName ? 'is-error' : ''}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>Email Address *</span>
+                  <input
+                    type="email"
+                    value={contact.email}
+                    onChange={(e) => setContact((c) => ({ ...c, email: e.target.value }))}
+                    className={fieldErrors.email ? 'is-error' : ''}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>Phone Number *</span>
+                  <input
+                    type="tel"
+                    placeholder="+974"
+                    value={contact.phone}
+                    onChange={(e) => setContact((c) => ({ ...c, phone: e.target.value }))}
+                    className={fieldErrors.phone ? 'is-error' : ''}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>Date of Birth *</span>
+                  <input
+                    type="date"
+                    value={contact.dateOfBirth}
+                    onChange={(e) => setContact((c) => ({ ...c, dateOfBirth: e.target.value }))}
+                    className={fieldErrors.dateOfBirth ? 'is-error' : ''}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>Nationality *</span>
+                  <select
+                    value={contact.nationality}
+                    onChange={(e) => setContact((c) => ({ ...c, nationality: e.target.value }))}
+                    className={fieldErrors.nationality ? 'is-error' : ''}
+                  >
+                    <option value="Qatari">Qatari</option>
+                    <option value="Other GCC">Other GCC</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section className="checkout-card">
+              <h2 className="checkout-card__title">
+                <FileText size={18} />
+                Driver&apos;s License Information
+              </h2>
+              <div className="checkout-grid-2">
+                <label className="checkout-field">
+                  <span>License Number *</span>
+                  <input
+                    value={license.number}
+                    onChange={(e) => setLicense((l) => ({ ...l, number: e.target.value }))}
+                    className={fieldErrors.licenseNumber ? 'is-error' : ''}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>License Expiry Date *</span>
+                  <input
+                    type="date"
+                    value={license.expiry}
+                    onChange={(e) => setLicense((l) => ({ ...l, expiry: e.target.value }))}
+                    className={fieldErrors.licenseExpiry ? 'is-error' : ''}
+                  />
+                </label>
+              </div>
+
+              <div className="checkout-info-box">
+                <strong>License Requirements:</strong>
+                <ul>
+                  <li>Valid license for at least 2 years</li>
+                  <li>International Driving Permit may be required</li>
+                  <li>License must be valid for the entire rental period</li>
+                </ul>
+              </div>
+
+              <h3 className="checkout-subtitle">Required Document Uploads</h3>
+              {documentError && <p className="checkout-doc-error">{documentError}</p>}
+              <div className="checkout-upload-grid">
+                <div className={`checkout-upload-card ${hasQid ? 'is-done' : ''} ${fieldErrors.qid ? 'is-error' : ''}`}>
+                  <div className="checkout-upload-card__top">
+                    <span>Qatar ID (QID) *</span>
+                    <span className={`checkout-badge ${hasQid ? 'done' : ''}`}>
+                      {hasQid ? 'Uploaded' : 'Upload Required'}
+                    </span>
+                  </div>
+                  <IdCard size={28} className="checkout-upload-card__icon" />
+                  <p className="checkout-upload-card__label">{hasQid ? 'QID on file' : 'Upload QID'}</p>
+                  <p className="checkout-upload-card__hint">Front and back of Qatar ID</p>
+                  <input
+                    ref={qidInputRef}
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) void handleDocumentUpload('qid', file)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="checkout-choose-file"
+                    disabled={uploadingDoc === 'qid'}
+                    onClick={() => qidInputRef.current?.click()}
+                  >
+                    <Upload size={14} />
+                    {uploadingDoc === 'qid' ? 'Uploading…' : 'Choose File'}
+                  </button>
+                  <p className="checkout-upload-card__formats">JPG, PNG, PDF · Max 10MB</p>
+                </div>
+
+                <div
+                  className={`checkout-upload-card ${hasDriversLicense ? 'is-done' : ''} ${fieldErrors.licenseDoc ? 'is-error' : ''}`}
+                >
+                  <div className="checkout-upload-card__top">
+                    <span>Driver&apos;s License *</span>
+                    <span className={`checkout-badge ${hasDriversLicense ? 'done' : ''}`}>
+                      {hasDriversLicense ? 'Uploaded' : 'Upload Required'}
+                    </span>
+                  </div>
+                  <FileText size={28} className="checkout-upload-card__icon" />
+                  <p className="checkout-upload-card__label">
+                    {hasDriversLicense ? 'License on file' : 'Upload License'}
+                  </p>
+                  <p className="checkout-upload-card__hint">Valid driver&apos;s license</p>
+                  <input
+                    ref={licenseInputRef}
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) void handleDocumentUpload('drivers_license', file)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="checkout-choose-file"
+                    disabled={uploadingDoc === 'drivers_license'}
+                    onClick={() => licenseInputRef.current?.click()}
+                  >
+                    <Upload size={14} />
+                    {uploadingDoc === 'drivers_license' ? 'Uploading…' : 'Choose File'}
+                  </button>
+                  <p className="checkout-upload-card__formats">JPG, PNG, PDF · Max 10MB</p>
+                </div>
+              </div>
+
+              <div className="checkout-secure-banner">
+                <ShieldCheck size={16} />
+                Your documents are encrypted and secure. We only use them for verification purposes.
+              </div>
+            </section>
+
+            <section className="checkout-card">
+              <h2 className="checkout-card__title">
+                <MapPin size={18} />
+                Billing Address
+              </h2>
+              <label className="checkout-field">
+                <span>Street Address *</span>
+                <input
+                  value={address.street}
+                  onChange={(e) => setAddress((a) => ({ ...a, street: e.target.value }))}
+                  className={fieldErrors.street ? 'is-error' : ''}
+                />
+              </label>
+              <div className="checkout-grid-3">
+                <label className="checkout-field">
+                  <span>City *</span>
+                  <input
+                    value={address.city}
+                    onChange={(e) => setAddress((a) => ({ ...a, city: e.target.value }))}
+                    className={fieldErrors.city ? 'is-error' : ''}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>State/Province</span>
+                  <input
+                    value={address.state}
+                    onChange={(e) => setAddress((a) => ({ ...a, state: e.target.value }))}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>ZIP/Postal Code</span>
+                  <input
+                    value={address.zip}
+                    onChange={(e) => setAddress((a) => ({ ...a, zip: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <label className="checkout-field">
+                <span>Country *</span>
+                <select
+                  value={address.country}
+                  onChange={(e) => setAddress((a) => ({ ...a, country: e.target.value }))}
+                >
+                  <option value="Qatar">Qatar</option>
+                  <option value="UAE">UAE</option>
+                  <option value="Saudi Arabia">Saudi Arabia</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+            </section>
+
+            <section className="checkout-card">
+              <h2 className="checkout-card__title">
+                <Phone size={18} />
+                Emergency Contact
+              </h2>
+              <div className="checkout-grid-2">
+                <label className="checkout-field">
+                  <span>Emergency Contact Name</span>
+                  <input
+                    value={emergency.name}
+                    onChange={(e) => setEmergency((em) => ({ ...em, name: e.target.value }))}
+                  />
+                </label>
+                <label className="checkout-field">
+                  <span>Emergency Phone Number</span>
+                  <input
+                    type="tel"
+                    placeholder="+974"
+                    value={emergency.phone}
+                    onChange={(e) => setEmergency((em) => ({ ...em, phone: e.target.value }))}
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="checkout-card">
+              <h2 className="checkout-card__title">Payment</h2>
+              <label className="checkout-payment">
+                <input
+                  type="radio"
+                  name="payment"
+                  checked={paymentMethod === 'pay_at_shop'}
+                  onChange={() => setPaymentMethod('pay_at_shop')}
+                />
+                <span>
+                  <strong>Pay at pickup</strong>
+                  <small>Default — pay the dealer when you collect the car</small>
                 </span>
-                <span className="checkout-progress__label">{label}</span>
-                {i < STEPS.length - 1 && <ChevronRight size={14} className="checkout-progress__arrow" />}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+              </label>
+              <label className="checkout-payment">
+                <input
+                  type="radio"
+                  name="payment"
+                  checked={paymentMethod === 'skipcash_online'}
+                  onChange={() => setPaymentMethod('skipcash_online')}
+                />
+                <span>
+                  <strong>Pay now with card</strong>
+                  <small>Secure online payment via SkipCash</small>
+                </span>
+              </label>
+            </section>
 
-      <section className="checkout-content">
-        <div className="checkout-content__inner">
-          <div className="checkout-main">
-            {formError && (
-              <div className="checkout-banner checkout-banner--error">
-                {formError}
-              </div>
-            )}
-            {billingComplete && step === 1 && (
-              <div className="checkout-banner checkout-banner--success">
-                Your information has been successfully saved.
-              </div>
-            )}
-            {documentsComplete && step === 2 && (
-              <div className="checkout-banner checkout-banner--success">
-                Documents uploaded. Proceed to delivery and confirmation.
-              </div>
-            )}
-
-            {step === 1 && (
-              <form className="checkout-form" onSubmit={handleBillingNext}>
-                <div className="checkout-section">
-                  <h3><User size={18} /> Contact Info</h3>
-                  <div className="checkout-grid">
-                    <label>
-                      First Name *
-                      <input
-                        type="text"
-                        value={contact.firstName}
-                        onChange={(e) => setContact((c) => ({ ...c, firstName: e.target.value }))}
-                        className={fieldErrors.firstName ? 'error' : ''}
-                      />
-                      {fieldErrors.firstName && <span className="field-error">{fieldErrors.firstName}</span>}
-                    </label>
-                    <label>
-                      Last Name *
-                      <input
-                        type="text"
-                        value={contact.lastName}
-                        onChange={(e) => setContact((c) => ({ ...c, lastName: e.target.value }))}
-                        className={fieldErrors.lastName ? 'error' : ''}
-                      />
-                      {fieldErrors.lastName && <span className="field-error">{fieldErrors.lastName}</span>}
-                    </label>
-                    <label>
-                      Email *
-                      <input
-                        type="email"
-                        value={contact.email}
-                        onChange={(e) => setContact((c) => ({ ...c, email: e.target.value }))}
-                        className={fieldErrors.email ? 'error' : ''}
-                      />
-                      {fieldErrors.email && <span className="field-error">{fieldErrors.email}</span>}
-                    </label>
-                    <label>
-                      Phone Number *
-                      <input
-                        type="tel"
-                        value={contact.phone}
-                        onChange={(e) => setContact((c) => ({ ...c, phone: e.target.value }))}
-                        className={fieldErrors.phone ? 'error' : ''}
-                      />
-                      {fieldErrors.phone && <span className="field-error">{fieldErrors.phone}</span>}
-                    </label>
-                  </div>
-                </div>
-
-                <div className="checkout-section">
-                  <h3><MapPin size={18} /> Billing Address</h3>
-                  <div className="checkout-grid">
-                    <label className="full">
-                      Street Address *
-                      <input
-                        type="text"
-                        value={address.street}
-                        onChange={(e) => setAddress((a) => ({ ...a, street: e.target.value }))}
-                        placeholder="e.g. 123 Main Street"
-                        className={fieldErrors.street ? 'error' : ''}
-                      />
-                      {fieldErrors.street && <span className="field-error">{fieldErrors.street}</span>}
-                    </label>
-                    <label>
-                      City *
-                      <input
-                        type="text"
-                        value={address.city}
-                        onChange={(e) => setAddress((a) => ({ ...a, city: e.target.value }))}
-                        className={fieldErrors.city ? 'error' : ''}
-                      />
-                      {fieldErrors.city && <span className="field-error">{fieldErrors.city}</span>}
-                    </label>
-                    <label>
-                      State *
-                      <input
-                        type="text"
-                        value={address.state}
-                        onChange={(e) => setAddress((a) => ({ ...a, state: e.target.value }))}
-                        className={fieldErrors.state ? 'error' : ''}
-                      />
-                      {fieldErrors.state && <span className="field-error">{fieldErrors.state}</span>}
-                    </label>
-                    <label>
-                      Zip Code *
-                      <input
-                        type="text"
-                        value={address.zip}
-                        onChange={(e) => setAddress((a) => ({ ...a, zip: e.target.value }))}
-                        className={fieldErrors.zip ? 'error' : ''}
-                      />
-                      {fieldErrors.zip && <span className="field-error">{fieldErrors.zip}</span>}
-                    </label>
-                  </div>
-                </div>
-
-                <button type="submit" className="checkout-btn checkout-btn--primary">
-                  Proceed to Documents
-                </button>
-              </form>
-            )}
-
-            {step === 2 && (
-              <form className="checkout-form" onSubmit={handleDocumentsNext}>
-                <div className="checkout-section">
-                  <h3><FileCheck size={18} /> Identity & License</h3>
-                  <p className="checkout-section-desc">
-                    Upload your Qatar ID (QID) and driver&apos;s license. Required to complete your rental.
-                    Accepted: PDF, JPEG, PNG, WebP (max 10MB each).
-                  </p>
-                  {documentError && (
-                    <div className="checkout-banner checkout-banner--error">{documentError}</div>
-                  )}
-                  <div className="checkout-documents">
-                    <label className="checkout-doc-card">
-                      <span className="checkout-doc-label">Qatar ID (QID)</span>
-                      {hasQid ? (
-                        <span className="checkout-doc-uploaded">
-                          <Check size={16} /> Uploaded
-                        </span>
-                      ) : (
-                        <input
-                          type="file"
-                          accept=".pdf,image/jpeg,image/png,image/webp"
-                          disabled={!!uploadingDoc}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0]
-                            e.target.value = ''
-                            if (file) handleDocumentUpload('qid', file)
-                          }}
-                        />
-                      )}
-                      {uploadingDoc === 'qid' && <span className="checkout-doc-loading">Uploading…</span>}
-                    </label>
-                    <label className="checkout-doc-card">
-                      <span className="checkout-doc-label">Driver&apos;s License</span>
-                      {hasDriversLicense ? (
-                        <span className="checkout-doc-uploaded">
-                          <Check size={16} /> Uploaded
-                        </span>
-                      ) : (
-                        <input
-                          type="file"
-                          accept=".pdf,image/jpeg,image/png,image/webp"
-                          disabled={!!uploadingDoc}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0]
-                            e.target.value = ''
-                            if (file) handleDocumentUpload('drivers_license', file)
-                          }}
-                        />
-                      )}
-                      {uploadingDoc === 'drivers_license' && <span className="checkout-doc-loading">Uploading…</span>}
-                    </label>
-                  </div>
-                </div>
-                <div className="checkout-form__actions">
-                  <button
-                    type="button"
-                    className="checkout-btn checkout-btn--secondary"
-                    onClick={() => setStep(1)}
-                  >
-                    ← Back
-                  </button>
-                  <button
-                    type="submit"
-                    className="checkout-btn checkout-btn--primary"
-                    disabled={!canProceedFromDocuments || !!uploadingDoc}
-                  >
-                    Proceed to Delivery
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {step === 3 && (
-              <form className="checkout-form" onSubmit={handleConfirmBooking}>
-                <div className="checkout-banner checkout-banner--info">
-                  Your request is sent to the dealer for review. You are not charged until the dealer approves your
-                  documents and booking. If they decline, you will see their reason under My Requests.
-                </div>
-                <div className="checkout-section">
-                  <h3>Delivery Information</h3>
-                  <label>
-                    Delivery Location *
-                    <input
-                      type="text"
-                      placeholder="e.g. 123 Main Street"
-                      value={delivery.location}
-                      onChange={(e) => setDelivery((d) => ({ ...d, location: e.target.value }))}
-                      className={fieldErrors.location ? 'error' : ''}
-                    />
-                    {fieldErrors.location && <span className="field-error">{fieldErrors.location}</span>}
-                  </label>
-                </div>
-
-                <div className="checkout-section">
-                  <h3>Schedule Delivery</h3>
-                  <div className="checkout-grid">
-                    <label>
-                      Date *
-                      <input
-                        type="date"
-                        value={delivery.date}
-                        onChange={(e) => setDelivery((d) => ({ ...d, date: e.target.value }))}
-                        className={fieldErrors.date ? 'error' : ''}
-                      />
-                      {fieldErrors.date && <span className="field-error">{fieldErrors.date}</span>}
-                    </label>
-                    <label>
-                      Time *
-                      <input
-                        type="time"
-                        value={delivery.time}
-                        onChange={(e) => setDelivery((d) => ({ ...d, time: e.target.value }))}
-                        className={fieldErrors.time ? 'error' : ''}
-                      />
-                      {fieldErrors.time && <span className="field-error">{fieldErrors.time}</span>}
-                    </label>
-                  </div>
-                </div>
-
-                <div className="checkout-section checkout-section--pay-at-shop">
-                  <h3><Store size={18} /> Payment</h3>
-                  <p className="checkout-pay-at-shop-message">
-                    No payment is taken now. After the dealer approves, you will complete payment (e.g. at pickup or as
-                    instructed by the dealer). The total shown is an estimate until approval.
-                  </p>
-                </div>
-
-                <div className="checkout-form__actions">
-                  <button
-                    type="button"
-                    className="checkout-btn checkout-btn--secondary"
-                    onClick={() => setStep(2)}
-                  >
-                    ← Back
-                  </button>
-                  <button type="submit" className="checkout-btn checkout-btn--primary" disabled={isProcessing}>
-                    Confirm Booking
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
+            <div className="checkout-actions">
+              <Link to={`/car/${cart.vehicleId}`} className="checkout-back-link">
+                ← Back to car
+              </Link>
+              <button type="submit" className="checkout-continue" disabled={isProcessing}>
+                Continue
+              </button>
+            </div>
+          </form>
 
           <aside className="checkout-sidebar">
-            <div className="order-summary">
-              <h4>Order Summary</h4>
-              <div className="order-summary__row">
-                <span>{cart.vehicleName}</span>
-                <span>QAR {cart.subtotal.toLocaleString()}</span>
+            <section className="checkout-card checkout-summary">
+              <h2 className="checkout-card__title">
+                <ListOrdered size={18} />
+                Order Summary
+              </h2>
+              <p className="checkout-summary__car">{cart.vehicleName}</p>
+              <p className="checkout-summary__meta">
+                {cart.durationLabel} · Start {cart.startDate}
+              </p>
+              <div className="checkout-summary__rows">
+                <div>
+                  <span>Subtotal (1 car)</span>
+                  <span>{formatCurrency(cart.subtotal)}</span>
+                </div>
+                {savings > 0 && (
+                  <div className="is-discount">
+                    <span>Discount Applied</span>
+                    <span>-{formatCurrency(savings)}</span>
+                  </div>
+                )}
+                <div>
+                  <span>Tax ({formatTaxRatePercent()})</span>
+                  <span>{formatCurrency(cart.tax)}</span>
+                </div>
               </div>
-              <div className="order-summary__row">
-                <span>Tax</span>
-                <span>QAR {cart.tax.toLocaleString()}</span>
-              </div>
-              <div className="order-summary__divider" />
-              <div className="order-summary__row order-summary__row--total">
+              <div className="checkout-summary__total">
                 <span>Total</span>
-                <span>QAR {cart.total.toLocaleString()}</span>
+                <strong>{formatCurrency(cart.total)}</strong>
               </div>
-            </div>
+              {savings > 0 && (
+                <div className="checkout-savings">
+                  <Gift size={16} />
+                  You saved {formatCurrency(savings)}!
+                </div>
+              )}
+              <ul className="checkout-trust">
+                <li>
+                  <CheckCircle2 size={16} /> Free cancellation up to 24 hours
+                </li>
+                <li>
+                  <CheckCircle2 size={16} /> 24/7 customer support
+                </li>
+                <li>
+                  <CheckCircle2 size={16} /> Verified dealers only
+                </li>
+                <li>
+                  <CheckCircle2 size={16} /> Secure payment processing
+                </li>
+              </ul>
+            </section>
+
+            <section className="checkout-card checkout-help">
+              <h3>Need Help?</h3>
+              <p>Our customer support team is here to assist you</p>
+              <a className="checkout-help-btn" href={`tel:${SUPPORT_PHONE_TEL}`}>
+                <Phone size={16} />
+                Call {SUPPORT_PHONE_DISPLAY}
+              </a>
+              <a className="checkout-help-btn" href={`mailto:${SUPPORT_EMAIL}`}>
+                <Mail size={16} />
+                Email Us
+              </a>
+            </section>
           </aside>
         </div>
-      </section>
+      </main>
 
       <Footer />
-
-      {isProcessing && <ProcessingOverlay />}
     </div>
   )
 }

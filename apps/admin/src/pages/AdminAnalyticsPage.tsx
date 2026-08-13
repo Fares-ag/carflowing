@@ -18,8 +18,6 @@ import {
   YAxis,
 } from 'recharts'
 import {
-  ArrowDownRight,
-  ArrowUpRight,
   BadgeDollarSign,
   Car,
   Clock,
@@ -40,13 +38,18 @@ export function AdminAnalyticsPage() {
   const [analytics, setAnalytics] = useState<AdminAnalyticsData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isError, setIsError] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const load = useCallback(() => {
     setIsLoading(true)
     setIsError(false)
+    setErrorMessage(null)
     getAdminAnalytics()
       .then(setAnalytics)
-      .catch(() => setIsError(true))
+      .catch((err) => {
+        setIsError(true)
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to load analytics')
+      })
       .finally(() => setIsLoading(false))
   }, [])
 
@@ -55,44 +58,32 @@ export function AdminAnalyticsPage() {
   }, [load])
 
   const stats = useMemo(() => {
-    const kpiMap = new Map(analytics?.kpis.map(kpi => [kpi.label, kpi]))
+    const kpiMap = new Map(analytics?.kpis.map((kpi) => [kpi.label, kpi]))
     const revenue = kpiMap.get('Total Revenue')
     const rentals = kpiMap.get('Total Rentals')
-    const duration = kpiMap.get('Avg Duration')
-    const growth = kpiMap.get('Customer Growth')
+    const activeRentals = kpiMap.get('Active Rentals')
+    const vehicles = kpiMap.get('Vehicles')
 
     return [
       {
         label: 'Total Revenue',
         value: revenue ? formatCurrency(revenue.value) : 'QAR 0',
-        change: revenue ? `${revenue.changePct ?? 0}%` : '0%',
         icon: <BadgeDollarSign size={18} />,
-        changeIcon: <ArrowUpRight size={14} />,
-        changeTone: revenue && (revenue.changePct ?? 0) < 0 ? 'down' : 'up',
       },
       {
         label: 'Total Rentals',
         value: rentals ? rentals.value.toLocaleString('en-US') : '0',
-        change: rentals ? `${rentals.changePct ?? 0}%` : '0%',
         icon: <Car size={18} />,
-        changeIcon: <ArrowUpRight size={14} />,
-        changeTone: rentals && (rentals.changePct ?? 0) < 0 ? 'down' : 'up',
       },
       {
-        label: 'Avg. Rental Duration',
-        value: duration ? `${duration.value.toFixed(1)} days` : '0.0 days',
-        change: duration ? `${duration.changePct ?? 0}%` : '0%',
+        label: 'Active Rentals',
+        value: activeRentals ? activeRentals.value.toLocaleString('en-US') : '0',
         icon: <Clock size={18} />,
-        changeIcon: <ArrowDownRight size={14} />,
-        changeTone: duration && (duration.changePct ?? 0) < 0 ? 'down' : 'up',
       },
       {
-        label: 'Customer Growth',
-        value: growth ? `${growth.value.toFixed(1)}%` : '0%',
-        change: growth ? `${growth.changePct ?? 0}%` : '0%',
+        label: 'Vehicles',
+        value: vehicles ? vehicles.value.toLocaleString('en-US') : '0',
         icon: <Users size={18} />,
-        changeIcon: <ArrowUpRight size={14} />,
-        changeTone: growth && (growth.changePct ?? 0) < 0 ? 'down' : 'up',
       },
     ] as const
   }, [analytics])
@@ -169,6 +160,7 @@ export function AdminAnalyticsPage() {
         ) : isError ? (
           <div className="adminAnalyticsStatCard" role="alert">
             <div className="adminAnalyticsCardTitle">Could not load analytics.</div>
+            {errorMessage ? <div className="adminAnalyticsCardSub">{errorMessage}</div> : null}
             <button type="button" className="adminAnalyticsCardSub" onClick={load}>
               Retry
             </button>
@@ -183,11 +175,6 @@ export function AdminAnalyticsPage() {
                 {stat.icon}
               </div>
               <div className="adminAnalyticsStatValue">{stat.value}</div>
-              <div className="adminAnalyticsStatChange">
-                {stat.changeIcon}
-                <span className={stat.changeTone === 'down' ? 'is-down' : 'is-up'}>{stat.change}</span>
-                <span className="adminAnalyticsStatSub">vs last month</span>
-              </div>
             </div>
           ))}
         </div>

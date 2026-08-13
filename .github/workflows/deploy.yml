@@ -1,0 +1,97 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Run full test suite
+    uses: ./.github/workflows/test.yml
+
+  migrate:
+    name: Database migrations
+    runs-on: ubuntu-latest
+    needs: [tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run Drizzle migrations
+        run: npm run db:migrate --workspace=apps/backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  deploy-api:
+    name: Deploy API (Fly.io)
+    runs-on: ubuntu-latest
+    needs: [migrate, tests]
+    if: always() && needs.tests.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy to Fly.io
+        working-directory: apps/backend
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  smoke-api:
+    name: API health smoke test
+    runs-on: ubuntu-latest
+    needs: [deploy-api]
+    steps:
+      - name: Check /health includes DB connected
+        run: |
+          curl -sf "${{ secrets.PUBLIC_API_URL }}/health" | grep -q '"db":"connected"'
+
+  deploy-customer:
+    name: Deploy Customer (Vercel)
+    runs-on: ubuntu-latest
+    needs: [deploy-api]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_CUSTOMER }}
+          working-directory: apps/customer
+          vercel-args: '--prod'
+
+  deploy-dealer:
+    name: Deploy Dealer (Vercel)
+    runs-on: ubuntu-latest
+    needs: [deploy-api]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_DEALER }}
+          working-directory: apps/dealer
+          vercel-args: '--prod'
+
+  deploy-admin:
+    name: Deploy Admin (Vercel)
+    runs-on: ubuntu-latest
+    needs: [deploy-api]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+          working-directory: apps/admin
+          vercel-args: '--prod'

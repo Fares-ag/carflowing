@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import App from './App.tsx'
 import { AuthProvider } from './contexts/AuthContext'
 import './index.css'
@@ -7,14 +8,16 @@ import './index.css'
 async function bootstrap() {
   if (import.meta.env.VITE_USE_MOCK_API === 'true') {
     const { worker } = await import('./mocks/browser')
-    await worker.start({ onUnhandledRequest: 'bypass' })
+    await worker.start({ onUnhandledRequest: 'warn' })
   }
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ErrorBoundary>
     </React.StrictMode>,
   )
 }

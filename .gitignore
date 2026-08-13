@@ -38,6 +38,27 @@ build
 packages/*/dist
 apps/*/dist
 
-# Supabase CLI
+# Local uploads
+uploads/
+apps/backend/uploads/
+
+# QA embedded Postgres data
+.pgdata-qa/
+apps/backend/.pgdata-test/
+apps/backend/.env.test
+apps/backend/.uploads-test/
+apps/backend/.pgdata-e2e/
+apps/backend/.uploads-e2e/
+
+# Test artifacts
+test-results/
+playwright-report/
+blob-report/
+coverage/
+tests/TEST_CATALOG.md
+tests/gap-report.md
+tests/compliance-report.md
+
+# Supabase CLI (legacy archive)
 supabase/.temp/
 

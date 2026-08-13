@@ -1,5 +1,5 @@
 import type { User } from '@carflow/shared'
-import { supabase } from '@carflow/shared'
+import { apiRequest } from '@carflow/shared'
 
 export interface AuthSession {
   userId: string
@@ -9,49 +9,13 @@ export interface AuthSession {
   email_confirmed_at?: string | null
 }
 
-async function fetchProfile(userId: string) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, email, name, role, avatar_url')
-    .eq('id', userId)
-    .limit(1)
-    .maybeSingle()
-
-  if (error) {
-    throw new Error(error.message ?? 'Unable to load profile')
-  }
-
-  if (!data) {
-    throw new Error('Profile not found for this account')
-  }
-
-  return data
-}
-
 export async function getProfileAvatar(): Promise<string | null> {
-  const session = await getSession()
-  if (!session) return null
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('avatar_url')
-    .eq('id', session.userId)
-    .single()
-  if (error || !data) return null
-  return data.avatar_url ?? null
+  const me = await apiRequest<{ user?: User }>('/auth/me')
+  return me.user?.avatarUrl ?? null
 }
 
 export async function updateProfileAvatar(avatarUrl: string): Promise<void> {
-  const session = await getSession()
-  if (!session) {
-    throw new Error('Not authenticated')
-  }
-  const { error } = await supabase
-    .from('profiles')
-    .update({ avatar_url: avatarUrl })
-    .eq('id', session.userId)
-  if (error) {
-    throw new Error(error.message ?? 'Failed to update avatar')
-  }
+  await apiRequest('/customer/profile/avatar', { method: 'PATCH', body: { avatarUrl } })
 }
 
 export async function getUserId(): Promise<string | null> {
@@ -60,24 +24,24 @@ export async function getUserId(): Promise<string | null> {
 }
 
 export async function getSession(): Promise<AuthSession | null> {
-  const { data, error } = await supabase.auth.getSession()
-  if (error) {
-    throw new Error(error.message)
-  }
-  const user = data.session?.user
-  if (!user) {
+  try {
+    const data = await apiRequest<{
+      userId: string
+      role: string
+      name: string
+      email: string
+      email_confirmed_at?: string | null
+    }>('/auth/me')
+    if (data.role !== 'customer') return null
+    return {
+      userId: data.userId,
+      role: 'customer',
+      name: data.name,
+      email: data.email,
+      email_confirmed_at: data.email_confirmed_at ?? null,
+    }
+  } catch {
     return null
-  }
-  const profile = await fetchProfile(user.id)
-  if (profile.role !== 'customer') {
-    return null
-  }
-  return {
-    userId: profile.id,
-    role: 'customer',
-    name: profile.name,
-    email: profile.email,
-    email_confirmed_at: user.email_confirmed_at ?? null,
   }
 }
 
@@ -88,59 +52,27 @@ export interface SignUpInput {
 }
 
 export async function signUp({ email, password, name }: SignUpInput): Promise<AuthSession> {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { full_name: name.trim() || undefined },
-    },
+  const data = await apiRequest<AuthSession>('/auth/signup', {
+    method: 'POST',
+    body: { email, password, name, expectedRole: 'customer' },
   })
-  if (error) {
-    throw new Error(error.message ?? 'Unable to create account')
-  }
-  if (!data.user) {
-    throw new Error('Account created but unable to sign in')
-  }
-  const profile = await fetchProfile(data.user.id)
-  if (profile.role !== 'customer') {
-    await supabase.auth.signOut()
-    throw new Error('Not authorized for customer access')
-  }
-  return {
-    userId: profile.id,
-    role: 'customer',
-    name: profile.name,
-    email: profile.email,
-  }
+  return data
 }
 
 export async function login(email: string, password: string): Promise<AuthSession> {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error || !data.user) {
-    throw new Error(error?.message ?? 'Unable to login')
-  }
-  const profile = await fetchProfile(data.user.id)
-  if (profile.role !== 'customer') {
-    await supabase.auth.signOut()
-    throw new Error('Not authorized for customer access')
-  }
-  return {
-    userId: profile.id,
-    role: 'customer',
-    name: profile.name,
-    email: profile.email,
-  }
+  return apiRequest<AuthSession>('/auth/login', {
+    method: 'POST',
+    body: { email, password, expectedRole: 'customer' },
+  })
 }
 
 export async function logout(): Promise<void> {
-  await supabase.auth.signOut()
+  await apiRequest('/auth/logout', { method: 'POST' })
 }
 
 export async function getCurrentUser(): Promise<User | null> {
   const session = await getSession()
-  if (!session) {
-    return null
-  }
+  if (!session) return null
   return {
     id: session.userId,
     name: session.name,
@@ -148,4 +80,19 @@ export async function getCurrentUser(): Promise<User | null> {
     role: 'customer',
     createdAt: new Date().toISOString(),
   }
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  await apiRequest('/auth/forgot-password', { method: 'POST', body: { email } })
+}
+
+export async function resetPassword(token: string, password: string): Promise<void> {
+  await apiRequest('/auth/reset-password', { method: 'POST', body: { token, password } })
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await apiRequest('/auth/change-password', {
+    method: 'POST',
+    body: { currentPassword, newPassword },
+  })
 }

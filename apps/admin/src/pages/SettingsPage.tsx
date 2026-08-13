@@ -40,7 +40,7 @@ export function SettingsPage() {
     setSaveMessage('')
     setError('')
     try {
-      await updateAppSettings(settingsId, {
+      await updateAppSettings({
         companyName,
         supportEmail,
         supportPhone: supportPhone || undefined,

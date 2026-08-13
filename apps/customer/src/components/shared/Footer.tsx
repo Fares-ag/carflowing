@@ -11,16 +11,23 @@ export function Footer() {
           <div className="footer-logo">
             <img src={CarflowLogo} alt="Carflow" />
           </div>
-          
+
           <nav className="footer-nav">
-            <Link to="/browse" className="footer-link">Browse Cars</Link>
+            <Link to="/browse" className="footer-link">
+              Browse
+            </Link>
+            <Link to="/faqs" className="footer-link">
+              FAQ
+            </Link>
+            <Link to="/contact" className="footer-link">
+              Contact
+            </Link>
             <a
               href="mailto:dealers@carflow.ai?subject=Dealer%20Application"
               className="footer-link"
             >
-              Interested in listing? Email dealers@carflow.ai
+              List your cars
             </a>
-            <Link to="/contact" className="footer-link">Contact Us</Link>
           </nav>
 
           <div className="social-links">
@@ -38,16 +45,14 @@ export function Footer() {
             </a>
           </div>
         </div>
-        
+
         <div className="footer-bottom">
           <div className="footer-divider"></div>
           <div className="footer-legal">
-            <Link to="/contact" className="footer-link">Terms</Link>
-            <Link to="/contact" className="footer-link">Privacy and Policy</Link>
+            <span className="footer-link footer-link--muted">Terms & privacy — contact us for details</span>
           </div>
         </div>
       </div>
     </footer>
   )
 }
-

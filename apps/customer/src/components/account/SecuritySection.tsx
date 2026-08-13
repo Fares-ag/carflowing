@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KeyRound, LogOut } from 'lucide-react'
-import { supabase } from '@carflow/shared'
+import { MIN_PASSWORD_LENGTH, validatePassword } from '@carflow/shared'
 import { toast } from '../../hooks/useToast'
 import './SecuritySection.css'
 
@@ -83,32 +83,16 @@ export default function SecuritySection() {
       setChangeError('New password and confirmation do not match.')
       return
     }
-    if (newPassword.length < 6) {
-      setChangeError('New password must be at least 6 characters.')
+    const passwordError = validatePassword(newPassword)
+    if (passwordError) {
+      setChangeError(passwordError)
       return
     }
 
     setIsChanging(true)
     try {
-      const { data: userData, error: userErr } = await supabase.auth.getUser()
-      if (userErr || !userData.user?.email) {
-        setChangeError(userErr?.message ?? 'Could not load your account.')
-        return
-      }
-      const email = userData.user.email
-      const { error: signErr } = await supabase.auth.signInWithPassword({
-        email,
-        password: currentPassword,
-      })
-      if (signErr) {
-        setChangeError('Current password is incorrect.')
-        return
-      }
-      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword })
-      if (updateErr) {
-        setChangeError(updateErr.message ?? 'Could not update password.')
-        return
-      }
+      const { changePassword } = await import('../../services/authService')
+      await changePassword(currentPassword, newPassword)
       setChangeSuccess('Your password has been updated.')
       setCurrentPassword('')
       setNewPassword('')
@@ -127,7 +111,8 @@ export default function SecuritySection() {
     if (!ok) return
     setLoggingOutAll(true)
     try {
-      await supabase.auth.signOut({ scope: 'global' })
+      const { logout } = await import('../../services/authService')
+      await logout()
       navigate('/login')
     } catch {
       toast.error('Failed to sign out. Please try again.')
@@ -182,7 +167,7 @@ export default function SecuritySection() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   autoComplete="new-password"
                   required
-                  minLength={6}
+                  minLength={MIN_PASSWORD_LENGTH}
                 />
               </label>
               <label>
@@ -194,7 +179,7 @@ export default function SecuritySection() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   autoComplete="new-password"
                   required
-                  minLength={6}
+                  minLength={MIN_PASSWORD_LENGTH}
                 />
               </label>
               {changeError && (
@@ -227,7 +212,7 @@ export default function SecuritySection() {
               Enable
             </button>
           </div>
-          <p className="security-footnote">Two-factor authentication setup coming soon</p>
+          <p className="security-footnote">Two-factor authentication is not available in this release.</p>
         </div>
 
         <div className="divider"></div>

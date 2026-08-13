@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Car, Check, FileText, Mail, Phone, Smartphone, Upload } from 'lucide-react'
-import { uploadCustomerDocument, supabase, type CustomerDocumentType } from '@carflow/shared'
+import { apiRequest, uploadCustomerDocument, type CustomerDocumentType } from '@carflow/shared'
 import { getCustomerProfile, updateCustomerDocuments } from '../../services/customerService'
+import { useAuth } from '../../contexts/AuthContext'
 import { toast } from '../../hooks/useToast'
 import './VerificationSection.css'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 export default function VerificationSection() {
+  const { session } = useAuth()
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState<string | null>(null)
   const [emailVerified, setEmailVerified] = useState(false)
@@ -28,16 +30,15 @@ export default function VerificationSection() {
       setLoadingProfile(true)
       setDocumentError('')
       try {
-        const { data: authData } = await supabase.auth.getUser()
-        const user = authData.user
-        if (cancelled) return
-        if (user) {
-          setEmail(user.email ?? '')
-          setEmailVerified(!!user.email_confirmed_at)
-          const { data: row } = await supabase.from('profiles').select('phone').eq('id', user.id).maybeSingle()
-          if (!cancelled) {
-            setPhone(row?.phone ?? null)
-          }
+        if (session) {
+          setEmail(session.email ?? '')
+          setEmailVerified(!!session.email_confirmed_at)
+        }
+        const full = await apiRequest<{ profile: { phone?: string | null } | null }>(
+          '/customer/profile/full'
+        )
+        if (!cancelled) {
+          setPhone(full.profile?.phone ?? null)
         }
         const docs = await getCustomerProfile()
         if (!cancelled) {
@@ -56,7 +57,7 @@ export default function VerificationSection() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [session])
 
   const hasQid = !!profile?.qid_document_path
   const hasDriversLicense = !!profile?.drivers_license_path
@@ -71,8 +72,7 @@ export default function VerificationSection() {
     }
     setUploadingDoc(type === 'qid' ? 'qid' : 'drivers_license')
     try {
-      const { data } = await supabase.auth.getUser()
-      const userId = data.user?.id
+      const userId = session?.userId
       if (!userId) throw new Error('Not authenticated')
       const path = await uploadCustomerDocument(file, userId, type)
       const updated = await updateCustomerDocuments(
@@ -134,7 +134,7 @@ export default function VerificationSection() {
             <span className="status-badge pending">No phone on file</span>
           )}
         </div>
-        <p className="verification-phone-note">Phone verification via SMS coming soon.</p>
+        <p className="verification-phone-note">Phone verification via SMS is not available in this release.</p>
 
         {documentError && (
           <div className="verification-alert">

@@ -3,21 +3,19 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
 import { login } from '../services/authService'
+import { useAuth } from '../contexts/AuthContext'
+import { getRedirectTarget, withRedirectParam } from '../utils/authRedirect'
 import './LoginPage.css'
-
-function getRedirectTarget(redirect: string | null): string {
-  if (!redirect) return '/dashboard'
-  const path = decodeURIComponent(redirect)
-  if (path.startsWith('/') && !path.startsWith('//')) return path
-  return '/dashboard'
-}
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const { refetch } = useAuth()
   const [searchParams] = useSearchParams()
   const redirect = searchParams.get('redirect')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(
+    import.meta.env.DEV ? 'customer@carflow.dev' : ''
+  )
+  const [password, setPassword] = useState(import.meta.env.DEV ? 'password123' : '')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -27,7 +25,8 @@ export function LoginPage() {
     setIsSubmitting(true)
 
     try {
-      await login(email, password)
+      await login(email.trim(), password)
+      await refetch()
       navigate(getRedirectTarget(redirect))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to login')
@@ -43,6 +42,11 @@ export function LoginPage() {
         <div className="customerLoginCard">
           <div className="customerLoginTitle">Customer Login</div>
           <div className="customerLoginSubtitle">Sign in with your customer account.</div>
+          {import.meta.env.DEV && (
+            <p className="customerLoginDemo">
+              Demo: <code>customer@carflow.dev</code> / <code>password123</code>
+            </p>
+          )}
 
           <form className="customerLoginForm" onSubmit={handleSubmit}>
             <label className="customerLoginLabel">
@@ -80,7 +84,8 @@ export function LoginPage() {
             </button>
 
             <p className="customerLoginFooter">
-              Don&apos;t have an account? <Link to="/signup">Sign up</Link>
+              Don&apos;t have an account?{' '}
+              <Link to={withRedirectParam('/signup', redirect)}>Sign up</Link>
             </p>
           </form>
         </div>

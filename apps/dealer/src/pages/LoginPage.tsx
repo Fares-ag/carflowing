@@ -1,10 +1,15 @@
 import { FormEvent, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { login } from '../services/authService'
+import { useAuth } from '../contexts/AuthContext'
+import { getRedirectTarget, withRedirectParam } from '../utils/authRedirect'
 import './LoginPage.css'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const { refetch } = useAuth()
+  const [searchParams] = useSearchParams()
+  const redirect = searchParams.get('redirect')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -17,7 +22,8 @@ export function LoginPage() {
 
     try {
       await login(email, password)
-      navigate('/dashboard')
+      await refetch()
+      navigate(getRedirectTarget(redirect))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to login')
     } finally {
@@ -64,7 +70,8 @@ export function LoginPage() {
         </form>
 
         <p className="dealerLoginFooter">
-          Don&apos;t have an account? <Link to="/signup">Apply as dealer</Link>
+          Don&apos;t have an account?{' '}
+          <Link to={withRedirectParam('/signup', redirect)}>Apply as dealer</Link>
         </p>
       </div>
     </div>
