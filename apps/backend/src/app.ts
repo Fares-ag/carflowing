@@ -27,6 +27,18 @@ const defaultOrigins = [
   'http://localhost:5175',
 ]
 
+/** Merge explicit CORS_ORIGINS with CUSTOMER/DEALER/ADMIN app URLs so prod domains stay in sync. */
+export function resolveCorsOrigins(): string[] {
+  const explicit = (process.env.CORS_ORIGINS || defaultOrigins.join(','))
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const appUrls = [process.env.CUSTOMER_APP_URL, process.env.DEALER_APP_URL, process.env.ADMIN_APP_URL]
+    .map((s) => s?.trim())
+    .filter((s): s is string => Boolean(s))
+  return [...new Set([...explicit, ...appUrls])]
+}
+
 export function createApp() {
   const app = express()
 
@@ -38,14 +50,9 @@ export function createApp() {
     })
   )
 
-  const corsOrigins = (process.env.CORS_ORIGINS || defaultOrigins.join(','))
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-
   app.use(
     cors({
-      origin: corsOrigins,
+      origin: resolveCorsOrigins(),
       credentials: true,
     })
   )
