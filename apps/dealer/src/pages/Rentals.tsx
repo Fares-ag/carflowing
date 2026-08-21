@@ -30,6 +30,7 @@ import {
   recordOfflinePayment,
   recordReturn,
   type RentalDetail,
+  type RentalReturnInput,
   type RentalWithRelations,
 } from '../services/dealerService'
 import { RentalDeliveryPanel } from '../components/RentalDeliveryPanel'
@@ -254,7 +255,7 @@ export function Rentals() {
   }
 
   const submitExtend = () => {
-    if (!extendRentalRow || extendSubmitting) return
+    if (!extendRentalRow || extendSubmitting || !extendPreview) return
     setExtendSubmitting(true)
     extendRental(extendRentalRow.id, extendMonths)
       .then(() => {
@@ -275,7 +276,7 @@ export function Rentals() {
   const handlePickupFulfilment = (rentalId: string, status: 'scheduled' | 'delivered') => {
     setFulfilmentSubmitting(true)
     acknowledgePickupFulfilment(rentalId, status)
-      .then((updated) => {
+      .then(() => {
         toast.success(status === 'delivered' ? 'Marked as delivered' : 'Delivery scheduled')
         if (detailId === rentalId) {
           void getRental(rentalId).then(setDetail).catch(() => undefined)

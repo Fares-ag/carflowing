@@ -71,8 +71,13 @@ export function SubscriptionPanel({ rentalId }: { rentalId: string }) {
 
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
-  const [cancelCollection, setCancelCollection] = useState({
-    mode: 'collection' as 'collection' | 'dealer_return',
+  const [cancelCollection, setCancelCollection] = useState<{
+    mode: 'collection' | 'dealer_return'
+    location: string
+    date: string
+    time: (typeof DELIVERY_TIME_SLOTS)[number]
+  }>({
+    mode: 'collection',
     location: '',
     date: '',
     time: DELIVERY_TIME_SLOTS[0],
@@ -1018,7 +1023,10 @@ export function SubscriptionPanel({ rentalId }: { rentalId: string }) {
                     <select
                       value={cancelCollection.time}
                       onChange={(e) =>
-                        setCancelCollection((c) => ({ ...c, time: e.target.value }))
+                        setCancelCollection((c) => ({
+                          ...c,
+                          time: e.target.value as (typeof DELIVERY_TIME_SLOTS)[number],
+                        }))
                       }
                     >
                       {DELIVERY_TIME_SLOTS.map((slot) => (

@@ -9,7 +9,6 @@ import {
   LineChart,
   LogOut,
   MessageSquare,
-  MessageSquare,
   Repeat,
   Settings,
   Users,

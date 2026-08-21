@@ -143,7 +143,7 @@ export function MessagesPage() {
     <div className="dealer-layout">
       <Sidebar />
       <div className="main-content">
-        <Header title="Messages" subtitle="In-app conversations with your customers" />
+        <Header />
         <div className="dealer-messages-page">
           <aside className="dealer-messages-sidebar">
             <div className="dealer-messages-sidebar-header">

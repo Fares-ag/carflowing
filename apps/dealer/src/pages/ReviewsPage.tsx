@@ -60,7 +60,7 @@ export function ReviewsPage() {
     <div className="dealer-layout">
       <Sidebar />
       <div className="dealer-main">
-        <Header title="Customer reviews" />
+        <Header />
         <main className="reviews-page">
           <p className="reviews-page__intro">
             Reviews from customers who completed a subscription on your cars. You can post one public

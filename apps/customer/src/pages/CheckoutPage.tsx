@@ -96,8 +96,13 @@ export function CheckoutPage() {
     zip: '',
     country: 'Qatar',
   })
-  const [delivery, setDelivery] = useState({
-    mode: 'delivery' as 'delivery' | 'dealer_pickup',
+  const [delivery, setDelivery] = useState<{
+    mode: 'delivery' | 'dealer_pickup'
+    location: string
+    date: string
+    time: (typeof DELIVERY_TIME_SLOTS)[number]
+  }>({
+    mode: 'delivery',
     location: '',
     date: cart?.startDate ?? '',
     time: DELIVERY_TIME_SLOTS[0],
@@ -764,7 +769,12 @@ export function CheckoutPage() {
                   <span>Preferred time slot *</span>
                   <select
                     value={delivery.time}
-                    onChange={(e) => setDelivery((d) => ({ ...d, time: e.target.value }))}
+                    onChange={(e) =>
+                      setDelivery((d) => ({
+                        ...d,
+                        time: e.target.value as (typeof DELIVERY_TIME_SLOTS)[number],
+                      }))
+                    }
                     className={fieldErrors.deliveryTime ? 'is-error' : ''}
                   >
                     {DELIVERY_TIME_SLOTS.map((slot) => (

@@ -18,6 +18,7 @@ const STATUS_CLASS: Record<RentalStatus, string> = {
   active: 'adminBadge adminBadge--green',
   reserved: 'adminBadge adminBadge--blue',
   past_due: 'adminBadge rentalBadge--pastdue',
+  paused: 'adminBadge adminBadge--amber',
   completed: 'adminBadge adminBadge--amber',
   cancelled: 'adminBadge adminBadge--red',
 }

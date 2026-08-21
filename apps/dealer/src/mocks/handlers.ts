@@ -537,6 +537,7 @@ export const handlers = [
       rentalId: id,
       type: 'note',
       conditionNotes: `Dealer extended by ${months} month(s). New end date: ${newEndDate}.`,
+      photos: [],
       createdAt: new Date().toISOString(),
     })
     return HttpResponse.json(await withLatency(updated))
