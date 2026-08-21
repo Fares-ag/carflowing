@@ -19,7 +19,7 @@ import { helmetContentSecurityPolicyOptions } from './utils/contentSecurityPolic
 import { restrictiveContentTypeForPath, setAttachmentResponseHeaders } from './utils/uploadContent.js'
 import { captureException, setupSentryExpressErrorHandler } from './utils/observability.js'
 import { logStructured, requestContextMiddleware } from './utils/requestContext.js'
-import { skipRateLimitInTests } from './utils/rateLimit.js'
+import { skipRateLimitForPreflight, skipRateLimitInTests } from './utils/rateLimit.js'
 
 const defaultOrigins = [
   'http://localhost:5173',
@@ -45,26 +45,31 @@ export function createApp() {
   app.set('trust proxy', 1)
   app.use(requestContextMiddleware)
   app.use(
+    cors({
+      origin: resolveCorsOrigins(),
+      credentials: true,
+      optionsSuccessStatus: 204,
+      maxAge: 86400,
+    })
+  )
+  app.use(
     helmet({
       contentSecurityPolicy: helmetContentSecurityPolicyOptions(),
     })
   )
 
-  app.use(
-    cors({
-      origin: resolveCorsOrigins(),
-      credentials: true,
-    })
-  )
   app.use(express.json({ limit: '2mb' }))
   app.use(cookieParser())
+
+  const skipRateLimit = (req: import('express').Request) =>
+    skipRateLimitInTests() || skipRateLimitForPreflight(req)
 
   const authRateLimit = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: skipRateLimitInTests,
+    skip: skipRateLimit,
   })
   app.use('/api/auth/login', authRateLimit)
   app.use('/api/auth/signup', authRateLimit)
@@ -77,7 +82,7 @@ export function createApp() {
     max: 30,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: skipRateLimitInTests,
+    skip: skipRateLimit,
   })
   app.use('/api/payments/skipcash/create-intent', paymentRateLimit)
   app.use('/api/payments/skipcash/invoice-intent', paymentRateLimit)
@@ -87,7 +92,7 @@ export function createApp() {
     max: 40,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: skipRateLimitInTests,
+    skip: skipRateLimit,
   })
   app.use('/api/uploads', uploadRateLimit)
 
@@ -96,7 +101,7 @@ export function createApp() {
     max: 60,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: skipRateLimitInTests,
+    skip: skipRateLimit,
   })
   app.use('/api/admin/payments/:id/refund', mutationRateLimit)
   app.use('/api/customer/booking-requests', mutationRateLimit)

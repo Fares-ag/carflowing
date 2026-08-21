@@ -31,7 +31,12 @@ function Default-Env([string]$Name, [string]$Fallback) {
 $customer = Default-Env 'CUSTOMER_APP_URL' 'https://www.carflow.qa'
 $admin = Default-Env 'ADMIN_APP_URL' 'https://carflow-admin-pied.vercel.app'
 $dealer = Default-Env 'DEALER_APP_URL' 'https://carflow-dealer.vercel.app'
-$cookieDomain = Default-Env 'COOKIE_DOMAIN' '.carflow.qa'
+$cookieDomain = Default-Env 'COOKIE_DOMAIN' ''
+# Only set COOKIE_DOMAIN when the API itself is on *.carflow.qa (not Railway *.up.railway.app).
+if ($cookieDomain -and $api -notmatch '\.carflow\.qa') {
+  Write-Host "Skipping COOKIE_DOMAIN=$cookieDomain — API host is not on carflow.qa ($api). Auth uses SameSite=None host cookies on the API origin."
+  $cookieDomain = ''
+}
 $fromEmail = Default-Env 'FROM_EMAIL' 'noreply@carflow.qa'
 
 if (-not $env:JWT_ACCESS_SECRET) {
@@ -65,7 +70,6 @@ $vars = @(
   "JWT_REFRESH_SECRET=$($env:JWT_REFRESH_SECRET)",
   "JWT_2FA_SECRET=$($env:JWT_2FA_SECRET)",
   "COOKIE_SECURE=true",
-  "COOKIE_DOMAIN=$cookieDomain",
   "PUBLIC_API_URL=$api",
   "CUSTOMER_APP_URL=$customer",
   "ADMIN_APP_URL=$admin",
@@ -73,6 +77,8 @@ $vars = @(
   "CORS_ORIGINS=https://www.carflow.qa,https://carflow.qa,$customer,$admin,$dealer,https://carflow-customer.vercel.app,https://carflow-admin-pied.vercel.app,https://carflow-dealer.vercel.app",
   "SKIPCASH_MODE=sandbox"
 )
+
+if ($cookieDomain) { $vars += "COOKIE_DOMAIN=$cookieDomain" }
 
 if ($env:SKIPCASH_CLIENT_ID) { $vars += "SKIPCASH_CLIENT_ID=$($env:SKIPCASH_CLIENT_ID)" }
 if ($env:SKIPCASH_KEY_ID) { $vars += "SKIPCASH_KEY_ID=$($env:SKIPCASH_KEY_ID)" }

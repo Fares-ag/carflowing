@@ -49,7 +49,20 @@ function cookieSecure() {
 
 function cookieDomain(): string | undefined {
   const value = process.env.COOKIE_DOMAIN?.trim()
-  return value || undefined
+  if (!value) return undefined
+  const apiHost = (() => {
+    try {
+      return new URL(process.env.PUBLIC_API_URL ?? '').hostname
+    } catch {
+      return ''
+    }
+  })()
+  // Domain= only works when the API itself is hosted on that registrable domain
+  // (e.g. api.carflow.qa). Railway *.up.railway.app cannot set .carflow.qa cookies.
+  if (apiHost && !apiHost.endsWith(value.replace(/^\./, ''))) {
+    return undefined
+  }
+  return value
 }
 
 export type AuthCookieOptions = {
@@ -73,6 +86,7 @@ export function buildAuthCookieOptions(): AuthCookieOptions {
       domain,
     }
   }
+  // Cross-site SPA (www.carflow.qa) calling Railway API — host-only cookies on the API origin.
   return {
     httpOnly: true,
     sameSite: secure ? 'none' : 'lax',

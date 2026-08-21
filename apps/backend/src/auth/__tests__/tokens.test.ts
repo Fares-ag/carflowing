@@ -22,6 +22,7 @@ describe('JWT tokens', () => {
   afterEach(() => {
     delete process.env.COOKIE_SECURE
     delete process.env.COOKIE_DOMAIN
+    delete process.env.PUBLIC_API_URL
   })
 
   it('signs and verifies access/refresh tokens', async () => {
@@ -71,15 +72,28 @@ describe('JWT tokens', () => {
   })
 
   describe('buildAuthCookieOptions', () => {
-    it('uses Domain + SameSite=Lax when COOKIE_DOMAIN is set', () => {
+    it('uses Domain + SameSite=Lax when API is hosted on the cookie domain', () => {
       process.env.COOKIE_DOMAIN = '.carflow.qa'
       process.env.COOKIE_SECURE = 'true'
+      process.env.PUBLIC_API_URL = 'https://api.carflow.qa'
       expect(buildAuthCookieOptions()).toEqual({
         httpOnly: true,
         sameSite: 'lax',
         secure: true,
         path: '/',
         domain: '.carflow.qa',
+      })
+    })
+
+    it('ignores COOKIE_DOMAIN when API is on a different host (Railway)', () => {
+      process.env.COOKIE_DOMAIN = '.carflow.qa'
+      process.env.COOKIE_SECURE = 'true'
+      process.env.PUBLIC_API_URL = 'https://carflow-api-production-9a43.up.railway.app'
+      expect(buildAuthCookieOptions()).toEqual({
+        httpOnly: true,
+        sameSite: 'none',
+        secure: true,
+        path: '/',
       })
     })
 

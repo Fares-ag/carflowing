@@ -1,5 +1,7 @@
+import type { Express } from 'express'
+import request from 'supertest'
 import { afterEach, describe, expect, it } from 'vitest'
-import { resolveCorsOrigins } from '../app.js'
+import { resolveCorsOrigins, createApp } from '../app.js'
 
 describe('resolveCorsOrigins', () => {
   afterEach(() => {
@@ -20,5 +22,28 @@ describe('resolveCorsOrigins', () => {
       'https://carflow-admin-pied.vercel.app',
       'https://carflow-dealer.vercel.app',
     ])
+  })
+})
+
+describe('CORS preflight', () => {
+  afterEach(() => {
+    delete process.env.CORS_ORIGINS
+    delete process.env.CUSTOMER_APP_URL
+  })
+
+  it('returns ACAO for OPTIONS /api/auth/signup from www.carflow.qa', async () => {
+    process.env.CORS_ORIGINS = 'https://www.carflow.qa'
+    process.env.CUSTOMER_APP_URL = 'https://www.carflow.qa'
+    const app: Express = createApp()
+
+    const res = await request(app)
+      .options('/api/auth/signup')
+      .set('Origin', 'https://www.carflow.qa')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type')
+
+    expect(res.status).toBe(204)
+    expect(res.headers['access-control-allow-origin']).toBe('https://www.carflow.qa')
+    expect(res.headers['access-control-allow-credentials']).toBe('true')
   })
 })
