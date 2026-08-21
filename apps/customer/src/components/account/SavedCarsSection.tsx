@@ -1,12 +1,12 @@
-import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
 import { computeRentalTotal, vehicleCategoryLabel } from '@carflow/shared'
-import { clearFavorites, listFavoriteVehicles, removeFavorite } from '../../services/customerService'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Grid, Heart, List, Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { toast } from '../../hooks/useToast'
+import { clearFavorites, listFavoriteVehicles, removeFavorite } from '../../services/customerService'
 import { CarCard } from '../shared/CarCard'
-import { ChevronDown, Grid, Heart, List, Search } from 'lucide-react'
-import '../../pages/MyFavorites.css'
+import './SavedCarsSection.css'
 
 function unavailableLabel(reason: string | null | undefined): string | undefined {
   if (reason === 'pending_booking') return 'Pending your booking'
@@ -137,14 +137,12 @@ export default function SavedCarsSection() {
                 </option>
               ))}
             </select>
-            <ChevronDown size={14} />
           </label>
           <label className="filter-button">
             <select aria-label="Sort saved cars" value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
               <option value="name">Name</option>
               <option value="price">Price</option>
             </select>
-            <ChevronDown size={14} />
           </label>
           <div className="view-toggle">
             <button

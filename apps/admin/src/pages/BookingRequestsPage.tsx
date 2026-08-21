@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { BookingRequest, Vehicle } from '@carflow/shared'
+import { formatDate, useLiveListRefresh } from '@carflow/shared'
+import { Check, Search, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { InfoModal } from '../components/InfoModal'
+import { AdminLayout } from '../layout/AdminLayout'
 import {
   deleteBookingRequest,
   listBookingRequests,
   listVehicles,
   updateBookingRequestStatus,
 } from '../services/adminService'
-import { AdminLayout } from '../layout/AdminLayout'
-import { InfoModal } from '../components/InfoModal'
-import { Check, ChevronDown, Search, Trash2, X } from 'lucide-react'
 import './BookingRequestsPage.css'
 
 export function BookingRequestsPage() {
@@ -55,6 +56,11 @@ export function BookingRequestsPage() {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  const hasPending = useMemo(() => requests.some((r) => r.status === 'pending'), [requests])
+  useLiveListRefresh(() => {
+    void refresh({ silent: true })
+  }, { active: hasPending })
 
   const vehicleMap = useMemo(() => new Map(vehicles.map((v) => [v.id, v])), [vehicles])
 
@@ -179,7 +185,6 @@ export function BookingRequestsPage() {
               <option value="approved">Approved</option>
               <option value="declined">Declined</option>
             </select>
-            <ChevronDown size={14} />
           </label>
         </div>
 
@@ -222,7 +227,7 @@ export function BookingRequestsPage() {
                       <td>
                         <span className={`brBadge brBadge--${row.status}`}>{row.status}</span>
                       </td>
-                      <td>{new Date(row.createdAt).toLocaleDateString()}</td>
+                      <td>{formatDate(row.createdAt)}</td>
                       <td>
                         <div className="brActions">
                           {row.status === 'pending' && (

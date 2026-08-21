@@ -1,0 +1,155 @@
+.reviews-page {
+  padding: 24px;
+}
+
+.reviews-page__intro {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: #64748b;
+  max-width: 640px;
+}
+
+.reviews-page__empty {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.reviews-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reviews-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+}
+
+.reviews-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.reviews-card__vehicle {
+  display: block;
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.reviews-card__rating {
+  display: flex;
+  gap: 2px;
+}
+
+.reviews-card__date {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.reviews-card__comment {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.reviews-card__response {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid #4f46e5;
+  background: #f8fafc;
+  border-radius: 0 8px 8px 0;
+}
+
+.reviews-card__response strong {
+  display: block;
+  font-size: 12px;
+  color: #4f46e5;
+  margin-bottom: 4px;
+}
+
+.reviews-card__response p {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.reviews-card__response-date {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.reviews-card__form textarea {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.reviews-card__form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.reviews-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reviews-btn--primary {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.reviews-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.reviews-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 24px;
+  font-size: 14px;
+}
+
+.reviews-pagination button {
+  padding: 8px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.reviews-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

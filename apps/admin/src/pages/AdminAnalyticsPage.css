@@ -10,6 +10,10 @@
   gap: 24px;
 }
 
+.adminAnalyticsStats--lifecycle {
+  margin-top: -8px;
+}
+
 .adminAnalyticsStatCard {
   background: white;
   border-radius: 16.4px;

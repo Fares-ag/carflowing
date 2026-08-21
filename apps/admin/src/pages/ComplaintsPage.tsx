@@ -1,19 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
-import type { ComplaintWithCustomer } from '../services/adminService'
-import { listComplaints, updateComplaintStatus } from '../services/adminService'
-import { AdminLayout } from '../layout/AdminLayout'
 import {
   BadgeAlert,
   BadgeCheck,
   BellRing,
-  ChevronDown,
   Filter,
   Loader2,
   Search,
   Users,
   X,
 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Cell,
   Line,
@@ -25,6 +20,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { toast } from 'sonner'
+import { AdminLayout } from '../layout/AdminLayout'
+import type { ComplaintReply, ComplaintWithCustomer } from '../services/adminService'
+import { listComplaintReplies, listComplaints, replyToComplaint, updateComplaintStatus } from '../services/adminService'
 import './ComplaintsPage.css'
 
 const CHART_COLORS = [
@@ -77,6 +76,9 @@ export function ComplaintsPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null)
+  const [replies, setReplies] = useState<ComplaintReply[]>([])
+  const [replyDraft, setReplyDraft] = useState('')
+  const [replySubmitting, setReplySubmitting] = useState(false)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const pageSize = 50
@@ -85,6 +87,17 @@ export function ComplaintsPage() {
     () => complaints.find((c) => c.id === selectedComplaintId) ?? null,
     [complaints, selectedComplaintId]
   )
+
+  useEffect(() => {
+    if (!selectedComplaintId) {
+      setReplies([])
+      setReplyDraft('')
+      return
+    }
+    listComplaintReplies(selectedComplaintId)
+      .then(setReplies)
+      .catch(() => setReplies([]))
+  }, [selectedComplaintId])
 
   const refreshComplaints = async () => {
     setLoading(true)
@@ -97,6 +110,22 @@ export function ComplaintsPage() {
       setLoadError(e instanceof Error ? e.message : 'Failed to load complaints')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSendReply = async () => {
+    if (!selectedComplaintId || replyDraft.trim().length < 8) return
+    setReplySubmitting(true)
+    try {
+      const created = await replyToComplaint(selectedComplaintId, replyDraft.trim())
+      setReplies((prev) => [...prev, created])
+      setReplyDraft('')
+      await refreshComplaints()
+      toast.success('Reply sent')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send reply')
+    } finally {
+      setReplySubmitting(false)
     }
   }
 
@@ -340,7 +369,6 @@ export function ComplaintsPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown size={14} />
             </label>
             <label className="complaintsSelect">
               <select
@@ -354,7 +382,6 @@ export function ComplaintsPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown size={14} />
             </label>
             <label className="complaintsSelect">
               <select
@@ -368,7 +395,6 @@ export function ComplaintsPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown size={14} />
             </label>
           </div>
         </div>
@@ -543,6 +569,42 @@ export function ComplaintsPage() {
                   <dd>{formatComplaintDate(selectedComplaint.createdAt)}</dd>
                 </div>
               </dl>
+              <div className="complaintsReplyThread">
+                <h4>Reply thread</h4>
+                {replies.length === 0 ? (
+                  <p className="complaintsReplyEmpty">No replies yet.</p>
+                ) : (
+                  <ul className="complaintsReplyList">
+                    {replies.map((reply) => (
+                      <li key={reply.id} className="complaintsReplyItem">
+                        <div className="complaintsReplyMeta">
+                          <strong>{reply.authorName ?? 'Staff'}</strong>
+                          <span>{formatComplaintDate(reply.createdAt)}</span>
+                        </div>
+                        <p>{reply.body}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <label className="complaintsReplyLabel">
+                  Add reply
+                  <textarea
+                    className="complaintsReplyInput"
+                    rows={3}
+                    value={replyDraft}
+                    onChange={(e) => setReplyDraft(e.target.value)}
+                    placeholder="Write a response to the customer (min 8 characters)"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="complaintsDetailDone"
+                  disabled={replySubmitting || replyDraft.trim().length < 8}
+                  onClick={() => void handleSendReply()}
+                >
+                  {replySubmitting ? 'Sending…' : 'Send reply'}
+                </button>
+              </div>
               <button
                 type="button"
                 className="complaintsDetailDone"

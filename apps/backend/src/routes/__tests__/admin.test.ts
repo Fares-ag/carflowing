@@ -1,17 +1,21 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Express } from 'express'
 import { eq } from 'drizzle-orm'
+import type { Express } from 'express'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
 import {
   appSettings,
+  auditLogs,
   bookingRequests,
+  commissionLedger,
+  complaintReplies,
   complaints,
   dealers,
-  messages,
+  maintenanceRecords,
   payments,
-  plans,
   profiles,
   rentals,
+  subscriptions,
+  vehicles,
 } from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
@@ -85,6 +89,45 @@ describe('Admin API', () => {
     await agent.patch(`/api/admin/customers/${fixtures.customer.id}/verification`).send({ status: 'verified' })
   })
 
+  it('ADM-12b: customer verification approve/reject records audit with reason', async () => {
+    const fixtures = await seedFixtures()
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+
+    const approve = await agent
+      .patch(`/api/admin/customers/${fixtures.customer.id}/verification`)
+      .send({ status: 'verified', decision: 'approve', reason: 'Documents match profile' })
+    expect(approve.status).toBe(200)
+
+    const approveLogs = await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.entityId, fixtures.customer.id))
+    const approveEntry = approveLogs.find((l) => l.action === 'customer.verification.approve')
+    expect(approveEntry).toBeTruthy()
+    expect(approveEntry?.actorId).toBe(fixtures.admin.id)
+    expect(approveEntry?.note).toBe('Documents match profile')
+    expect(approveEntry?.after).toMatchObject({
+      status: 'verified',
+      decision: 'approve',
+      reason: 'Documents match profile',
+    })
+
+    const reject = await agent
+      .patch(`/api/admin/customers/${fixtures.customer.id}/verification`)
+      .send({ status: 'unverified', decision: 'reject', reason: 'Expired license' })
+    expect(reject.status).toBe(200)
+
+    const rejectEntry = (
+      await db.select().from(auditLogs).where(eq(auditLogs.entityId, fixtures.customer.id))
+    ).find((l) => l.action === 'customer.verification.reject')
+    expect(rejectEntry).toBeTruthy()
+    expect(rejectEntry?.after).toMatchObject({
+      status: 'unverified',
+      decision: 'reject',
+      reason: 'Expired license',
+    })
+  })
+
   it('ADM-13..ADM-15: rentals list/details/status', async () => {
     const fixtures = await seedFixtures()
     const today = new Date().toISOString().slice(0, 10)
@@ -109,6 +152,10 @@ describe('Admin API', () => {
     const details = await agent.get('/api/admin/rentals/details')
     expect(details.body.items[0].customer?.email).toBe(fixtures.customer.email)
 
+    // The payment gate holds even for admin overrides (re-audit RA-08).
+    const gated = await agent.patch(`/api/admin/rentals/${rental.id}/status`).send({ status: 'active' })
+    expect(gated.status).toBe(409)
+    await db.update(rentals).set({ paymentStatus: 'completed' }).where(eq(rentals.id, rental.id))
     const patched = await agent.patch(`/api/admin/rentals/${rental.id}/status`).send({ status: 'active' })
     expect(patched.body.status).toBe('active')
   })
@@ -257,13 +304,13 @@ describe('Admin API', () => {
 
     const patched = await agent.patch('/api/admin/settings').send({
       companyName: 'CarFlow QA',
-      defaultTaxRate: 0.07,
+      supportEmail: 'ops@carflow.qa',
     })
     expect(patched.body.companyName).toBe('CarFlow QA')
-    expect(patched.body.defaultTaxRate).toBe(0.07)
+    expect(patched.body.supportEmail).toBe('ops@carflow.qa')
 
-    const [row] = await db.select().from(appSettings).limit(1)
-    expect(row.companyName).toBe('CarFlow QA')
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.id, patched.body.id)).limit(1)
+    expect(row?.companyName).toBe('CarFlow QA')
   })
 
   it('ADM-35: non-admin gets 403', async () => {
@@ -282,10 +329,228 @@ describe('Admin API', () => {
     expect(remainingDealers.some((d) => d.id === fixtures.dealer.dealerId)).toBe(false)
   })
 
-  it('ADM-N20: invalid tax rate is rejected with 400', async () => {
+  it('ADM-N20: unknown settings fields are ignored', async () => {
     const fixtures = await seedFixtures()
     const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
     const res = await agent.patch('/api/admin/settings').send({ defaultTaxRate: -1 })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
+    expect(res.body.defaultTaxRate).toBeUndefined()
+  })
+
+  it('ADM-API-12: missing customer returns 404 not null', async () => {
+    const fixtures = await seedFixtures()
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const res = await agent.get('/api/admin/customers/00000000-0000-0000-0000-000000000099')
+    expect(res.status).toBe(404)
+  })
+
+  it('ADM-API-19: payments summary uses aggregated totals', async () => {
+    const fixtures = await seedFixtures()
+    await db.insert(payments).values([
+      {
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        amount: '200',
+        status: 'completed',
+        type: 'rental',
+        method: 'card',
+      },
+      {
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        amount: '50',
+        status: 'pending',
+        type: 'rental',
+        method: 'card',
+      },
+    ])
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const summary = await agent.get('/api/admin/payments/summary')
+    expect(summary.status).toBe(200)
+    expect(summary.body.grossRevenue).toBe(200)
+    expect(summary.body.pendingCount).toBe(1)
+    expect(summary.body.completedCount).toBe(1)
+  })
+
+  it('ADM-API-22: delete plan blocked when active subscriptions exist', async () => {
+    const fixtures = await seedFixtures()
+    await db.insert(subscriptions).values({
+      ownerId: fixtures.dealer.id,
+      ownerType: 'dealer',
+      planId: fixtures.plan.id,
+      status: 'active',
+    })
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const res = await agent.delete(`/api/admin/plans/${fixtures.plan.id}`)
+    expect(res.status).toBe(409)
+  })
+
+  it('ADM-API-25: complaint reply thread list/create', async () => {
+    const fixtures = await seedFixtures()
+    const [c] = await db
+      .insert(complaints)
+      .values({
+        customerId: fixtures.customer.id,
+        category: 'service',
+        subject: 'Late pickup',
+        description: 'Vehicle was not ready',
+      })
+      .returning()
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const empty = await agent.get(`/api/admin/complaints/${c.id}/replies`)
+    expect(empty.body).toEqual([])
+
+    const created = await agent.post(`/api/admin/complaints/${c.id}/replies`).send({
+      body: 'We are investigating your complaint.',
+    })
+    expect(created.status).toBe(201)
+    expect(created.body.body).toContain('investigating')
+
+    const listed = await agent.get(`/api/admin/complaints/${c.id}/replies`)
+    expect(listed.body).toHaveLength(1)
+
+    const rows = await db.select().from(complaintReplies).where(eq(complaintReplies.complaintId, c.id))
+    expect(rows).toHaveLength(1)
+  })
+
+  it('ADM-API-34: audit-logs pagination and entity filters', async () => {
+    const fixtures = await seedFixtures()
+    await loginAs(app, fixtures.admin.email, 'admin')
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    await agent.patch(`/api/admin/customers/${fixtures.customer.id}/status`).send({ status: 'suspended' })
+
+    const all = await agent.get('/api/admin/audit-logs')
+    expect(all.status).toBe(200)
+    expect(all.body.items.length).toBeGreaterThan(0)
+
+    const filtered = await agent.get('/api/admin/audit-logs').query({
+      entityType: 'profile',
+      entityId: fixtures.customer.id,
+    })
+    expect(filtered.body.items.every((i: { entityType: string }) => i.entityType === 'profile')).toBe(true)
+  })
+
+  it('ADM-API-35: settings patch writes audit row', async () => {
+    const fixtures = await seedFixtures()
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    await agent.patch('/api/admin/settings').send({ companyName: 'Audited Co' })
+    const logs = await db.select().from(auditLogs).where(eq(auditLogs.action, 'settings.update'))
+    expect(logs.length).toBeGreaterThan(0)
+  })
+
+  it('ADM-API-36: maintenance complete marks record and releases vehicle', async () => {
+    const fixtures = await seedFixtures()
+    await db.update(vehicles).set({ status: 'maintenance' }).where(eq(vehicles.id, fixtures.vehicles[0].id))
+    const [record] = await db
+      .insert(maintenanceRecords)
+      .values({
+        vehicleId: fixtures.vehicles[0].id,
+        dealerId: fixtures.dealer.dealerId,
+        title: 'Oil change',
+        status: 'open',
+        description: 'Scheduled service',
+      })
+      .returning()
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const res = await agent.patch(`/api/admin/maintenance/${record.id}/complete`)
+    expect(res.status).toBe(200)
+    const [vehicle] = await db.select().from(vehicles).where(eq(vehicles.id, fixtures.vehicles[0].id))
+    expect(vehicle.status).toBe('available')
+  })
+
+  it('ADM-API-37..38: payouts list/generate/mark-paid', async () => {
+    const fixtures = await seedFixtures()
+    await db
+      .update(dealers)
+      .set({
+        bankAccountName: 'Premium Cars QA',
+        bankName: 'QNB',
+        bankIban: 'QA58QNBA000000000000000000001',
+        bankDetailsVerifiedAt: new Date(),
+      })
+      .where(eq(dealers.id, fixtures.dealer.dealerId))
+    await db.insert(commissionLedger).values({
+      dealerId: fixtures.dealer.dealerId,
+      grossAmount: '200',
+      commissionRate: '0.1',
+      commissionAmount: '20',
+      netAmount: '180',
+      status: 'pending',
+    })
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const generated = await agent.post('/api/admin/payouts/generate')
+    expect(generated.body.created).toBe(1)
+
+    const batched = await db
+      .select()
+      .from(commissionLedger)
+      .where(eq(commissionLedger.status, 'batched'))
+    expect(batched).toHaveLength(1)
+    expect(batched[0].payoutId).toBeTruthy()
+
+    const list = await agent.get('/api/admin/payouts')
+    expect(list.body.items.length).toBe(1)
+
+    const paid = await agent.post(`/api/admin/payouts/${list.body.items[0].id}/mark-paid`)
+    expect(paid.status).toBe(200)
+  })
+
+  it('ADM-API-39: payout generate skips dealer without verified bank', async () => {
+    const fixtures = await seedFixtures()
+    await db.insert(commissionLedger).values({
+      dealerId: fixtures.dealer.dealerId,
+      grossAmount: '100',
+      commissionRate: '0.1',
+      commissionAmount: '10',
+      netAmount: '90',
+      status: 'pending',
+    })
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const generated = await agent.post('/api/admin/payouts/generate')
+    expect(generated.status).toBe(200)
+    expect(generated.body.created).toBe(0)
+  })
+
+  it('ADM-API-16: rentals/:id/full includes events/invoices/payments', async () => {
+    const fixtures = await seedFixtures()
+    const today = new Date().toISOString().slice(0, 10)
+    const [rental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[0].id,
+        startDate: today,
+        endDate: today,
+        status: 'reserved',
+        totalAmount: '300',
+        paymentStatus: 'pending',
+      })
+      .returning()
+    await db.insert(payments).values({
+      rentalId: rental.id,
+      customerId: fixtures.customer.id,
+      dealerId: fixtures.dealer.dealerId,
+      amount: '300',
+      status: 'completed',
+      type: 'rental',
+      method: 'card',
+    })
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const full = await agent.get(`/api/admin/rentals/${rental.id}/full`)
+    expect(full.status).toBe(200)
+    expect(full.body.id).toBe(rental.id)
+    expect(Array.isArray(full.body.payments)).toBe(true)
+    expect(full.body.payments.length).toBe(1)
+  })
+
+  it('ADM-API-03: dashboard KPI values are numeric (no NaN crash)', async () => {
+    const fixtures = await seedFixtures()
+    const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
+    const dash = await agent.get('/api/admin/dashboard')
+    expect(dash.status).toBe(200)
+    for (const kpi of dash.body.kpis) {
+      expect(Number.isFinite(kpi.value)).toBe(true)
+    }
   })
 })

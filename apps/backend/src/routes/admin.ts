@@ -1,54 +1,114 @@
+import crypto from 'crypto'
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
 import { Router } from 'express'
-import { and, count, desc, eq, sql } from 'drizzle-orm'
+import { hashPassword } from '../auth/password.js'
+import { revokeAllRefreshSessions } from '../auth/sessions.js'
 import { db } from '../db/index.js'
 import {
-  appSettings,
-  bookingRequests,
-  complaints,
-  customerProfiles,
-  dealers,
-  messages,
-  payments,
-  plans,
-  profiles,
-  rentals,
-  subscriptions,
-  vehicles,
-} from '../db/schema.js'
-import { revokeAllRefreshSessions } from '../auth/sessions.js'
-import { requestSkipCashRefund } from '../services/skipcash.js'
-import {
+  mapAuditLog,
   mapBookingRequest,
   mapComplaint,
   mapDealer,
+  mapInvoice,
   mapMessage,
   mapPayment,
   mapPlan,
   mapProfileToUser,
   mapRental,
+  mapRentalEvent,
   mapVehicle,
 } from '../db/mappers.js'
-import { requireAuth, requireRole, type AuthedRequest } from '../middleware/auth.js'
-import { asyncHandler, paginated, parsePagination } from '../utils/http.js'
+import {
+  appSettings,
+  auditLogs,
+  bookingRequests,
+  complaints,
+  complaintReplies,
+  customerProfiles,
+  dealers,
+  invoices,
+  maintenanceRecords,
+  messages,
+  payments,
+  payouts,
+  plans,
+  profiles,
+  rentalEvents,
+  rentals,
+  subscriptions,
+  vehicles,
+} from '../db/schema.js'
+import { requireAuth, requireAdminPortal, requireFinanceCapability, requireFullAdmin, requireOpsCapability, requireSupportCapability, type AuthedRequest } from '../middleware/auth.js'
+import { logAudit, logAuditSafe } from '../services/audit.js'
+import { trackAnalyticsEvent, trackAnalyticsEventSafe } from '../services/analyticsEvents.js'
 import { transitionBookingRequest } from '../services/booking.js'
-import { hashPassword } from '../auth/password.js'
-import { sendDealerInviteEmail } from '../services/mail.js'
-import crypto from 'crypto'
+import {
+  aggregatePlatformRevenue,
+  aggregateCustomerProfileStats,
+  countRentals,
+  countRentalsByStatus,
+  countRentalsToday,
+  countVehicles,
+  monthlyPaymentBuckets,
+  monthlyRentalBuckets,
+  platformDashboardCounts,
+  vehicleCategoryDistribution,
+} from '../services/dashboardStats.js'
+import {
+  sendAccountSuspendedEmail,
+  sendComplaintReplyEmail,
+  sendDealerInviteEmail,
+  sendDealerApprovedEmail,
+  sendPayoutPaidEmail,
+} from '../services/mail.js'
+import { notifyUserSafe } from '../services/notify.js'
+import { sendMessage } from '../services/messages.js'
+import { adminChangeRentalStatus, cancelRental, pauseRental, resumeRental } from '../services/rentalLifecycle.js'
+import { reverseInvoicePaymentRefund, voidInvoiceByAdmin } from '../services/billing.js'
+import { generateDealerPayoutsUnderLock, markPayoutPaid, unmarkPayoutPaid } from '../services/payouts.js'
+import {
+  businessSettingsApiPayload,
+  businessSettingsAuditSnapshot,
+  ensureAppSettingsRow,
+  featureFlagsAuditSnapshot,
+  featureFlagsFromRuntime,
+  featureFlagsPatchFromBody,
+  invalidateAppSettingsCache,
+  mapRuntimeAppSettings,
+  settingsApiPayload,
+  settingsAuditSnapshot,
+} from '../services/appSettings.js'
+import { requestSkipCashRefund } from '../services/skipcash.js'
+import { asyncHandler, paginated, parsePagination } from '../utils/http.js'
+import { parseBody } from '../validation/parse.js'
+import {
+  adminCreateMessageSchema,
+  adminCreatePlanSchema,
+  adminCreateVehicleSchema,
+  adminPatchBusinessSettingsSchema,
+  adminPatchFeatureFlagsSchema,
+  adminPatchMessageFolderSchema,
+  adminPatchMessageReadSchema,
+  adminPatchPlanSchema,
+  adminPatchVehicleStatusSchema,
+  pauseRentalSchema,
+} from '../validation/schemas.js'
 
 export const adminRouter = Router()
-adminRouter.use(requireAuth, requireRole('admin'))
+adminRouter.use(requireAuth, requireAdminPortal)
 
 adminRouter.get(
   '/dashboard',
   asyncHandler(async (_req, res) => {
-    const allPayments = await db.select().from(payments)
-    const allRentals = await db.select().from(rentals)
-    const [dealersCount] = await db.select({ value: count() }).from(dealers)
-    const [usersCount] = await db
-      .select({ value: count() })
-      .from(profiles)
-      .where(eq(profiles.role, 'customer'))
-    const [vehiclesCount] = await db.select({ value: count() }).from(vehicles)
+    const [counts, totalRevenue, statusCounts, bucketsR, bucketsP, todayBookingsCount] =
+      await Promise.all([
+        platformDashboardCounts(),
+        aggregatePlatformRevenue(),
+        countRentalsByStatus(),
+        monthlyRentalBuckets(4),
+        monthlyPaymentBuckets(4),
+        countRentalsToday(),
+      ])
     const recent = await db
       .select({ rental: rentals, vehicle: vehicles, customer: profiles })
       .from(rentals)
@@ -57,35 +117,13 @@ adminRouter.get(
       .orderBy(desc(rentals.createdAt))
       .limit(5)
 
-    const totalRevenue = allPayments.reduce((s, p) => s + Number(p.amount), 0)
-    const now = new Date()
-    const bucketsR: Record<string, number> = {}
-    const bucketsP: Record<string, number> = {}
-    for (let i = 3; i >= 0; i -= 1) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      bucketsR[key] = 0
-      bucketsP[key] = 0
-    }
-    for (const r of allRentals) {
-      const d = new Date(r.createdAt)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      if (key in bucketsR) bucketsR[key] += 1
-    }
-    for (const p of allPayments) {
-      const d = new Date(p.createdAt)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      if (key in bucketsP) bucketsP[key] += Number(p.amount)
-    }
-    const today = now.toISOString().slice(0, 10)
-
     res.json({
       kpis: [
         { label: 'Total Revenue', value: totalRevenue },
-        { label: 'Total Rentals', value: allRentals.length },
-        { label: 'Total Vehicles', value: Number(vehiclesCount.value) },
-        { label: 'Active Dealers', value: Number(dealersCount.value) },
-        { label: 'Active Users', value: Number(usersCount.value) },
+        { label: 'Total Rentals', value: counts.rentals },
+        { label: 'Total Vehicles', value: counts.vehicles },
+        { label: 'Active Dealers', value: counts.dealers },
+        { label: 'Active Users', value: counts.users },
       ],
       rentalsTrend: Object.entries(bucketsR).map(([date, value]) => ({ date, value })),
       revenueTrend: Object.entries(bucketsP).map(([date, value]) => ({ date, value })),
@@ -97,13 +135,12 @@ adminRouter.get(
         vehicleYear: r.vehicle?.year ?? null,
       })),
       bookingStatusCounts: {
-        active: allRentals.filter((r) => r.status === 'active').length,
-        reserved: allRentals.filter((r) => r.status === 'reserved').length,
-        completed: allRentals.filter((r) => r.status === 'completed').length,
-        cancelled: allRentals.filter((r) => r.status === 'cancelled').length,
+        active: statusCounts.active ?? 0,
+        reserved: statusCounts.reserved ?? 0,
+        completed: statusCounts.completed ?? 0,
+        cancelled: statusCounts.cancelled ?? 0,
       },
-      todayBookingsCount: allRentals.filter((r) => r.createdAt.toISOString().startsWith(today))
-        .length,
+      todayBookingsCount,
     })
   })
 )
@@ -111,63 +148,40 @@ adminRouter.get(
 adminRouter.get(
   '/customer-stats',
   asyncHandler(async (_req, res) => {
-    const customers = await db.select().from(profiles).where(eq(profiles.role, 'customer'))
-    const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    res.json({
-      total: customers.length,
-      active: customers.filter((c) => c.status === 'active').length,
-      suspended: customers.filter((c) => c.status === 'suspended').length,
-      newThisMonth: customers.filter((c) => c.createdAt >= startOfMonth).length,
-    })
+    res.json(await aggregateCustomerProfileStats())
   })
 )
 
 adminRouter.get(
   '/analytics',
   asyncHandler(async (_req, res) => {
-    const allRentals = await db.select().from(rentals)
-    const allPayments = await db.select().from(payments)
-    const allVehicles = await db.select().from(vehicles)
-    const revenue = allPayments
-      .filter((p) => p.status === 'completed')
-      .reduce((s, p) => s + Number(p.amount), 0)
-    const now = new Date()
-    const bucketsR: Record<string, number> = {}
-    const bucketsP: Record<string, number> = {}
-    for (let i = 3; i >= 0; i -= 1) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      bucketsR[key] = 0
-      bucketsP[key] = 0
-    }
-    for (const r of allRentals) {
-      const d = new Date(r.createdAt)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      if (key in bucketsR) bucketsR[key] += 1
-    }
-    for (const p of allPayments) {
-      const d = new Date(p.createdAt)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      if (key in bucketsP) bucketsP[key] += Number(p.amount)
-    }
-    const catMap: Record<string, number> = {}
-    for (const v of allVehicles) catMap[v.category] = (catMap[v.category] || 0) + 1
+    const [revenue, statusCounts, bucketsP, bucketsR, categories, rentalsTotal, vehiclesTotal] =
+      await Promise.all([
+        aggregatePlatformRevenue(),
+        countRentalsByStatus(),
+        monthlyPaymentBuckets(4),
+        monthlyRentalBuckets(4),
+        vehicleCategoryDistribution(),
+        countRentals(),
+        countVehicles(),
+      ])
+    const topVehicles = await db
+      .select({ name: vehicles.name, value: vehicles.pricePerDay })
+      .from(vehicles)
+      .orderBy(desc(vehicles.pricePerDay))
+      .limit(5)
 
     res.json({
       kpis: [
         { label: 'Total Revenue', value: revenue },
-        { label: 'Total Rentals', value: allRentals.length },
-        { label: 'Active Rentals', value: allRentals.filter((r) => r.status === 'active').length },
-        { label: 'Vehicles', value: allVehicles.length },
+        { label: 'Total Rentals', value: rentalsTotal },
+        { label: 'Active Rentals', value: statusCounts.active ?? 0 },
+        { label: 'Vehicles', value: vehiclesTotal },
       ],
       revenueTrend: Object.entries(bucketsP).map(([date, value]) => ({ date, value })),
       rentalsTrend: Object.entries(bucketsR).map(([date, value]) => ({ date, value })),
-      categoryDistribution: Object.entries(catMap).map(([category, value]) => ({
-        category,
-        value,
-      })),
-      topVehicles: allVehicles.slice(0, 5).map((v) => ({ name: v.name, value: Number(v.pricePerDay) })),
+      categoryDistribution: categories,
+      topVehicles: topVehicles.map((v) => ({ name: v.name, value: Number(v.value) })),
     })
   })
 )
@@ -196,8 +210,18 @@ adminRouter.get(
 
 adminRouter.post(
   '/vehicles',
+  requireFullAdmin,
   asyncHandler(async (req, res) => {
-    const b = req.body
+    const b = parseBody(adminCreateVehicleSchema, req, res)
+    if (!b) return
+
+    const [dealer] = await db.select({ id: dealers.id }).from(dealers).where(eq(dealers.id, b.dealerId)).limit(1)
+    if (!dealer) {
+      res.status(400).json({ error: 'dealerId: Dealer not found' })
+      return
+    }
+
+    const gallery = b.imageUrls?.length ? b.imageUrls : b.imageUrl ? [b.imageUrl] : []
     const [row] = await db
       .insert(vehicles)
       .values({
@@ -207,40 +231,110 @@ adminRouter.post(
         model: b.model,
         year: b.year,
         category: b.category,
-        status: b.status || 'available',
-        pricePerDay: String(b.pricePerDay ?? 0),
+        status: 'available',
+        pricePerDay: String(b.pricePerDay),
         mileage: b.mileage ?? 0,
         transmission: b.transmission,
         fuelType: b.fuelType,
         seats: b.seats ?? 4,
-        imageUrl: b.imageUrl ?? null,
+        imageUrl: gallery[0] ?? b.imageUrl ?? null,
+        imageUrls: gallery,
+        description: b.description ?? null,
+        color: b.color ?? null,
+        mileageCapKm: b.mileageCapKm ?? null,
+        features: b.features ?? [],
       })
       .returning()
     res.status(201).json(mapVehicle(row))
   })
 )
 
+/**
+ * Vehicle deletion is guarded (audit BUG-03): any rental or booking history
+ * makes the vehicle un-deletable; retire it with status "inactive" instead.
+ */
 adminRouter.delete(
   '/vehicles/:id',
-  asyncHandler(async (req, res) => {
-    await db.delete(vehicles).where(eq(vehicles.id, req.params.id))
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const [anyRental] = await db
+      .select({ id: rentals.id, status: rentals.status })
+      .from(rentals)
+      .where(eq(rentals.vehicleId, req.params.id))
+      .limit(1)
+    const [anyBooking] = await db
+      .select({ id: bookingRequests.id })
+      .from(bookingRequests)
+      .where(eq(bookingRequests.vehicleId, req.params.id))
+      .limit(1)
+    if (anyRental || anyBooking) {
+      const [retired] = await db
+        .update(vehicles)
+        .set({ status: 'inactive' })
+        .where(eq(vehicles.id, req.params.id))
+        .returning({ id: vehicles.id })
+      if (!retired) {
+        res.status(404).json({ error: 'Not found' })
+        return
+      }
+      await logAuditSafe({
+        actorId: req.user!.sub,
+        actorRole: req.user!.role,
+        action: 'vehicle.soft_delete',
+        entityType: 'vehicle',
+        entityId: req.params.id,
+        after: { status: 'inactive' },
+        note: anyRental ? 'Has rental history' : 'Has booking request history',
+      })
+      res.status(200).json({
+        softDeleted: true,
+        message:
+          'Vehicle has booking/rental history and was retired (status set to inactive) instead of deleted.',
+      })
+      return
+    }
+    const deleted = await db
+      .delete(vehicles)
+      .where(eq(vehicles.id, req.params.id))
+      .returning({ id: vehicles.id })
+    if (deleted.length === 0) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'vehicle.delete',
+      entityType: 'vehicle',
+      entityId: req.params.id,
+    })
     res.status(204).end()
   })
 )
 
 adminRouter.patch(
   '/vehicles/:id/status',
-  asyncHandler(async (req, res) => {
-    const [row] = await db
-      .update(vehicles)
-      .set({ status: req.body.status })
-      .where(eq(vehicles.id, req.params.id))
-      .returning()
-    if (!row) {
-      res.status(404).json({ error: 'Not found' })
-      return
+  requireOpsCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const body = parseBody(adminPatchVehicleStatusSchema, req, res)
+    if (!body) return
+
+    const { guardedVehicleStatusChange } = await import('./dealer.js')
+    const result = await guardedVehicleStatusChange({
+      vehicleId: req.params.id,
+      status: body.status,
+    })
+    if (result.status === 200) {
+      await logAuditSafe({
+        actorId: req.user!.sub,
+        actorRole: req.user!.role,
+        action: 'vehicle.status.override',
+        entityType: 'vehicle',
+        entityId: req.params.id,
+        after: { status: body.status },
+      })
     }
-    res.json(mapVehicle(row))
+    res.status(result.status).json(result.body)
   })
 )
 
@@ -262,15 +356,44 @@ adminRouter.get(
     const where = eq(profiles.role, 'customer')
     const [totalRow] = await db.select({ value: count() }).from(profiles).where(where)
     const rows = await db.select().from(profiles).where(where).limit(limit).offset(offset)
-    const cps = await db.select().from(customerProfiles)
+    const ids = rows.map((u) => u.id)
+    const cps = ids.length
+      ? await db.select().from(customerProfiles).where(inArray(customerProfiles.userId, ids))
+      : []
     const cpByUser = new Map(cps.map((c) => [c.userId, c]))
+    // Live stats (the audit found the denormalized counters were never
+    // maintained): count rentals and net completed payments per customer.
+    const rentalStats = ids.length
+      ? await db
+          .select({ customerId: rentals.customerId, value: count() })
+          .from(rentals)
+          .where(inArray(rentals.customerId, ids))
+          .groupBy(rentals.customerId)
+      : []
+    const spendStats = ids.length
+      ? await db
+          .select({
+            customerId: payments.customerId,
+            spent: sql<string>`COALESCE(SUM(CASE WHEN ${payments.type} = 'refund' THEN -${payments.amount} ELSE ${payments.amount} END), 0)`,
+          })
+          .from(payments)
+          .where(
+            and(
+              inArray(payments.customerId, ids),
+              inArray(payments.status, ['completed', 'refunded'])
+            )
+          )
+          .groupBy(payments.customerId)
+      : []
+    const rentalsBy = new Map(rentalStats.map((r) => [r.customerId, Number(r.value)]))
+    const spentBy = new Map(spendStats.map((r) => [r.customerId!, Number(r.spent)]))
     const items = rows.map((u) => {
       const cp = cpByUser.get(u.id)
       return {
         ...mapProfileToUser(u),
         customerStatus: cp?.status ?? 'unverified',
-        rentalsCount: cp?.rentalsCount ?? 0,
-        totalSpent: Number(cp?.totalSpent ?? 0),
+        rentalsCount: rentalsBy.get(u.id) ?? 0,
+        totalSpent: spentBy.get(u.id) ?? 0,
       }
     })
     res.json(paginated(items, Number(totalRow.value), page, pageSize))
@@ -282,7 +405,7 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     const [u] = await db.select().from(profiles).where(eq(profiles.id, req.params.userId)).limit(1)
     if (!u) {
-      res.json(null)
+      res.status(404).json({ error: 'Not found' })
       return
     }
     const [cp] = await db
@@ -303,48 +426,152 @@ adminRouter.get(
 
 adminRouter.patch(
   '/customers/:userId/status',
-  asyncHandler(async (req, res) => {
-    await db
-      .update(profiles)
-      .set({ status: req.body.status })
-      .where(eq(profiles.id, req.params.userId))
-    if (req.body.status === 'suspended') {
-      await revokeAllRefreshSessions(req.params.userId)
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { status } = req.body as { status?: string }
+    if (status !== 'active' && status !== 'suspended' && status !== 'pending') {
+      res.status(400).json({ error: 'status must be active, suspended, or pending' })
+      return
     }
+    const [before] = await db
+      .select({ status: profiles.status, email: profiles.email, name: profiles.name })
+      .from(profiles)
+      .where(eq(profiles.id, req.params.userId))
+      .limit(1)
+    if (!before) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    await db.update(profiles).set({ status }).where(eq(profiles.id, req.params.userId))
+    if (status === 'suspended') {
+      await revokeAllRefreshSessions(req.params.userId)
+      if (before.email) {
+        void sendAccountSuspendedEmail({ to: before.email, name: before.name }).catch((err) =>
+          console.error('Account suspended email failed:', err)
+        )
+      }
+    }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'customer.status.change',
+      entityType: 'profile',
+      entityId: req.params.userId,
+      before: { status: before.status },
+      after: { status },
+    })
+    await notifyUserSafe({
+      userId: req.params.userId,
+      type: status === 'suspended' ? 'error' : 'info',
+      title: status === 'suspended' ? 'Account suspended' : 'Account status updated',
+      message:
+        status === 'suspended'
+          ? 'Your account has been suspended. Contact support for assistance.'
+          : `Your account status is now "${status}".`,
+    })
     res.json({ ok: true })
   })
 )
 
+const ADMIN_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 adminRouter.patch(
   '/customers/:userId/profile',
-  asyncHandler(async (req, res) => {
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
     const u = req.body
     const patch: Record<string, unknown> = {}
     if (u.name !== undefined) patch.name = u.name
     if (u.phone !== undefined) patch.phone = u.phone
-    if (u.email !== undefined) patch.email = u.email
+    if (u.email !== undefined) {
+      const normalized = String(u.email).trim().toLowerCase()
+      if (!ADMIN_EMAIL_RE.test(normalized)) {
+        res.status(400).json({ error: 'Invalid email address' })
+        return
+      }
+      const [taken] = await db
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(eq(profiles.email, normalized))
+        .limit(1)
+      if (taken && taken.id !== req.params.userId) {
+        res.status(409).json({ error: 'An account with this email already exists' })
+        return
+      }
+      patch.email = normalized
+      patch.emailVerifiedAt = null
+    }
     await db.update(profiles).set(patch as any).where(eq(profiles.id, req.params.userId))
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'customer.profile.edit',
+      entityType: 'profile',
+      entityId: req.params.userId,
+      after: patch,
+    })
     res.json({ ok: true })
   })
 )
 
 adminRouter.patch(
   '/customers/:userId/verification',
-  asyncHandler(async (req, res) => {
-    const { status } = req.body
-    const [existing] = await db
-      .select()
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { status, reason, decision } = req.body as {
+      status?: string
+      reason?: string
+      decision?: string
+    }
+    if (!['active', 'suspended', 'verified', 'unverified'].includes(String(status))) {
+      res.status(400).json({ error: 'Invalid verification status' })
+      return
+    }
+    const trimmedReason = typeof reason === 'string' ? reason.trim() : ''
+    if (trimmedReason.length > 2000) {
+      res.status(400).json({ error: 'Reason must be 2000 characters or fewer' })
+      return
+    }
+    if (decision !== undefined && decision !== 'approve' && decision !== 'reject') {
+      res.status(400).json({ error: 'decision must be approve or reject' })
+      return
+    }
+    const [beforeProfile] = await db
+      .select({ status: customerProfiles.status })
       .from(customerProfiles)
       .where(eq(customerProfiles.userId, req.params.userId))
       .limit(1)
-    if (existing) {
-      await db
-        .update(customerProfiles)
-        .set({ status })
-        .where(eq(customerProfiles.id, existing.id))
-    } else {
-      await db.insert(customerProfiles).values({ userId: req.params.userId, status })
-    }
+    const beforeStatus = beforeProfile?.status ?? 'unverified'
+    // Race-safe upsert (customer_profiles.user_id is now unique).
+    await db
+      .insert(customerProfiles)
+      .values({ userId: req.params.userId, status: status as any })
+      .onConflictDoUpdate({
+        target: customerProfiles.userId,
+        set: { status: status as any },
+      })
+    const resolvedDecision =
+      decision ??
+      (status === 'verified' ? 'approve' : status === 'unverified' ? 'reject' : undefined)
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action:
+        resolvedDecision === 'approve'
+          ? 'customer.verification.approve'
+          : resolvedDecision === 'reject'
+            ? 'customer.verification.reject'
+            : 'customer.verification.change',
+      entityType: 'customer_profile',
+      entityId: req.params.userId,
+      before: { status: beforeStatus },
+      after: {
+        status,
+        decision: resolvedDecision ?? null,
+        reason: trimmedReason || null,
+      },
+      note: trimmedReason || null,
+    })
     res.json({ ok: true })
   })
 )
@@ -388,23 +615,110 @@ adminRouter.get(
   })
 )
 
+/**
+ * Rental status override with an enforced transition table (no more silently
+ * corrupting inventory/billing — audit BUG-02/BUG-09), full audit trail, and
+ * vehicle release handled by the lifecycle service.
+ */
 adminRouter.patch(
   '/rentals/:id/status',
+  requireOpsCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { status, note } = req.body as { status?: string; note?: string }
+    const valid = ['reserved', 'active', 'paused', 'past_due', 'completed', 'cancelled']
+    if (!status || !valid.includes(status)) {
+      res.status(400).json({ error: `status must be one of ${valid.join(', ')}` })
+      return
+    }
+    const result = await adminChangeRentalStatus({
+      rentalId: req.params.id,
+      toStatus: status as any,
+      actorId: req.user!.sub,
+      note,
+    })
+    res.status(result.status).json(result.status < 400 ? mapRental(result.body) : result.body)
+  })
+)
+
+adminRouter.post(
+  '/rentals/:id/cancel',
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { reason } = req.body as { reason?: string }
+    const result = await cancelRental({
+      rentalId: req.params.id,
+      actor: { id: req.user!.sub, role: 'admin' },
+      reason,
+    })
+    res.status(result.status).json(result.status < 400 ? mapRental(result.body) : result.body)
+  })
+)
+
+adminRouter.post(
+  '/rentals/:id/pause',
+  requireOpsCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const body = parseBody(pauseRentalSchema, req, res)
+    if (!body) return
+    const result = await pauseRental({
+      rentalId: req.params.id,
+      actor: { id: req.user!.sub, role: 'admin' },
+      days: body.days,
+      reason: body.reason,
+    })
+    res.status(result.status).json(result.status < 400 ? mapRental(result.body) : result.body)
+  })
+)
+
+adminRouter.post(
+  '/rentals/:id/resume',
+  requireOpsCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const result = await resumeRental({
+      rentalId: req.params.id,
+      actor: { id: req.user!.sub, role: 'admin' },
+    })
+    res.status(result.status).json(result.status < 400 ? mapRental(result.body) : result.body)
+  })
+)
+
+/** Rental drill-down: events, invoices, payments — for real incident forensics. */
+adminRouter.get(
+  '/rentals/:id/full',
   asyncHandler(async (req, res) => {
-    const { status } = req.body as { status?: string }
     const [row] = await db
-      .update(rentals)
-      .set({ status: status as any })
+      .select({ rental: rentals, vehicle: vehicles, customer: profiles, dealer: dealers })
+      .from(rentals)
+      .leftJoin(vehicles, eq(rentals.vehicleId, vehicles.id))
+      .leftJoin(profiles, eq(rentals.customerId, profiles.id))
+      .leftJoin(dealers, eq(rentals.dealerId, dealers.id))
       .where(eq(rentals.id, req.params.id))
-      .returning()
+      .limit(1)
     if (!row) {
       res.status(404).json({ error: 'Not found' })
       return
     }
-    if (status === 'completed' || status === 'cancelled') {
-      await db.update(vehicles).set({ status: 'available' }).where(eq(vehicles.id, row.vehicleId))
-    }
-    res.json(mapRental(row))
+    const [events, invoiceRows, paymentRows, audit] = await Promise.all([
+      db.select().from(rentalEvents).where(eq(rentalEvents.rentalId, row.rental.id)).orderBy(desc(rentalEvents.createdAt)),
+      db.select().from(invoices).where(eq(invoices.rentalId, row.rental.id)).orderBy(desc(invoices.date)),
+      db.select().from(payments).where(eq(payments.rentalId, row.rental.id)).orderBy(desc(payments.createdAt)),
+      db
+        .select()
+        .from(auditLogs)
+        .where(and(eq(auditLogs.entityType, 'rental'), eq(auditLogs.entityId, row.rental.id)))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(50),
+    ])
+    res.json({
+      ...mapRental(row.rental),
+      vehicle: row.vehicle ? mapVehicle(row.vehicle) : undefined,
+      customer: row.customer ? mapProfileToUser(row.customer) : undefined,
+      dealer: row.dealer ? { id: row.dealer.id, name: row.dealer.name } : undefined,
+      events: events.map(mapRentalEvent),
+      invoices: invoiceRows.map(mapInvoice),
+      payments: paymentRows.map(mapPayment),
+      auditTrail: audit.map(mapAuditLog),
+    })
   })
 )
 
@@ -420,6 +734,7 @@ adminRouter.get(
 
 adminRouter.post(
   '/dealers',
+  requireFullAdmin,
   asyncHandler(async (req, res) => {
     const {
       email,
@@ -491,17 +806,34 @@ adminRouter.post(
         .where(eq(profiles.id, profile.id))
     }
 
-    const [row] = await db
-      .insert(dealers)
-      .values({
-        name: name.trim(),
-        ownerUserId: profile.id,
-        status: 'active',
-        contactEmail: (contactEmail || ownerEmailRaw).trim().toLowerCase(),
-        contactPhone: contactPhone?.trim() || null,
-        address: address?.trim() || null,
-      })
-      .returning()
+    let row
+    try {
+      [row] = await db
+        .insert(dealers)
+        .values({
+          name: name.trim(),
+          ownerUserId: profile.id,
+          status: 'active',
+          contactEmail: (contactEmail || ownerEmailRaw).trim().toLowerCase(),
+          contactPhone: contactPhone?.trim() || null,
+          address: address?.trim() || null,
+        })
+        .returning()
+    } catch (err) {
+      if ((err as { code?: string }).code === '23505') {
+        res.status(409).json({ error: 'This account already owns a dealer' })
+        return
+      }
+      throw err
+    }
+    await logAuditSafe({
+      actorId: (req as AuthedRequest).user!.sub,
+      actorRole: req.user!.role,
+      action: 'dealer.create',
+      entityType: 'dealer',
+      entityId: row.id,
+      after: { name: row.name, ownerUserId: row.ownerUserId, accountCreated },
+    })
 
     if (accountCreated && temporaryPassword) {
       void sendDealerInviteEmail({
@@ -519,12 +851,30 @@ adminRouter.post(
   })
 )
 
+/**
+ * Dealer deletion is guarded (audit BUG-03): a dealer with any rental history
+ * cannot be deleted (the FK RESTRICTs as a second line of defense) — suspend
+ * them instead. Deleting a history-free dealer is audited.
+ */
 adminRouter.delete(
   '/dealers/:id',
-  asyncHandler(async (req, res) => {
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
     const [dealer] = await db.select().from(dealers).where(eq(dealers.id, req.params.id)).limit(1)
     if (!dealer) {
       res.status(404).json({ error: 'Not found' })
+      return
+    }
+    const [anyRental] = await db
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(eq(rentals.dealerId, dealer.id))
+      .limit(1)
+    if (anyRental) {
+      res.status(409).json({
+        error:
+          'This dealer has rental history and cannot be deleted. Suspend the dealer instead to take them off the platform.',
+      })
       return
     }
     const ownerUserId = dealer.ownerUserId
@@ -537,25 +887,107 @@ adminRouter.delete(
     if (remaining.length === 0) {
       await db.update(profiles).set({ role: 'customer' }).where(eq(profiles.id, ownerUserId))
     }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'dealer.delete',
+      entityType: 'dealer',
+      entityId: dealer.id,
+      before: { name: dealer.name, ownerUserId },
+    })
     res.status(204).end()
   })
 )
 
 adminRouter.patch(
   '/dealers/:id/status',
-  asyncHandler(async (req, res) => {
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { status } = req.body as { status?: string }
+    if (status !== 'active' && status !== 'suspended' && status !== 'pending') {
+      res.status(400).json({ error: 'status must be active, suspended, or pending' })
+      return
+    }
     const [row] = await db
       .update(dealers)
-      .set({ status: req.body.status })
+      .set({ status })
       .where(eq(dealers.id, req.params.id))
       .returning()
     if (!row) {
       res.status(404).json({ error: 'Not found' })
       return
     }
-    if (req.body.status === 'suspended') {
+    if (status === 'suspended') {
       await revokeAllRefreshSessions(row.ownerUserId)
     }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'dealer.status.change',
+      entityType: 'dealer',
+      entityId: row.id,
+      after: { status },
+    })
+    await notifyUserSafe({
+      userId: row.ownerUserId,
+      type: status === 'active' ? 'success' : 'warning',
+      title:
+        status === 'active'
+          ? 'Dealer account approved'
+          : status === 'suspended'
+            ? 'Dealer account suspended'
+            : 'Dealer account status changed',
+      message:
+        status === 'active'
+          ? 'Your dealer account is approved. You can now list vehicles and receive bookings.'
+          : `Your dealer account status is now "${status}".`,
+    })
+    if (status === 'active') {
+      const [owner] = await db.select().from(profiles).where(eq(profiles.id, row.ownerUserId)).limit(1)
+      if (owner?.email) {
+        void sendDealerApprovedEmail({ to: owner.email, dealerName: row.name }).catch(console.error)
+      }
+    }
+    res.json(mapDealer(row))
+  })
+)
+
+adminRouter.patch(
+  '/dealers/:id/bank-details',
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { verified, bankAccountName, bankName, bankIban } = req.body as {
+      verified?: boolean
+      bankAccountName?: string
+      bankName?: string
+      bankIban?: string
+    }
+    const patch: Record<string, unknown> = {}
+    if (bankAccountName !== undefined) patch.bankAccountName = bankAccountName?.trim() || null
+    if (bankName !== undefined) patch.bankName = bankName?.trim() || null
+    if (bankIban !== undefined) patch.bankIban = bankIban?.trim() || null
+    if (verified === true) patch.bankDetailsVerifiedAt = new Date()
+    if (verified === false) patch.bankDetailsVerifiedAt = null
+    const [row] = await db
+      .update(dealers)
+      .set(patch as any)
+      .where(eq(dealers.id, req.params.id))
+      .returning()
+    if (!row) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'dealer.bank_details.update',
+      entityType: 'dealer',
+      entityId: row.id,
+      after: {
+        verified: !!row.bankDetailsVerifiedAt,
+        hasIban: !!row.bankIban,
+      },
+    })
     res.json(mapDealer(row))
   })
 )
@@ -563,18 +995,34 @@ adminRouter.patch(
 adminRouter.get(
   '/payments/summary',
   asyncHandler(async (_req, res) => {
-    const all = await db.select().from(payments)
-    const completed = all.filter((p) => p.status === 'completed')
-    const pending = all.filter((p) => p.status === 'pending')
-    const refunded = all.filter((p) => p.status === 'refunded')
-    const needsRefund = all.filter((p) => p.needsRefund)
+    const stuckCutoff = new Date(Date.now() - 30 * 60 * 1000)
+    const [row] = await db
+      .select({
+        grossRevenue: sql<string>`coalesce(sum(case when ${payments.type} != 'refund' and ${payments.status} in ('completed', 'refunded') then ${payments.amount}::numeric else 0 end), 0)`,
+        refundTotal: sql<string>`coalesce(sum(${payments.refundedAmount}::numeric), 0)`,
+        pendingCount: sql<number>`count(*) filter (where ${payments.type} != 'refund' and ${payments.status} = 'pending')`,
+        completedCount: sql<number>`count(*) filter (where ${payments.type} != 'refund' and ${payments.status} in ('completed', 'refunded'))`,
+        refundedCount: sql<number>`count(*) filter (where ${payments.type} != 'refund' and ${payments.status} = 'refunded')`,
+        needsRefundCount: sql<number>`count(*) filter (where ${payments.needsRefund} = true)`,
+        stuckPendingCount: sql<number>`count(*) filter (where ${payments.type} != 'refund' and ${payments.status} = 'pending' and ${payments.createdAt} < ${stuckCutoff.toISOString()}::timestamptz)`,
+      })
+      .from(payments)
+    const [overdueRow] = await db
+      .select({ value: count() })
+      .from(invoices)
+      .where(eq(invoices.status, 'overdue'))
+    const grossRevenue = Number(row?.grossRevenue ?? 0)
+    const refundTotal = Number(row?.refundTotal ?? 0)
     res.json({
-      totalRevenue: completed.reduce((sum, p) => sum + Number(p.amount), 0),
-      pendingCount: pending.length,
-      completedCount: completed.length,
-      refundedCount: refunded.length,
-      refundTotal: refunded.reduce((sum, p) => sum + Number(p.amount), 0),
-      needsRefundCount: needsRefund.length,
+      totalRevenue: grossRevenue - refundTotal,
+      grossRevenue,
+      pendingCount: Number(row?.pendingCount ?? 0),
+      completedCount: Number(row?.completedCount ?? 0),
+      refundedCount: Number(row?.refundedCount ?? 0),
+      refundTotal,
+      needsRefundCount: Number(row?.needsRefundCount ?? 0),
+      stuckPendingCount: Number(row?.stuckPendingCount ?? 0),
+      overdueInvoicesCount: Number(overdueRow?.value ?? 0),
     })
   })
 )
@@ -614,9 +1062,22 @@ adminRouter.get(
   })
 )
 
+/**
+ * Refund with honest outcomes (audit BUG-04): a payment is only marked
+ * refunded when the provider confirmed the refund, or when the operator
+ * explicitly attests (`manualConfirmed: true`) that they completed it in the
+ * SkipCash dashboard / by cash. Partial refunds record a `refund` payment row
+ * and accumulate `refundedAmount`; the original flips to `refunded` only when
+ * fully repaid. Every refund is audited.
+ */
 adminRouter.post(
   '/payments/:id/refund',
-  asyncHandler(async (req, res) => {
+  requireFinanceCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { amount, manualConfirmed } = req.body as {
+      amount?: number
+      manualConfirmed?: boolean
+    }
     const [payment] = await db.select().from(payments).where(eq(payments.id, req.params.id)).limit(1)
     if (!payment) {
       res.status(404).json({ error: 'Payment not found' })
@@ -629,35 +1090,144 @@ adminRouter.post(
     const eligible =
       payment.needsRefund ||
       payment.status === 'completed' ||
-      (payment.status === 'failed' && payment.provider === 'skipcash')
+      (payment.status === 'failed' && payment.provider === 'skipcash' && payment.needsRefund)
     if (!eligible) {
       res.status(400).json({ error: 'Payment is not eligible for refund' })
       return
     }
 
-    let manualNote: string | undefined
+    const paid = Number(payment.amount)
+    const alreadyRefunded = Number(payment.refundedAmount ?? 0)
+    const remaining = Math.max(0, paid - alreadyRefunded)
+    const requested = amount === undefined ? remaining : Number(amount)
+    if (!Number.isFinite(requested) || requested <= 0 || requested > remaining + 0.001) {
+      res.status(400).json({
+        error: `Refund amount must be between 0 and the remaining ${remaining.toFixed(2)}`,
+      })
+      return
+    }
+
+    let refundedByProvider = false
+    let providerMessage: string | undefined
     if (payment.provider === 'skipcash' && payment.externalTransactionId) {
       const result = await requestSkipCashRefund({
         externalPaymentId: payment.externalTransactionId,
-        amount: Number(payment.amount),
+        amount: requested,
       })
-      if (!result.refunded) {
-        manualNote = result.message
-      }
+      refundedByProvider = result.refunded
+      providerMessage = result.message
     }
 
-    const [updated] = await db
-      .update(payments)
-      .set({
-        status: 'refunded',
-        needsRefund: false,
-        note: manualNote
-          ? [payment.note, manualNote].filter(Boolean).join('\n')
-          : payment.note,
+    if (!refundedByProvider && manualConfirmed !== true) {
+      // Nothing has actually been refunded — say so instead of pretending.
+      res.status(409).json({
+        error:
+          providerMessage ||
+          'Automatic refund is not available. Process it manually (SkipCash dashboard or cash), then retry with manualConfirmed: true.',
+        requiresManualConfirmation: true,
       })
-      .where(eq(payments.id, payment.id))
-      .returning()
-    res.json(mapPayment(updated))
+      return
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select()
+        .from(payments)
+        .where(eq(payments.id, payment.id))
+        .for('update')
+        .limit(1)
+      if (!locked || locked.status === 'refunded') {
+        return { status: 409 as const, body: { error: 'Payment already refunded' } as any }
+      }
+      // Re-validate the cap UNDER THE LOCK: two concurrent refunds both
+      // passed the unlocked pre-check; without this the second one could
+      // over-refund past the payment amount (re-audit F6).
+      const lockedRemaining = Math.max(0, Number(locked.amount) - Number(locked.refundedAmount ?? 0))
+      if (requested > lockedRemaining + 0.001) {
+        return {
+          status: 409 as const,
+          body: {
+            error: `Refund exceeds the remaining ${lockedRemaining.toFixed(2)} (a concurrent refund may have just completed)`,
+          } as any,
+        }
+      }
+      const newRefunded = Number(locked.refundedAmount ?? 0) + requested
+      const fullyRefunded = newRefunded >= Number(locked.amount) - 0.001
+      const method = refundedByProvider ? 'provider' : 'manual'
+      const [refundRow] = await tx
+        .insert(payments)
+        .values({
+          rentalId: locked.rentalId,
+          customerId: locked.customerId,
+          dealerId: locked.dealerId,
+          invoiceId: locked.invoiceId,
+          amount: String(requested),
+          status: 'completed',
+          type: 'refund',
+          method: locked.method,
+          provider: refundedByProvider ? 'skipcash' : 'manual',
+          refundOfPaymentId: locked.id,
+          note: refundedByProvider
+            ? 'Refunded via SkipCash API'
+            : 'Manual refund confirmed by admin',
+        })
+        .returning()
+      const [updated] = await tx
+        .update(payments)
+        .set({
+          refundedAmount: String(newRefunded),
+          status: fullyRefunded ? 'refunded' : locked.status,
+          needsRefund: false,
+          note: [locked.note, `Refund ${requested.toFixed(2)} (${method}) recorded`]
+            .filter(Boolean)
+            .join('\n'),
+        })
+        .where(eq(payments.id, locked.id))
+        .returning()
+      if (locked.invoiceId && locked.customerId && locked.dealerId) {
+        await reverseInvoicePaymentRefund(tx, {
+          paymentId: locked.id,
+          invoiceId: locked.invoiceId,
+          customerId: locked.customerId,
+          dealerId: locked.dealerId,
+          paymentAmount: Number(locked.amount),
+          refundAmount: requested,
+          fullyRefunded,
+        })
+      }
+      await logAudit(tx, {
+        actorId: req.user!.sub,
+        actorRole: req.user!.role,
+        action: 'payment.refund',
+        entityType: 'payment',
+        entityId: locked.id,
+        before: { refundedAmount: locked.refundedAmount, status: locked.status },
+        after: {
+          refundedAmount: String(newRefunded),
+          status: fullyRefunded ? 'refunded' : locked.status,
+          refundPaymentId: refundRow.id,
+          via: method,
+        },
+      })
+      await trackAnalyticsEvent(tx, {
+        eventType: 'refund_issued',
+        userId: locked.customerId,
+        entityType: 'payment',
+        entityId: locked.id,
+        properties: { refundAmount: requested, refundPaymentId: refundRow.id, via: method },
+      })
+      return { status: 200 as const, body: mapPayment(updated) }
+    })
+
+    if (result.status === 200 && payment.customerId) {
+      await notifyUserSafe({
+        userId: payment.customerId,
+        type: 'success',
+        title: 'Refund processed',
+        message: `A refund of QAR ${requested.toFixed(2)} has been processed.`,
+      })
+    }
+    res.status(result.status).json(result.body)
   })
 )
 
@@ -684,8 +1254,11 @@ adminRouter.get(
 
 adminRouter.post(
   '/plans',
-  asyncHandler(async (req, res) => {
-    const b = req.body
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const b = parseBody(adminCreatePlanSchema, req, res)
+    if (!b) return
+
     const [row] = await db
       .insert(plans)
       .values({
@@ -697,14 +1270,25 @@ adminRouter.post(
         features: b.features ?? [],
       })
       .returning()
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'plan.create',
+      entityType: 'plan',
+      entityId: row.id,
+      after: mapPlan(row),
+    })
     res.status(201).json(mapPlan(row))
   })
 )
 
 adminRouter.patch(
   '/plans/:id',
-  asyncHandler(async (req, res) => {
-    const u = req.body
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const u = parseBody(adminPatchPlanSchema, req, res)
+    if (!u) return
+
     const patch: Record<string, unknown> = {}
     if (u.name !== undefined) patch.name = u.name
     if (u.tier !== undefined) patch.tier = u.tier
@@ -712,6 +1296,7 @@ adminRouter.patch(
     if (u.priceMonthly !== undefined) patch.priceMonthly = String(u.priceMonthly)
     if (u.priceYearly !== undefined) patch.priceYearly = String(u.priceYearly)
     if (u.features !== undefined) patch.features = u.features
+    const [before] = await db.select().from(plans).where(eq(plans.id, req.params.id)).limit(1)
     const [row] = await db
       .update(plans)
       .set(patch as any)
@@ -721,14 +1306,56 @@ adminRouter.patch(
       res.status(404).json({ error: 'Not found' })
       return
     }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'plan.update',
+      entityType: 'plan',
+      entityId: row.id,
+      before: before ? mapPlan(before) : undefined,
+      after: mapPlan(row),
+    })
     res.json(mapPlan(row))
   })
 )
 
 adminRouter.delete(
   '/plans/:id',
-  asyncHandler(async (req, res) => {
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const [activeSubRow] = await db
+      .select({ value: count() })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.planId, req.params.id),
+          inArray(subscriptions.status, ['trial', 'active', 'past_due'])
+        )
+      )
+    if (Number(activeSubRow?.value ?? 0) > 0) {
+      res.status(409).json({ error: 'Cannot delete plan with active subscriptions' })
+      return
+    }
+    const [dealerRow] = await db
+      .select({ value: count() })
+      .from(dealers)
+      .where(eq(dealers.planId, req.params.id))
+    if (Number(dealerRow?.value ?? 0) > 0) {
+      res.status(409).json({ error: 'Cannot delete plan assigned to dealers' })
+      return
+    }
+    const [before] = await db.select().from(plans).where(eq(plans.id, req.params.id)).limit(1)
     await db.delete(plans).where(eq(plans.id, req.params.id))
+    if (before) {
+      await logAuditSafe({
+        actorId: req.user!.sub,
+        actorRole: req.user!.role,
+        action: 'plan.delete',
+        entityType: 'plan',
+        entityId: req.params.id,
+        before: mapPlan(before),
+      })
+    }
     res.status(204).end()
   })
 )
@@ -762,7 +1389,13 @@ adminRouter.get(
 
 adminRouter.patch(
   '/complaints/:id/status',
-  asyncHandler(async (req, res) => {
+  requireSupportCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    if (!['open', 'in_progress', 'resolved'].includes(String(req.body.status))) {
+      res.status(400).json({ error: 'status must be open, in_progress, or resolved' })
+      return
+    }
+    const [before] = await db.select().from(complaints).where(eq(complaints.id, req.params.id)).limit(1)
     const [row] = await db
       .update(complaints)
       .set({ status: req.body.status })
@@ -772,7 +1405,107 @@ adminRouter.patch(
       res.status(404).json({ error: 'Not found' })
       return
     }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'complaint.status.change',
+      entityType: 'complaint',
+      entityId: row.id,
+      before: before ? { status: before.status } : undefined,
+      after: { status: row.status },
+    })
     res.json(mapComplaint(row))
+  })
+)
+
+adminRouter.get(
+  '/complaints/:id/replies',
+  asyncHandler(async (req, res) => {
+    const [complaint] = await db.select().from(complaints).where(eq(complaints.id, req.params.id)).limit(1)
+    if (!complaint) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    const rows = await db
+      .select({ reply: complaintReplies, author: profiles })
+      .from(complaintReplies)
+      .leftJoin(profiles, eq(complaintReplies.authorId, profiles.id))
+      .where(eq(complaintReplies.complaintId, req.params.id))
+      .orderBy(complaintReplies.createdAt)
+    res.json(
+      rows.map((r) => ({
+        id: r.reply.id,
+        complaintId: r.reply.complaintId,
+        authorId: r.reply.authorId,
+        body: r.reply.body,
+        createdAt: r.reply.createdAt.toISOString(),
+        authorName: r.author?.name,
+        authorEmail: r.author?.email,
+        authorRole: r.author?.role,
+      }))
+    )
+  })
+)
+
+adminRouter.post(
+  '/complaints/:id/replies',
+  requireSupportCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const body = String((req.body as { body?: string }).body ?? '').trim()
+    if (body.length < 8) {
+      res.status(400).json({ error: 'Reply must be at least 8 characters' })
+      return
+    }
+    const [complaint] = await db.select().from(complaints).where(eq(complaints.id, req.params.id)).limit(1)
+    if (!complaint) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    const [reply] = await db
+      .insert(complaintReplies)
+      .values({
+        complaintId: req.params.id,
+        authorId: req.user!.sub,
+        body,
+      })
+      .returning()
+    if (complaint.status === 'open') {
+      await db.update(complaints).set({ status: 'in_progress' }).where(eq(complaints.id, complaint.id))
+    }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'complaint.reply',
+      entityType: 'complaint',
+      entityId: complaint.id,
+      after: { replyId: reply.id },
+      note: body.slice(0, 120),
+    })
+    const [author] = await db.select().from(profiles).where(eq(profiles.id, req.user!.sub)).limit(1)
+    const [customer] = await db
+      .select({ email: profiles.email, name: profiles.name })
+      .from(profiles)
+      .where(eq(profiles.id, complaint.customerId))
+      .limit(1)
+    if (customer?.email) {
+      void sendComplaintReplyEmail({
+        to: customer.email,
+        customerName: customer.name,
+        complaintSubject: complaint.subject,
+        replyBody: body,
+        authorName: author?.name ?? 'CarFlow Support',
+      }).catch((err) => console.error('Complaint reply email failed:', err))
+    }
+    res.status(201).json({
+      id: reply.id,
+      complaintId: reply.complaintId,
+      authorId: reply.authorId,
+      body: reply.body,
+      createdAt: reply.createdAt.toISOString(),
+      authorName: author?.name,
+      authorEmail: author?.email,
+      authorRole: author?.role,
+    })
   })
 )
 
@@ -849,29 +1582,21 @@ adminRouter.get(
 
 adminRouter.post(
   '/messages',
+  requireSupportCapability,
   asyncHandler(async (req: AuthedRequest, res) => {
-    const { toUserId, subject, body } = req.body
-    const [row] = await db
-      .insert(messages)
-      .values({
-        fromUserId: req.user!.sub,
-        toUserId,
-        subject,
-        body,
-        folder: 'sent',
-      })
-      .returning()
-    // also inbox copy for recipient
-    await db.insert(messages).values({
+    const message = parseBody(adminCreateMessageSchema, req, res)
+    if (!message) return
+
+    const { toUserId, subject, body } = message
+    const sent = await sendMessage({
       fromUserId: req.user!.sub,
       toUserId,
       subject,
       body,
-      folder: 'inbox',
     })
     const [fromUser] = await db.select().from(profiles).where(eq(profiles.id, req.user!.sub)).limit(1)
     res.status(201).json({
-      ...mapMessage(row),
+      ...sent,
       fromName: fromUser?.name,
       fromEmail: fromUser?.email,
     })
@@ -880,10 +1605,14 @@ adminRouter.post(
 
 adminRouter.patch(
   '/messages/:id/read',
+  requireSupportCapability,
   asyncHandler(async (req, res) => {
+    const body = parseBody(adminPatchMessageReadSchema, req, res)
+    if (!body) return
+
     const [row] = await db
       .update(messages)
-      .set({ read: !!req.body.read })
+      .set({ read: body.read })
       .where(eq(messages.id, req.params.id))
       .returning()
     if (!row) {
@@ -896,10 +1625,14 @@ adminRouter.patch(
 
 adminRouter.patch(
   '/messages/:id/folder',
+  requireSupportCapability,
   asyncHandler(async (req, res) => {
+    const body = parseBody(adminPatchMessageFolderSchema, req, res)
+    if (!body) return
+
     const [row] = await db
       .update(messages)
-      .set({ folder: req.body.folder })
+      .set({ folder: body.folder })
       .where(eq(messages.id, req.params.id))
       .returning()
     if (!row) {
@@ -943,78 +1676,509 @@ adminRouter.get(
 
 adminRouter.patch(
   '/booking-requests/:id/status',
-  asyncHandler(async (req, res) => {
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
     const { status, declineReason } = req.body as { status?: string; declineReason?: string }
     if (status !== 'approved' && status !== 'declined') {
       res.status(400).json({ error: 'status must be approved or declined' })
       return
     }
-    const result = await transitionBookingRequest({ bookingRequestId: req.params.id, status, declineReason })
+    const result = await transitionBookingRequest({
+      bookingRequestId: req.params.id,
+      status,
+      declineReason,
+      actor: { id: req.user!.sub, role: 'admin' },
+    })
     res.status(result.status).json(result.body)
   })
 )
 
 adminRouter.delete(
   '/booking-requests/:id',
-  asyncHandler(async (req, res) => {
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    // A request with money against it is part of the financial trail.
+    const [paid] = await db
+      .select({ id: payments.id })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.bookingRequestId, req.params.id),
+          inArray(payments.status, ['completed', 'refunded'])
+        )
+      )
+      .limit(1)
+    if (paid) {
+      res.status(409).json({
+        error: 'This request has payments attached and cannot be deleted. Decline it instead.',
+      })
+      return
+    }
     await db.delete(bookingRequests).where(eq(bookingRequests.id, req.params.id))
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'booking_request.delete',
+      entityType: 'booking_request',
+      entityId: req.params.id,
+    })
     res.status(204).end()
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Audit log (read side) — audit BUG-08
+// ---------------------------------------------------------------------------
+adminRouter.get(
+  '/audit-logs',
+  asyncHandler(async (req, res) => {
+    const { page, pageSize, offset, limit } = parsePagination(req.query as any)
+    const entityType = (req.query.entityType as string | undefined)?.trim() || undefined
+    const entityId = (req.query.entityId as string | undefined)?.trim() || undefined
+    const filters = []
+    if (entityType) filters.push(eq(auditLogs.entityType, entityType))
+    if (entityId) filters.push(eq(auditLogs.entityId, entityId))
+    const where = filters.length > 0 ? and(...filters) : undefined
+    const [totalRow] = where
+      ? await db.select({ value: count() }).from(auditLogs).where(where)
+      : await db.select({ value: count() }).from(auditLogs)
+    const base = db
+      .select({ log: auditLogs, actor: profiles })
+      .from(auditLogs)
+      .leftJoin(profiles, eq(auditLogs.actorId, profiles.id))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit)
+      .offset(offset)
+    const rows = where ? await base.where(where) : await base
+    const items = rows.map((r) => ({
+      ...mapAuditLog(r.log),
+      actorName: r.actor?.name,
+      actorEmail: r.actor?.email,
+    }))
+    res.json(paginated(items, Number(totalRow.value), page, pageSize))
   })
 )
 
 adminRouter.get(
   '/settings',
   asyncHandler(async (_req, res) => {
-    let [row] = await db.select().from(appSettings).limit(1)
-    if (!row) {
-      ;[row] = await db.insert(appSettings).values({}).returning()
+    const row = await ensureAppSettingsRow()
+    res.json(settingsApiPayload(row))
+  })
+)
+
+adminRouter.get(
+  '/settings/flags',
+  requireFullAdmin,
+  asyncHandler(async (_req, res) => {
+    const row = await ensureAppSettingsRow()
+    res.json(featureFlagsFromRuntime(mapRuntimeAppSettings(row)))
+  })
+)
+
+adminRouter.patch(
+  '/settings/flags',
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const body = parseBody(adminPatchFeatureFlagsSchema, req, res)
+    if (!body) return
+
+    const existing = await ensureAppSettingsRow()
+    const patch = featureFlagsPatchFromBody(body)
+    if (Object.keys(patch).length === 0) {
+      res.json(featureFlagsFromRuntime(mapRuntimeAppSettings(existing)))
+      return
     }
-    res.json({
-      id: row.id,
-      companyName: row.companyName,
-      supportEmail: row.supportEmail,
-      supportPhone: row.supportPhone ?? undefined,
-      defaultTaxRate: Number(row.defaultTaxRate),
-      updatedAt: row.updatedAt.toISOString(),
+
+    const [row] = await db
+      .update(appSettings)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(appSettings.id, existing.id))
+      .returning()
+    invalidateAppSettingsCache()
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'settings.flags.update',
+      entityType: 'app_settings',
+      entityId: row.id,
+      before: featureFlagsAuditSnapshot(existing),
+      after: featureFlagsAuditSnapshot(row),
     })
+    res.json(featureFlagsFromRuntime(mapRuntimeAppSettings(row)))
+  })
+)
+
+adminRouter.get(
+  '/settings/business',
+  asyncHandler(async (_req, res) => {
+    const row = await ensureAppSettingsRow()
+    res.json(businessSettingsApiPayload(row))
+  })
+)
+
+function parseSettingsPatch(body: Record<string, unknown>): Record<string, unknown> | { error: string } {
+  const patch: Record<string, unknown> = {}
+  if (body.companyName !== undefined) {
+    if (typeof body.companyName !== 'string' || !body.companyName.trim()) {
+      return { error: 'companyName must be a non-empty string' }
+    }
+    patch.companyName = body.companyName.trim()
+  }
+  if (body.supportEmail !== undefined) {
+    if (typeof body.supportEmail !== 'string' || !body.supportEmail.trim()) {
+      return { error: 'supportEmail must be a non-empty string' }
+    }
+    patch.supportEmail = body.supportEmail.trim()
+  }
+  if (body.supportPhone !== undefined) {
+    patch.supportPhone =
+      body.supportPhone === null || body.supportPhone === ''
+        ? null
+        : typeof body.supportPhone === 'string'
+          ? body.supportPhone.trim()
+          : null
+  }
+  for (const key of ['signupsEnabled', 'dealerSignupsEnabled', 'onlinePaymentsEnabled', 'newBookingsEnabled'] as const) {
+    if (body[key] !== undefined) {
+      if (typeof body[key] !== 'boolean') {
+        return { error: `${key} must be a boolean` }
+      }
+      patch[key] = body[key]
+    }
+  }
+  return patch
+}
+
+function businessPatchFromBody(body: {
+  platformCommissionRate?: number
+  billingGraceDays?: number
+  paymentHoldTtlMinutes?: number
+  cancelNoticeDays?: number
+  swapEligibleDays?: number
+  subscriptionDepositAmount?: number
+}): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (body.platformCommissionRate !== undefined) {
+    patch.platformCommissionRate = String(body.platformCommissionRate)
+  }
+  if (body.billingGraceDays !== undefined) {
+    patch.billingGraceDays = body.billingGraceDays
+  }
+  if (body.paymentHoldTtlMinutes !== undefined) {
+    patch.paymentHoldTtlMinutes = body.paymentHoldTtlMinutes
+  }
+  if (body.cancelNoticeDays !== undefined) {
+    patch.cancelNoticeDays = body.cancelNoticeDays
+  }
+  if (body.swapEligibleDays !== undefined) {
+    patch.swapEligibleDays = body.swapEligibleDays
+  }
+  if (body.subscriptionDepositAmount !== undefined) {
+    patch.subscriptionDepositAmount = String(body.subscriptionDepositAmount)
+  }
+  return patch
+}
+
+adminRouter.patch(
+  '/settings/business',
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const body = parseBody(adminPatchBusinessSettingsSchema, req, res)
+    if (!body) return
+
+    const existing = await ensureAppSettingsRow()
+    const patch = businessPatchFromBody(body)
+    if (Object.keys(patch).length === 0) {
+      res.json(businessSettingsApiPayload(existing))
+      return
+    }
+
+    const [row] = await db
+      .update(appSettings)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(appSettings.id, existing.id))
+      .returning()
+    invalidateAppSettingsCache()
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'settings.business.update',
+      entityType: 'app_settings',
+      entityId: row.id,
+      before: businessSettingsAuditSnapshot(existing),
+      after: businessSettingsAuditSnapshot(row),
+    })
+    res.json(businessSettingsApiPayload(row))
   })
 )
 
 adminRouter.patch(
   '/settings',
-  asyncHandler(async (req, res) => {
-    let [existing] = await db.select().from(appSettings).limit(1)
-    if (!existing) {
-      ;[existing] = await db.insert(appSettings).values({}).returning()
+  requireFullAdmin,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const existing = await ensureAppSettingsRow()
+    const parsed = parseSettingsPatch(req.body as Record<string, unknown>)
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error })
+      return
     }
-    const u = req.body
-    if (u.defaultTaxRate !== undefined) {
-      const rate = Number(u.defaultTaxRate)
-      if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
-        res.status(400).json({ error: 'defaultTaxRate must be a number between 0 and 1' })
-        return
-      }
+    if (Object.keys(parsed).length === 0) {
+      res.json(settingsApiPayload(existing))
+      return
     }
     const [row] = await db
       .update(appSettings)
-      .set({
-        ...(u.companyName !== undefined ? { companyName: u.companyName } : {}),
-        ...(u.supportEmail !== undefined ? { supportEmail: u.supportEmail } : {}),
-        ...(u.supportPhone !== undefined ? { supportPhone: u.supportPhone } : {}),
-        ...(u.defaultTaxRate !== undefined ? { defaultTaxRate: String(u.defaultTaxRate) } : {}),
-        updatedAt: new Date(),
-      })
+      .set({ ...parsed, updatedAt: new Date() })
       .where(eq(appSettings.id, existing.id))
       .returning()
-    res.json({
-      id: row.id,
-      companyName: row.companyName,
-      supportEmail: row.supportEmail,
-      supportPhone: row.supportPhone ?? undefined,
-      defaultTaxRate: Number(row.defaultTaxRate),
-      updatedAt: row.updatedAt.toISOString(),
+    invalidateAppSettingsCache()
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'settings.update',
+      entityType: 'app_settings',
+      entityId: row.id,
+      before: settingsAuditSnapshot(existing),
+      after: settingsAuditSnapshot(row),
     })
+    res.json(settingsApiPayload(row))
   })
 )
 
-void sql
+adminRouter.get(
+  '/maintenance',
+  asyncHandler(async (req, res) => {
+    const { page, pageSize, offset, limit } = parsePagination(req.query as any)
+    const status = (req.query.status as string | undefined)?.trim()
+    const filters = status ? [eq(maintenanceRecords.status, status)] : []
+    const where = filters.length ? and(...filters) : undefined
+    const [totalRow] = where
+      ? await db.select({ value: count() }).from(maintenanceRecords).where(where)
+      : await db.select({ value: count() }).from(maintenanceRecords)
+    const rows = await db
+      .select()
+      .from(maintenanceRecords)
+      .where(where)
+      .orderBy(desc(maintenanceRecords.createdAt))
+      .limit(limit)
+      .offset(offset)
+    res.json(paginated(rows, Number(totalRow.value), page, pageSize))
+  })
+)
+
+adminRouter.patch(
+  '/maintenance/:id/complete',
+  requireOpsCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const [record] = await db
+      .select()
+      .from(maintenanceRecords)
+      .where(eq(maintenanceRecords.id, req.params.id))
+      .limit(1)
+    if (!record) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    await db.transaction(async (tx) => {
+      await tx
+        .update(maintenanceRecords)
+        .set({ status: 'completed', completedAt: new Date() })
+        .where(eq(maintenanceRecords.id, record.id))
+      const [openRental] = await tx
+        .select({ id: rentals.id })
+        .from(rentals)
+        .where(
+          and(
+            eq(rentals.vehicleId, record.vehicleId),
+            inArray(rentals.status, ['reserved', 'active', 'past_due'])
+          )
+        )
+        .limit(1)
+      if (!openRental) {
+        await tx
+          .update(vehicles)
+          .set({ status: 'available' })
+          .where(and(eq(vehicles.id, record.vehicleId), eq(vehicles.status, 'maintenance')))
+      }
+    })
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'maintenance.complete',
+      entityType: 'maintenance_record',
+      entityId: record.id,
+      after: { vehicleId: record.vehicleId, status: 'completed' },
+    })
+    res.json({ ok: true })
+  })
+)
+
+adminRouter.get(
+  '/payouts',
+  asyncHandler(async (req, res) => {
+    const { page, pageSize, offset, limit } = parsePagination(req.query as any)
+    const [totalRow] = await db.select({ value: count() }).from(payouts)
+    const rows = await db
+      .select({ payout: payouts, dealer: dealers })
+      .from(payouts)
+      .innerJoin(dealers, eq(payouts.dealerId, dealers.id))
+      .orderBy(desc(payouts.createdAt))
+      .limit(limit)
+      .offset(offset)
+    res.json(
+      paginated(
+        rows.map((r) => ({
+          id: r.payout.id,
+          dealerId: r.payout.dealerId,
+          dealerName: r.dealer.name,
+          amount: Number(r.payout.amount),
+          status: r.payout.status,
+          periodStart: r.payout.periodStart,
+          periodEnd: r.payout.periodEnd,
+          paidAt: r.payout.paidAt?.toISOString() ?? null,
+          createdAt: r.payout.createdAt.toISOString(),
+        })),
+        Number(totalRow.value),
+        page,
+        pageSize
+      )
+    )
+  })
+)
+
+adminRouter.post(
+  '/payouts/generate',
+  requireFinanceCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const created = await generateDealerPayoutsUnderLock()
+    if (created === null) {
+      res.status(409).json({ error: 'Payout generation already in progress' })
+      return
+    }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'payout.generate',
+      entityType: 'payout_batch',
+      after: { created },
+    })
+    res.json({ created })
+  })
+)
+
+adminRouter.post(
+  '/payouts/:id/mark-paid',
+  requireFinanceCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const ok = await markPayoutPaid(req.params.id, (req.body as { note?: string }).note)
+    if (!ok) {
+      res.status(404).json({ error: 'Payout not found or already paid' })
+      return
+    }
+    const [payout] = await db.select().from(payouts).where(eq(payouts.id, req.params.id)).limit(1)
+    if (payout) {
+      const [dealer] = await db
+        .select({
+          name: dealers.name,
+          contactEmail: dealers.contactEmail,
+          ownerUserId: dealers.ownerUserId,
+        })
+        .from(dealers)
+        .where(eq(dealers.id, payout.dealerId))
+        .limit(1)
+      const [owner] = dealer
+        ? await db
+            .select({ email: profiles.email })
+            .from(profiles)
+            .where(eq(profiles.id, dealer.ownerUserId))
+            .limit(1)
+        : []
+      const to = owner?.email ?? dealer?.contactEmail
+      if (to && dealer) {
+        void sendPayoutPaidEmail({
+          to,
+          dealerName: dealer.name,
+          amount: Number(payout.amount),
+          payoutId: payout.id,
+        }).catch((err) => console.error('Payout paid email failed:', err))
+      }
+    }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'payout.mark_paid',
+      entityType: 'payout',
+      entityId: req.params.id,
+    })
+    if (payout) {
+      trackAnalyticsEventSafe({
+        eventType: 'payout_paid',
+        entityType: 'payout',
+        entityId: payout.id,
+        properties: { dealerId: payout.dealerId, amount: Number(payout.amount) },
+      })
+    }
+    res.json({ ok: true })
+  })
+)
+
+adminRouter.post(
+  '/payouts/:id/unmark-paid',
+  requireFinanceCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const [before] = await db.select().from(payouts).where(eq(payouts.id, req.params.id)).limit(1)
+    const ok = await unmarkPayoutPaid(req.params.id, (req.body as { note?: string }).note)
+    if (!ok) {
+      res.status(404).json({ error: 'Payout not found or not in paid status' })
+      return
+    }
+    const [after] = await db.select().from(payouts).where(eq(payouts.id, req.params.id)).limit(1)
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'payout.unmark_paid',
+      entityType: 'payout',
+      entityId: req.params.id,
+      before: before ? { status: before.status, paidAt: before.paidAt?.toISOString() ?? null } : undefined,
+      after: after ? { status: after.status, paidAt: after.paidAt?.toISOString() ?? null } : undefined,
+    })
+    res.json({ ok: true })
+  })
+)
+
+adminRouter.post(
+  '/invoices/:id/void',
+  requireFinanceCapability,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const [before] = await db.select().from(invoices).where(eq(invoices.id, req.params.id)).limit(1)
+    const outcome = await voidInvoiceByAdmin(req.params.id)
+    if (outcome === 'not-found') {
+      res.status(404).json({ error: 'Invoice not found' })
+      return
+    }
+    if (outcome === 'not-voidable') {
+      res.status(409).json({ error: `Invoice cannot be voided while status is "${before?.status ?? 'unknown'}"` })
+      return
+    }
+    await logAuditSafe({
+      actorId: req.user!.sub,
+      actorRole: req.user!.role,
+      action: 'invoice.void',
+      entityType: 'invoice',
+      entityId: req.params.id,
+      before: before ? { status: before.status } : undefined,
+      after: { status: 'void' },
+      note: (req.body as { reason?: string }).reason ?? null,
+    })
+    res.json({ ok: true })
+  })
+)
+
+import { adminFeaturesRouter } from './adminFeatures.js'
+import { adminBroadcastRouter } from './adminBroadcast.js'
+import { adminPromoRouter } from './adminPromo.js'
+adminRouter.use(adminPromoRouter)
+adminRouter.use(adminBroadcastRouter)
+adminRouter.use(adminFeaturesRouter)
+

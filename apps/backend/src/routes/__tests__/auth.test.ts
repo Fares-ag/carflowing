@@ -1,12 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { Express } from 'express'
 import request from 'supertest'
-import { and, eq, isNull } from 'drizzle-orm'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
-import { dealers, passwordResetTokens, profiles } from '../../db/schema.js'
+import { dealers, passwordResetTokens, profiles, userSecurity } from '../../db/schema.js'
+import { LOGIN_LOCKOUT_THRESHOLD } from '../../auth/loginLockout.js'
 import { DEMO_PASSWORD, buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 /**
@@ -173,14 +174,122 @@ describe('Auth API', () => {
       await resetDb()
     })
 
-    it('AUTH-N10: auth routes are rate-limited in production (GAP-P1-020 fixed)', async () => {
+    it('AUTH-N10: auth routes are rate-limited outside vitest (GAP-P1-020 fixed)', async () => {
       const appSource = await import('fs').then((fs) =>
         fs.readFileSync(new URL('../../app.ts', import.meta.url), 'utf8')
       )
       expect(appSource).toMatch(/rateLimit/)
+      expect(appSource).toMatch(/skipRateLimitInTests/)
+      expect(appSource).not.toMatch(/skipRateLimitInDev/)
+      expect(appSource).not.toMatch(/skip:.*NODE_ENV/)
       expect(appSource).toMatch(/\/api\/auth\/login/)
       expect(appSource).toMatch(/\/api\/auth\/signup/)
       expect(appSource).toMatch(/\/api\/auth\/forgot-password/)
+      expect(appSource).toMatch(/\/api\/auth\/2fa\/verify-login/)
+    })
+
+    it('AUTH-LOCK-01: locks account after repeated failed password attempts', async () => {
+      const fixtures = await seedFixtures()
+      for (let i = 0; i < LOGIN_LOCKOUT_THRESHOLD - 1; i += 1) {
+        const res = await request(app)
+          .post('/api/auth/login')
+          .send({ email: fixtures.customer.email, password: 'wrong-password', expectedRole: 'customer' })
+        expect(res.status).toBe(401)
+      }
+
+      const locked = await request(app)
+        .post('/api/auth/login')
+        .send({ email: fixtures.customer.email, password: 'wrong-password', expectedRole: 'customer' })
+      expect(locked.status).toBe(423)
+      expect(locked.body.error).toMatch(/locked/i)
+      expect(locked.body.retryAfterSeconds).toBeGreaterThan(0)
+
+      const stillLocked = await request(app)
+        .post('/api/auth/login')
+        .send({ email: fixtures.customer.email, password: DEMO_PASSWORD, expectedRole: 'customer' })
+      expect(stillLocked.status).toBe(423)
+      await resetDb()
+    })
+
+    it('AUTH-LOCK-02: resets failed attempts after successful login', async () => {
+      const fixtures = await seedFixtures()
+      for (let i = 0; i < LOGIN_LOCKOUT_THRESHOLD - 1; i += 1) {
+        await request(app)
+          .post('/api/auth/login')
+          .send({ email: fixtures.customer.email, password: 'wrong-password', expectedRole: 'customer' })
+      }
+      const ok = await request(app)
+        .post('/api/auth/login')
+        .send({ email: fixtures.customer.email, password: DEMO_PASSWORD, expectedRole: 'customer' })
+      expect(ok.status).toBe(200)
+
+      const [row] = await db.select().from(profiles).where(eq(profiles.id, fixtures.customer.id))
+      expect(row.failedLoginAttempts).toBe(0)
+      expect(row.lockedUntil).toBeNull()
+      await resetDb()
+    })
+  })
+
+  describe('POST /api/auth/2fa/verify-login', () => {
+    it('AUTH-2FA-01: completes login after password + TOTP and rejects challenge reuse', async () => {
+      const fixtures = await seedFixtures()
+      const { generateTotpSecret } = await import('../../services/totp.js')
+      const { currentTotpCode } = await import('../../services/totp.js')
+      const totpSecret = generateTotpSecret()
+      await db.insert(userSecurity).values({
+        userId: fixtures.customer.id,
+        totpSecret,
+        totpEnabled: true,
+      })
+
+      const login = await request(app)
+        .post('/api/auth/login')
+        .send({ email: fixtures.customer.email, password: DEMO_PASSWORD, expectedRole: 'customer' })
+      expect(login.status).toBe(200)
+      expect(login.body.requires2fa).toBe(true)
+
+      const code = currentTotpCode(totpSecret)
+      const verify = await request(app)
+        .post('/api/auth/2fa/verify-login')
+        .send({ challengeToken: login.body.challengeToken, code })
+      expect(verify.status).toBe(200)
+      expect(verify.body.email).toBe(fixtures.customer.email)
+      const cookies = verify.headers['set-cookie'] as unknown as string[]
+      expect(cookies.some((c) => c.startsWith('cf_access='))).toBe(true)
+
+      const reuse = await request(app)
+        .post('/api/auth/2fa/verify-login')
+        .send({ challengeToken: login.body.challengeToken, code })
+      expect(reuse.status).toBe(401)
+    })
+
+    it('AUTH-LOCK-03: locks account after repeated failed 2FA codes', async () => {
+      const fixtures = await seedFixtures()
+      const { generateTotpSecret } = await import('../../services/totp.js')
+      const totpSecret = generateTotpSecret()
+      await db.insert(userSecurity).values({
+        userId: fixtures.customer.id,
+        totpSecret,
+        totpEnabled: true,
+      })
+
+      const login = await request(app)
+        .post('/api/auth/login')
+        .send({ email: fixtures.customer.email, password: DEMO_PASSWORD, expectedRole: 'customer' })
+      expect(login.body.requires2fa).toBe(true)
+
+      for (let i = 0; i < LOGIN_LOCKOUT_THRESHOLD - 1; i += 1) {
+        const bad = await request(app)
+          .post('/api/auth/2fa/verify-login')
+          .send({ challengeToken: login.body.challengeToken, code: '000000' })
+        expect(bad.status).toBe(401)
+      }
+
+      const locked = await request(app)
+        .post('/api/auth/2fa/verify-login')
+        .send({ challengeToken: login.body.challengeToken, code: '000000' })
+      expect(locked.status).toBe(423)
+      expect(locked.body.error).toMatch(/locked/i)
     })
   })
 

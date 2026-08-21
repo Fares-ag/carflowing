@@ -1,10 +1,4 @@
-import { useState, useCallback, memo, useRef, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import { Sidebar } from '../components/Sidebar'
-import { Header } from '../components/Header'
-import { getCurrentUser } from '../services/authService'
-import { getDealerSettings, listNotifications, updateDealerSettings } from '../services/dealerService'
-import { uploadAvatar } from '@carflow/shared'
+import { formatDate, uploadAvatar } from '@carflow/shared'
 import {
   Bell,
   Building2,
@@ -14,7 +8,14 @@ import {
   Terminal,
   Upload,
   Check,
+  Wallet,
 } from 'lucide-react'
+import { useState, useCallback, memo, useRef, useEffect } from 'react'
+import { Link } from 'react-router-dom'
+import { Header } from '../components/Header'
+import { Sidebar } from '../components/Sidebar'
+import { getCurrentUser } from '../services/authService'
+import { getDealerSettings, listNotifications, updateDealerSettings } from '../services/dealerService'
 import './Settings.css'
 
 type SettingsTab = 'business' | 'notifications' | 'preferences' | 'security' | 'privacy' | 'api'
@@ -36,7 +37,10 @@ export const Settings = memo(function Settings() {
   const [address, setAddress] = useState('')
   const [description, setDescription] = useState('')
   const [licenseNumber, setLicenseNumber] = useState('')
-  const [taxId, setTaxId] = useState('')
+  const [bankAccountName, setBankAccountName] = useState('')
+  const [bankName, setBankName] = useState('')
+  const [bankIban, setBankIban] = useState('')
+  const [bankVerifiedAt, setBankVerifiedAt] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [businessHours, setBusinessHours] = useState<BusinessHours[]>([
     { day: 'monday', enabled: true, startTime: '09:00', endTime: '18:00' },
@@ -67,7 +71,10 @@ export const Settings = memo(function Settings() {
         setAddress(settings.address ?? '')
         setDescription(settings.description ?? '')
         setLicenseNumber(settings.licenseNumber ?? '')
-        setTaxId(settings.taxId ?? '')
+        setBankAccountName(settings.bankAccountName ?? '')
+        setBankName(settings.bankName ?? '')
+        setBankIban(settings.bankIban ?? '')
+        setBankVerifiedAt(settings.bankDetailsVerifiedAt ?? null)
         setBusinessHours(settings.businessHours.length ? settings.businessHours : businessHours)
         setLogoUrl(settings.logoUrl ?? null)
         setRecentNotifications(
@@ -110,7 +117,7 @@ export const Settings = memo(function Settings() {
     if (!settingsId) return
     setError(null)
     try {
-      await updateDealerSettings({
+      const updated = await updateDealerSettings({
         name: businessName,
         contactEmail,
         contactPhone: contactPhone || undefined,
@@ -118,10 +125,13 @@ export const Settings = memo(function Settings() {
         address: address || undefined,
         description: description || undefined,
         licenseNumber: licenseNumber || undefined,
-        taxId: taxId || undefined,
+        bankAccountName: bankAccountName || undefined,
+        bankName: bankName || undefined,
+        bankIban: bankIban || undefined,
         businessHours,
         logoUrl: logoUrl ?? undefined,
       })
+      setBankVerifiedAt(updated.bankDetailsVerifiedAt ?? null)
       setSaveMessage('Business settings saved.')
       window.setTimeout(() => setSaveMessage(null), 2500)
     } catch (err) {
@@ -136,7 +146,9 @@ export const Settings = memo(function Settings() {
     address,
     description,
     licenseNumber,
-    taxId,
+    bankAccountName,
+    bankName,
+    bankIban,
     businessHours,
     logoUrl,
   ])
@@ -279,7 +291,7 @@ export const Settings = memo(function Settings() {
                     <Shield size={18} />
                     <h3 className="card-title">Legal & Registration</h3>
                   </div>
-                  <p className="card-description">Business license and tax information</p>
+                  <p className="card-description">Business license and registration details</p>
                   
                   <div className="form-group">
                     <label>Business License Number</label>
@@ -288,15 +300,6 @@ export const Settings = memo(function Settings() {
                       placeholder="CR-123456789"
                       value={licenseNumber}
                       onChange={(event) => setLicenseNumber(event.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Tax ID / VAT Number</label>
-                    <input
-                      type="text"
-                      placeholder="QA-TAX-987654321"
-                      value={taxId}
-                      onChange={(event) => setTaxId(event.target.value)}
                     />
                   </div>
 
@@ -334,6 +337,56 @@ export const Settings = memo(function Settings() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                <div className="settings-card">
+                  <div className="card-header">
+                    <Wallet size={18} />
+                    <h3 className="card-title">Payout bank details</h3>
+                  </div>
+                  <p className="card-description">
+                    Required for monthly dealer payouts. CarFlow admin verifies your IBAN before transfers.
+                  </p>
+                  {bankVerifiedAt ? (
+                    <div className="settings-info-banner settings-info-banner--success">
+                      Verified {formatDate(bankVerifiedAt)}
+                    </div>
+                  ) : bankIban.trim() ? (
+                    <div className="settings-info-banner">
+                      Submitted — awaiting admin verification before payouts can be sent.
+                    </div>
+                  ) : (
+                    <div className="settings-info-banner">
+                      Add your bank details so we can pay you when rentals settle.
+                    </div>
+                  )}
+                  <div className="form-group">
+                    <label>Account holder name</label>
+                    <input
+                      type="text"
+                      placeholder="Legal business name on account"
+                      value={bankAccountName}
+                      onChange={(event) => setBankAccountName(event.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Bank name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. QNB"
+                      value={bankName}
+                      onChange={(event) => setBankName(event.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>IBAN</label>
+                    <input
+                      type="text"
+                      placeholder="QA00 XXXX XXXX XXXX XXXX XXXX"
+                      value={bankIban}
+                      onChange={(event) => setBankIban(event.target.value)}
+                    />
                   </div>
                 </div>
               </div>

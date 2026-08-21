@@ -1,19 +1,25 @@
-import express from 'express'
-import cors from 'cors'
+import path from 'path'
 import cookieParser from 'cookie-parser'
+import cors from 'cors'
+import { sql } from 'drizzle-orm'
+import express from 'express'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
-import { sql } from 'drizzle-orm'
 import { db } from './db/index.js'
-import { figmaRouter } from './routes/figma.js'
+import { adminRouter } from './routes/admin.js'
 import { authRouter } from './routes/auth.js'
 import { customerRouter } from './routes/customer.js'
 import { dealerRouter } from './routes/dealer.js'
-import { adminRouter } from './routes/admin.js'
-import { uploadsRouter, ensureUploadDir } from './routes/uploads.js'
 import { paymentsRouter } from './routes/payments.js'
 import { skipcashWebhookRouter } from './routes/skipcash-webhook.js'
+import { uploadsRouter, ensureUploadDir } from './routes/uploads.js'
 import { uploadRoot } from './storage/index.js'
+import { getJobsHealthMetrics } from './services/healthMetrics.js'
+import { helmetContentSecurityPolicyOptions } from './utils/contentSecurityPolicy.js'
+import { restrictiveContentTypeForPath, setAttachmentResponseHeaders } from './utils/uploadContent.js'
+import { captureException, setupSentryExpressErrorHandler } from './utils/observability.js'
+import { logStructured, requestContextMiddleware } from './utils/requestContext.js'
+import { skipRateLimitInTests } from './utils/rateLimit.js'
 
 const defaultOrigins = [
   'http://localhost:5173',
@@ -25,7 +31,12 @@ export function createApp() {
   const app = express()
 
   app.set('trust proxy', 1)
-  app.use(helmet({ contentSecurityPolicy: false }))
+  app.use(requestContextMiddleware)
+  app.use(
+    helmet({
+      contentSecurityPolicy: helmetContentSecurityPolicyOptions(),
+    })
+  )
 
   const corsOrigins = (process.env.CORS_ORIGINS || defaultOrigins.join(','))
     .split(',')
@@ -46,22 +57,71 @@ export function createApp() {
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
-    // Skip in tests and local development so demo login isn't blocked by retries.
-    skip: () => process.env.VITEST === 'true' || process.env.NODE_ENV !== 'production',
+    skip: skipRateLimitInTests,
   })
   app.use('/api/auth/login', authRateLimit)
   app.use('/api/auth/signup', authRateLimit)
   app.use('/api/auth/forgot-password', authRateLimit)
+  app.use('/api/auth/resend-verification', authRateLimit)
+  app.use('/api/auth/2fa/verify-login', authRateLimit)
+
+  const paymentRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipRateLimitInTests,
+  })
+  app.use('/api/payments/skipcash/create-intent', paymentRateLimit)
+  app.use('/api/payments/skipcash/invoice-intent', paymentRateLimit)
+
+  const uploadRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 40,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipRateLimitInTests,
+  })
+  app.use('/api/uploads', uploadRateLimit)
+
+  const mutationRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipRateLimitInTests,
+  })
+  app.use('/api/admin/payments/:id/refund', mutationRateLimit)
+  app.use('/api/customer/booking-requests', mutationRateLimit)
 
   ensureUploadDir()
   if (process.env.UPLOAD_DRIVER !== 'blob') {
-    app.use('/uploads', express.static(uploadRoot()))
+    // Never expose identity documents via static file serving.
+    const secureStatic = (root: string) =>
+      express.static(root, {
+        setHeaders(res, filePath) {
+          setAttachmentResponseHeaders(res, filePath, restrictiveContentTypeForPath(filePath))
+        },
+      })
+    app.use('/uploads/vehicle-images', secureStatic(path.join(uploadRoot(), 'vehicle-images')))
+    app.use('/uploads/user-avatars', secureStatic(path.join(uploadRoot(), 'user-avatars')))
   }
+
+  app.get('/health/live', (_req, res) => {
+    res.status(200).json({ status: 'ok' })
+  })
 
   app.get('/health', async (_req, res) => {
     try {
       await db.execute(sql`SELECT 1`)
-      res.json({ status: 'ok', message: 'CarFlow Backend API', db: 'connected' })
+      const { lastJobsSweepAt, stuckPendingCount } = await getJobsHealthMetrics()
+      res.json({
+        status: 'ok',
+        message: 'CarFlow Backend API',
+        db: 'connected',
+        lastJobsSweepAt: lastJobsSweepAt?.toISOString() ?? null,
+        stuckPendingCount,
+      })
     } catch {
       res.status(503).json({ status: 'error', message: 'CarFlow Backend API', db: 'disconnected' })
     }
@@ -76,17 +136,31 @@ export function createApp() {
   app.use('/api/payments/skipcash', skipcashWebhookRouter)
   /** Portal-compatible paths: /skipcash-pay/callback and /skipcash-pay/return */
   app.use('/skipcash-pay', skipcashWebhookRouter)
-  app.use('/api/figma', figmaRouter)
+
+  if (process.env.VITEST === 'true') {
+    app.get('/__test__/throw', () => {
+      throw new Error('observability test error')
+    })
+  }
+
+  setupSentryExpressErrorHandler(app)
 
   app.use(
     (
       err: any,
-      _req: express.Request,
+      req: express.Request,
       res: express.Response,
       _next: express.NextFunction
     ) => {
-      console.error(err)
       const status = err.status || 500
+      logStructured('error', 'http.unhandled_error', {
+        requestId: req.requestId,
+        status,
+        message: err instanceof Error ? err.message : String(err),
+      })
+      if (status >= 500) {
+        captureException(err, { requestId: req.requestId, status })
+      }
       const message =
         process.env.NODE_ENV === 'production' && status >= 500
           ? 'Internal server error'

@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { computeRentalTotal, formatVehicleLocation, vehicleCategoryLabel, type Vehicle } from '@carflow/shared'
 import { useQuery } from '@tanstack/react-query'
-import { computeRentalTotal, vehicleCategoryLabel } from '@carflow/shared'
-import { addFavorite, listCatalogVehicles } from '../services/customerService'
-import { toast } from '../hooks/useToast'
-import { useAuth } from '../contexts/AuthContext'
-import { CarCard } from '../components/shared/CarCard'
-import { Header } from '../components/shared/Header'
-import { Footer } from '../components/shared/Footer'
 import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { CarCard } from '../components/shared/CarCard'
+import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
+import { useAuth } from '../contexts/AuthContext'
+import { toast } from '../hooks/useToast'
+import { addFavorite, listCatalogVehicles } from '../services/customerService'
 import { BrowseFiltersPanel } from './BrowseFiltersPanel'
 import {
-  applyBrowseFilters,
+  BROWSE_PAGE_SIZE,
+  buildCatalogQueryParams,
+} from './browseCatalogQuery'
+import {
   countActiveBrowseFilters,
   DEFAULT_FILTER_STATE,
   type BrowseCar,
@@ -21,18 +24,38 @@ import './BrowseCarsPage.css'
 
 const QUICK_CATEGORIES = ['All', 'Sedan', 'SUV', 'Electric'] as const
 
+function mapVehicleToBrowseCar(vehicle: Vehicle): BrowseCar {
+  return {
+    id: vehicle.id,
+    name: vehicle.name,
+    type: vehicleCategoryLabel(vehicle.category),
+    price: Math.round(computeRentalTotal(vehicle.pricePerDay, 1)),
+    pricePeriod: 'month',
+    seats: vehicle.seats,
+    transmission: vehicle.transmission === 'manual' ? 'Manual' : 'Automatic',
+    fuelType: vehicle.fuelType,
+    isElectric: vehicle.fuelType === 'electric',
+    make: vehicle.make,
+    model: vehicle.model,
+    mileage: vehicle.mileage,
+    year: vehicle.year,
+    image: vehicle.imageUrl ?? vehicle.imageUrls?.[0],
+    location: formatVehicleLocation(vehicle),
+    features: vehicle.features ?? [],
+    rating: vehicle.averageRating ?? 0,
+    reviewCount: vehicle.reviewCount ?? 0,
+  }
+}
+
 export function BrowseCarsPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { session } = useAuth()
   const legacyRedirect = (location.state as { legacyRedirect?: string } | null)?.legacyRedirect
   const [searchParams, setSearchParams] = useSearchParams()
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['catalog', 'browse', 20],
-    queryFn: () => listCatalogVehicles({ pageSize: 20 }),
-  })
-  const vehicles = data?.items ?? []
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') ?? '')
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery)
+  const [page, setPage] = useState(1)
   const [filters, setFilters] = useState<BrowseFilterState>(() => {
     const categoryParam = searchParams.get('category')
     if (categoryParam === 'Electric') {
@@ -47,13 +70,20 @@ export function BrowseCarsPage() {
   const prevCategoryParam = useRef<string | null>(searchParams.get('category'))
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchQuery), 300)
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch, filters])
+
+  useEffect(() => {
     const next = searchParams.get('category')
     const prev = prevCategoryParam.current
     prevCategoryParam.current = next
 
     if (!next) {
-      // Only clear when the URL category was removed (e.g. All cars / Clear),
-      // not on every /browse visit — that would wipe sidebar fuel picks.
       if (prev) {
         setFilters((current) => ({ ...current, categories: [], fuelTypes: [] }))
       }
@@ -65,6 +95,21 @@ export function BrowseCarsPage() {
     }
     setFilters((current) => ({ ...current, categories: [next], fuelTypes: [] }))
   }, [searchParams])
+
+  const catalogParams = useMemo(
+    () => buildCatalogQueryParams(filters, debouncedSearch, page, BROWSE_PAGE_SIZE),
+    [filters, debouncedSearch, page]
+  )
+
+  const { data, isLoading, isError, isFetching } = useQuery({
+    queryKey: ['catalog', 'browse', catalogParams],
+    queryFn: () => listCatalogVehicles(catalogParams),
+    placeholderData: (previous) => previous,
+  })
+
+  const cars = useMemo(() => (data?.items ?? []).map(mapVehicleToBrowseCar), [data?.items])
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / BROWSE_PAGE_SIZE))
 
   const syncCategoryParam = (category: string | null) => {
     const next = new URLSearchParams(searchParams)
@@ -84,46 +129,11 @@ export function BrowseCarsPage() {
   }
 
   const handleConfigure = (car: { id: string }) => {
-    navigate(`/car/${car.id}`)
+    const params = new URLSearchParams()
+    if (filters.startDate) params.set('start', filters.startDate)
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    navigate(`/car/${car.id}${suffix}`)
   }
-
-  const cars = useMemo<BrowseCar[]>(() => {
-    return vehicles.map((vehicle) => {
-      const transmissionLabel = vehicle.transmission === 'manual' ? 'Manual' : 'Automatic'
-
-      return {
-        id: vehicle.id,
-        name: vehicle.name,
-        type: vehicleCategoryLabel(vehicle.category),
-        price: Math.round(computeRentalTotal(vehicle.pricePerDay, 1)),
-        pricePeriod: 'month' as const,
-        seats: vehicle.seats,
-        transmission: transmissionLabel,
-        fuelType: vehicle.fuelType,
-        isElectric: vehicle.fuelType === 'electric',
-        make: vehicle.make,
-        model: vehicle.model,
-        mileage: vehicle.mileage,
-        year: vehicle.year,
-        image: vehicle.imageUrl,
-        features: [],
-        rating: 0,
-      }
-    })
-  }, [vehicles])
-
-  const filteredCars = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-    const searched = query
-      ? cars.filter(
-          (car) =>
-            car.name.toLowerCase().includes(query) ||
-            car.make.toLowerCase().includes(query) ||
-            car.model.toLowerCase().includes(query)
-        )
-      : cars
-    return applyBrowseFilters(searched, filters)
-  }, [cars, searchQuery, filters])
 
   const handleClearFilters = () => {
     setFilters({ ...DEFAULT_FILTER_STATE })
@@ -230,12 +240,15 @@ export function BrowseCarsPage() {
           <div className="browse-results">
             <div className="browse-results__header">
               <div className="browse-results__count">
-                <strong>{filteredCars.length}</strong>
-                <span>car{filteredCars.length === 1 ? '' : 's'} available</span>
+                <strong>{total}</strong>
+                <span>car{total === 1 ? '' : 's'} available</span>
                 {activeFilterCount > 0 && (
                   <span className="browse-results__filter-count">
                     · {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'}
                   </span>
+                )}
+                {isFetching && !isLoading && (
+                  <span className="browse-results__filter-count"> · Updating…</span>
                 )}
               </div>
               <button
@@ -258,7 +271,7 @@ export function BrowseCarsPage() {
                 <p className="empty-state__title">Couldn&apos;t load vehicles</p>
                 <p className="empty-state__text">Please refresh the page and try again.</p>
               </div>
-            ) : filteredCars.length === 0 ? (
+            ) : cars.length === 0 ? (
               <div className="empty-state">
                 <p className="empty-state__title">No cars match your filters</p>
                 <p className="empty-state__text">Try widening price, year, or clearing a few filters.</p>
@@ -267,25 +280,54 @@ export function BrowseCarsPage() {
                 </button>
               </div>
             ) : (
-              <div className="browse-grid">
-                {filteredCars.map((car) => (
-                  <CarCard
-                    key={car.id}
-                    id={car.id}
-                    name={car.name}
-                    type={car.type}
-                    price={car.price}
-                    seats={car.seats}
-                    transmission={car.transmission}
-                    fuelType={car.fuelType}
-                    image={car.image}
-                    isElectric={car.isElectric}
-                    onConfigure={() => handleConfigure(car)}
-                    onFavorite={session ? () => handleFavorite(car.id) : undefined}
-                    pricePeriod={car.pricePeriod}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="browse-grid">
+                  {cars.map((car) => (
+                    <CarCard
+                      key={car.id}
+                      id={car.id}
+                      name={car.name}
+                      type={car.type}
+                      price={car.price}
+                      seats={car.seats}
+                      transmission={car.transmission}
+                      fuelType={car.fuelType}
+                      image={car.image}
+                      isElectric={car.isElectric}
+                      onConfigure={() => handleConfigure(car)}
+                      onFavorite={session ? () => handleFavorite(car.id) : undefined}
+                      pricePeriod={car.pricePeriod}
+                      location={car.location}
+                      rating={car.rating}
+                      reviews={car.reviewCount}
+                    />
+                  ))}
+                </div>
+
+                {totalPages > 1 && (
+                  <nav className="browse-pagination" aria-label="Catalog pages">
+                    <button
+                      type="button"
+                      className="browse-pagination__btn"
+                      disabled={page <= 1 || isFetching}
+                      onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    >
+                      Previous
+                    </button>
+                    <span className="browse-pagination__meta">
+                      Page {page} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="browse-pagination__btn"
+                      disabled={page >= totalPages || isFetching}
+                      onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    >
+                      Next
+                    </button>
+                  </nav>
+                )}
+              </>
             )}
           </div>
         </div>

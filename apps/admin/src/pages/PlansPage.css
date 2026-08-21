@@ -26,14 +26,21 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 32px;
+  height: 36px;
   padding: 0 12px;
-  border-radius: 6.8px;
-  border: 0.56px solid #e5e5e5;
-  background: rgba(229, 229, 229, 0.3);
+  border-radius: 8px;
+  border: none;
+  background: transparent;
   font-size: 14px;
-  color: #0a0a0a;
+  font-weight: 500;
+  color: #4b5563;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.plansBtn:hover {
+  background: #f3f4f6;
+  color: #111827;
 }
 
 .plansBtn img {
@@ -43,10 +50,15 @@
 
 .plansBtn--primary {
   height: 36px;
-  background: linear-gradient(180deg, #685ff7 0%, #564be8 100%);
+  background: #4f46e5;
   border: none;
   color: white;
-  box-shadow: 0px 10px 15px -3px rgba(173, 70, 255, 0.25), 0px 4px 6px -4px rgba(173, 70, 255, 0.25);
+  box-shadow: none;
+}
+
+.plansBtn--primary:hover {
+  background: #4338ca;
+  color: #fff;
 }
 
 .plansBtn--small {
@@ -79,26 +91,28 @@
 .plansToggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: #f9fafb;
-  border: 0.56px solid #e5e7eb;
+  gap: 4px;
+  background: #f3f4f6;
+  border: none;
   border-radius: 999px;
-  padding: 4px 8px;
-  box-shadow: 0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -2px rgba(0, 0, 0, 0.1);
+  padding: 4px;
+  box-shadow: none;
 }
 
 .plansToggleBtn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 25px;
-  padding: 0 12px;
+  height: 32px;
+  padding: 0 14px;
   border-radius: 999px;
   border: none;
   background: transparent;
   font-size: 14px;
-  color: #4a5565;
+  font-weight: 500;
+  color: #6b7280;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .plansToggleBtn img {
@@ -107,9 +121,9 @@
 }
 
 .plansToggleBtn--active {
-  color: white;
-  background: linear-gradient(180deg, #685ff7 0%, #564be8 100%);
-  box-shadow: 0px 10px 15px -3px rgba(173, 70, 255, 0.3), 0px 4px 6px -4px rgba(173, 70, 255, 0.3);
+  color: #4f46e5;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .plansSearch {

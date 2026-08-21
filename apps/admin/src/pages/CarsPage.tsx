@@ -1,11 +1,12 @@
+import type { Dealer, Vehicle, VehicleCategory, VehicleStatus } from '@carflow/shared'
+import { Check, Download, Eye, Filter, Search, Settings, Timer, Trash2, Truck, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import type { Dealer, Vehicle, VehicleStatus } from '@carflow/shared'
-import { createVehicle, deleteVehicle, listDealers, listRentalsWithDetails, listVehicles, updateRentalStatus, updateVehicleStatus } from '../services/adminService'
-import type { RentalWithDetails } from '../services/adminService'
-import { AdminLayout } from '../layout/AdminLayout'
+import { toast } from 'sonner'
 import { AddCarModal } from '../components/AddCarModal'
 import { InfoModal } from '../components/InfoModal'
-import { Check, Download, Eye, Filter, Search, Settings, Timer, Trash2, Truck, Users } from 'lucide-react'
+import { AdminLayout } from '../layout/AdminLayout'
+import { createVehicle, deleteVehicle, listDealers, listRentalsWithDetails, searchVehicles, updateRentalStatus, updateVehicleStatus } from '../services/adminService'
+import type { RentalWithDetails } from '../services/adminService'
 import './CarsPage.css'
 
 const downloadCsv = (filename: string, rows: Array<Record<string, string>>) => {
@@ -70,18 +71,34 @@ export function CarsPage() {
   const [deleteVehicleName, setDeleteVehicleName] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [vehicleQuery, setVehicleQuery] = useState('')
+  const [vehicleStatus, setVehicleStatus] = useState<VehicleStatus | 'all'>('all')
+  const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory | 'all'>('all')
+  const [vehicleDealerId, setVehicleDealerId] = useState('all')
+  const [vehicleMinPrice, setVehicleMinPrice] = useState('')
+  const [vehicleMaxPrice, setVehicleMaxPrice] = useState('')
+  const [vehicleTotal, setVehicleTotal] = useState(0)
 
   const refreshRequests = () => {
     setIsLoading(true)
     setLoadError(null)
     Promise.all([
       listRentalsWithDetails({ pageSize: 50 }),
-      listVehicles({ pageSize: 100 }),
+      searchVehicles({
+        pageSize: 100,
+        q: vehicleQuery.trim() || undefined,
+        status: vehicleStatus === 'all' ? undefined : vehicleStatus,
+        category: vehicleCategory === 'all' ? undefined : vehicleCategory,
+        dealerId: vehicleDealerId === 'all' ? undefined : vehicleDealerId,
+        minPrice: vehicleMinPrice ? Number(vehicleMinPrice) : undefined,
+        maxPrice: vehicleMaxPrice ? Number(vehicleMaxPrice) : undefined,
+      }),
       listDealers({ pageSize: 100 }),
     ])
       .then(([rentalData, vehicleData, dealerData]) => {
         setRentals(rentalData.items)
         setVehicles(vehicleData.items)
+        setVehicleTotal(vehicleData.total)
         setDealers(dealerData.items)
       })
       .catch((err) => {
@@ -92,7 +109,7 @@ export function CarsPage() {
 
   useEffect(() => {
     refreshRequests()
-  }, [])
+  }, [vehicleQuery, vehicleStatus, vehicleCategory, vehicleDealerId, vehicleMinPrice, vehicleMaxPrice])
 
   const requestRows = useMemo<RequestRow[]>(() => {
     const vehicleMap = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]))
@@ -204,7 +221,6 @@ export function CarsPage() {
                   <option value="IN PROGRESS">In Progress</option>
                   <option value="APPROVED">Approved</option>
                 </select>
-                <span className="carsChevron">▾</span>
               </label>
               <label className="carsSelectBtn">
                 <select
@@ -218,7 +234,6 @@ export function CarsPage() {
                   <option value="HIGH">High</option>
                   <option value="URGENT">Urgent</option>
                 </select>
-                <span className="carsChevron">▾</span>
               </label>
               <label className="carsSelectBtn">
                 <select
@@ -229,7 +244,6 @@ export function CarsPage() {
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
                 </select>
-                <span className="carsChevron">▾</span>
               </label>
             </div>
 
@@ -401,7 +415,78 @@ export function CarsPage() {
         </section>
 
         <section className="carsTableCard carsTableCard--vehicles">
-          <div className="carsTableTitle">Vehicle Inventory ({vehicles.length})</div>
+          <div className="carsTableTitle">Vehicle Inventory ({vehicleTotal})</div>
+          <div className="carsVehicleFilters">
+            <div className="carsSearch">
+              <span className="carsSearchIcon" aria-hidden="true">
+                <Search size={14} />
+              </span>
+              <input
+                className="carsSearchInput"
+                placeholder="Search make, model, plate…"
+                value={vehicleQuery}
+                onChange={(event) => setVehicleQuery(event.target.value)}
+              />
+            </div>
+            <label className="carsSelectBtn">
+              <select
+                aria-label="Filter vehicles by status"
+                value={vehicleStatus}
+                onChange={(event) => setVehicleStatus(event.target.value as VehicleStatus | 'all')}
+              >
+                <option value="all">All statuses</option>
+                <option value="available">Available</option>
+                <option value="rented">Rented</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </label>
+            <label className="carsSelectBtn">
+              <select
+                aria-label="Filter vehicles by category"
+                value={vehicleCategory}
+                onChange={(event) => setVehicleCategory(event.target.value as VehicleCategory | 'all')}
+              >
+                <option value="all">All categories</option>
+                <option value="sedan">Sedan</option>
+                <option value="suv">SUV</option>
+                <option value="truck">Truck</option>
+                <option value="luxury">Luxury</option>
+                <option value="ev">EV</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label className="carsSelectBtn">
+              <select
+                aria-label="Filter vehicles by dealer"
+                value={vehicleDealerId}
+                onChange={(event) => setVehicleDealerId(event.target.value)}
+              >
+                <option value="all">All dealers</option>
+                {dealers.map((dealer) => (
+                  <option key={dealer.id} value={dealer.id}>
+                    {dealer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <input
+              className="carsPriceInput"
+              type="number"
+              min="0"
+              placeholder="Min price"
+              value={vehicleMinPrice}
+              onChange={(event) => setVehicleMinPrice(event.target.value)}
+            />
+            <input
+              className="carsPriceInput"
+              type="number"
+              min="0"
+              placeholder="Max price"
+              value={vehicleMaxPrice}
+              onChange={(event) => setVehicleMaxPrice(event.target.value)}
+            />
+          </div>
           <div className="carsTableWrap">
             <table className="carsTable">
               <thead>
@@ -502,9 +587,13 @@ export function CarsPage() {
               setDeleteVehicleId(null)
               refreshRequests()
             })
-            .catch((err) =>
-              setInfoModal({ title: 'Error', message: err instanceof Error ? err.message : 'Delete failed' })
-            )
+            .catch((err) => {
+              // Surface server errors verbatim (e.g. 409 "has rental history — set inactive instead").
+              const message = err instanceof Error ? err.message : 'Delete failed'
+              toast.error(message)
+              setDeleteVehicleId(null)
+              setInfoModal({ title: 'Could not delete vehicle', message })
+            })
         }}
         confirmLabel="Delete"
       />

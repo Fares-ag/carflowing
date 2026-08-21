@@ -6,7 +6,7 @@ test.describe('E2E-C01 browse and book', () => {
 
   test('browse vehicles and open car detail', async ({ page, loginAs }) => {
 
-    await loginAs(page, 'customer')
+    await loginAs('customer')
 
     await page.goto('/browse')
 

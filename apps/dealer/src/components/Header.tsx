@@ -1,6 +1,6 @@
+import { ArrowLeft, Home } from 'lucide-react'
 import { memo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Home } from 'lucide-react'
 import './Header.css'
 
 function goBackSafely(navigate: ReturnType<typeof useNavigate>) {

@@ -1,0 +1,152 @@
+.payoutsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.payoutsIntro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.payoutsIntro p {
+  margin: 0;
+  max-width: 640px;
+  color: #6a7282;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.payoutsGenerateBtn {
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: #155dfc;
+  color: #fff;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.payoutsGenerateBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.payoutsStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.payoutsStatCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.payoutsStatLabel {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.payoutsStatValue {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.payoutsTableCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.payoutsLoading,
+.payoutsEmpty {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.payoutsTableWrap {
+  overflow-x: auto;
+}
+
+.payoutsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.payoutsTable th,
+.payoutsTable td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.payoutsTable th {
+  background: #f9fafb;
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.payoutsStatus {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.payoutsStatus--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.payoutsStatus--paid {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.payoutsMarkPaidBtn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.payoutsMarkPaidBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .payoutsStats {
+    grid-template-columns: 1fr;
+  }
+
+  .payoutsIntro {
+    flex-direction: column;
+  }
+}

@@ -1,6 +1,6 @@
-import { memo } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import clsx from 'clsx'
+import { memo } from 'react'
 import './Modal.css'
 
 type ModalSize = 'sm' | 'md' | 'lg'

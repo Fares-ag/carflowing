@@ -1,7 +1,7 @@
-import { Link } from 'react-router-dom'
 import { ArrowRight, CarFront, CircleCheck, CreditCard, Search } from 'lucide-react'
-import { Header } from '../components/shared/Header'
+import { Link } from 'react-router-dom'
 import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
 import './HowItWorksPage.css'
 
 const STEPS = [

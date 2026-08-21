@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatCurrency } from '@carflow/shared'
-import type { AdminAnalyticsData } from '../services/adminService'
-import { getAdminAnalytics } from '../services/adminService'
-import { AdminLayout } from '../layout/AdminLayout'
+import {
+  BadgeDollarSign,
+  Car,
+  Clock,
+  Gauge,
+  Percent,
+  TrendingDown,
+  TrendingUp,
+  Users,
+} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -17,13 +24,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import {
-  BadgeDollarSign,
-  Car,
-  Clock,
-  TrendingUp,
-  Users,
-} from 'lucide-react'
+import { AdminLayout } from '../layout/AdminLayout'
+import type { AdminAnalyticsData, AnalyticsRollups } from '../services/adminService'
+import { getAdminAnalytics, getAnalyticsRollups } from '../services/adminService'
 import './AdminAnalyticsPage.css'
 
 function monthKeyToLabel(key: string): string {
@@ -36,6 +39,7 @@ function monthKeyToLabel(key: string): string {
 
 export function AdminAnalyticsPage() {
   const [analytics, setAnalytics] = useState<AdminAnalyticsData | null>(null)
+  const [rollups, setRollups] = useState<AnalyticsRollups | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isError, setIsError] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -44,8 +48,11 @@ export function AdminAnalyticsPage() {
     setIsLoading(true)
     setIsError(false)
     setErrorMessage(null)
-    getAdminAnalytics()
-      .then(setAnalytics)
+    Promise.all([getAdminAnalytics(), getAnalyticsRollups(30)])
+      .then(([analyticsData, rollupData]) => {
+        setAnalytics(analyticsData)
+        setRollups(rollupData)
+      })
       .catch((err) => {
         setIsError(true)
         setErrorMessage(err instanceof Error ? err.message : 'Failed to load analytics')
@@ -150,6 +157,44 @@ export function AdminAnalyticsPage() {
     }
   }, [analytics])
 
+  const lifecycleStats = useMemo(() => {
+    const m = rollups?.metrics
+    if (!m) {
+      return [
+        { label: 'Activation rate', value: '—', sub: 'Signups verified (30d)', icon: <Users size={18} /> },
+        { label: 'Approval SLA', value: '—', sub: 'Avg hours to approve', icon: <Clock size={18} /> },
+        { label: 'Payment success', value: '—', sub: 'Online payments completed', icon: <Percent size={18} /> },
+        { label: 'Churn rate', value: '—', sub: 'Cancellations / activations', icon: <TrendingDown size={18} /> },
+      ]
+    }
+    return [
+      {
+        label: 'Activation rate',
+        value: `${m.activationRate.toFixed(1)}%`,
+        sub: `${m.counts.emailVerified} verified / ${m.counts.signups} signups (30d)`,
+        icon: <Users size={18} />,
+      },
+      {
+        label: 'Approval SLA',
+        value: `${m.approvalSlaHours.toFixed(1)}h`,
+        sub: `${m.counts.bookingsApproved} approvals tracked`,
+        icon: <Clock size={18} />,
+      },
+      {
+        label: 'Payment success',
+        value: `${m.paymentSuccessRate.toFixed(1)}%`,
+        sub: `${m.counts.paymentsCompleted} ok / ${m.counts.paymentsCompleted + m.counts.paymentsFailed} attempts`,
+        icon: <Gauge size={18} />,
+      },
+      {
+        label: 'Churn rate',
+        value: `${m.churnRate.toFixed(1)}%`,
+        sub: `${m.counts.cancelRequested} cancels / ${m.counts.rentalsActivated} activations`,
+        icon: <TrendingDown size={18} />,
+      },
+    ] as const
+  }, [rollups])
+
   return (
     <AdminLayout title="Analytics" subtitle="Platform analytics and insights">
       <div className="adminAnalyticsPage">
@@ -175,6 +220,19 @@ export function AdminAnalyticsPage() {
                 {stat.icon}
               </div>
               <div className="adminAnalyticsStatValue">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="adminAnalyticsStats adminAnalyticsStats--lifecycle">
+          {lifecycleStats.map((stat) => (
+            <div key={stat.label} className="adminAnalyticsStatCard">
+              <div className="adminAnalyticsStatHeader">
+                <span>{stat.label}</span>
+                {stat.icon}
+              </div>
+              <div className="adminAnalyticsStatValue">{stat.value}</div>
+              <div className="adminAnalyticsCardSub">{stat.sub}</div>
             </div>
           ))}
         </div>

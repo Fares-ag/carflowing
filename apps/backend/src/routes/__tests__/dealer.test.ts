@@ -1,9 +1,10 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Express } from 'express'
 import { eq } from 'drizzle-orm'
+import type { Express } from 'express'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
-import { bookingRequests, rentals } from '../../db/schema.js'
+import { auditLogs, bookingRequests, invoices, maintenanceRecords, notifications, rentalExtensions, rentals, vehicles } from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
+import { extendRentalTerm } from '../../services/rentalExtension.js'
 
 /** ID: DEAL-01..DEAL-20 — dealer route integration tests */
 describe('Dealer API', () => {
@@ -99,7 +100,7 @@ describe('Dealer API', () => {
     expect(declined.body.declineReason).toBe('Unavailable')
   })
 
-  it('DEAL-11: offline payment updates rental paymentStatus', async () => {
+  it('DEAL-11: offline payment settles the due invoice and updates rental paymentStatus', async () => {
     const fixtures = await seedFixtures()
     const today = new Date().toISOString().slice(0, 10)
     const [rental] = await db
@@ -112,22 +113,38 @@ describe('Dealer API', () => {
         endDate: today,
         status: 'reserved',
         totalAmount: '450',
+        monthlyAmount: '450',
+        termMonths: 1,
         paymentStatus: 'pending',
       })
       .returning()
+    // Approval normally creates the first invoice; seed it here.
+    await db.insert(invoices).values({
+      ownerId: fixtures.customer.id,
+      ownerType: 'customer',
+      amount: '450',
+      status: 'due',
+      date: today,
+      dueDate: today,
+      periodStart: today,
+      rentalId: rental.id,
+      description: 'First month',
+    })
 
     const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    // Amount/customer are now server-derived from the invoice (BUG-13 fix).
     const pay = await agent.post('/api/dealer/payments/offline').send({
       rentalId: rental.id,
-      customerId: fixtures.customer.id,
-      amount: 450,
       method: 'bank',
     })
     expect(pay.status).toBe(201)
+    expect(Number(pay.body.amount)).toBe(450)
+    expect(pay.body.customerId).toBe(fixtures.customer.id)
 
     const [updated] = await db.select().from(rentals).where(eq(rentals.id, rental.id))
     expect(updated.paymentStatus).toBe('completed')
-    expect(updated.status).toBe('active')
+    // Payment no longer auto-activates; activation happens at handover.
+    expect(updated.status).toBe('reserved')
   })
 
   it('DEAL-12..DEAL-13: leads CRUD and stage transitions', async () => {
@@ -227,5 +244,188 @@ describe('Dealer API', () => {
     const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
     const list = await agent.get('/api/dealer/booking-requests')
     expect(list.body.items.length).toBe(0)
+  })
+
+  it('DEAL-21: dealer can extend own rental; other dealer blocked; concurrent extend is atomic', async () => {
+    const fixtures = await seedFixtures()
+    const [rental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[0].id,
+        startDate: '2026-01-01',
+        endDate: '2026-04-01',
+        status: 'active',
+        totalAmount: '9000',
+        monthlyAmount: '3000',
+        termMonths: 3,
+      })
+      .returning()
+
+    const { agent: dealerAgent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    const extended = await dealerAgent.post(`/api/dealer/rentals/${rental.id}/extend`).send({ months: 2 })
+    expect(extended.status).toBe(200)
+    expect(extended.body.termMonths).toBe(5)
+    expect(extended.body.endDate).toBe('2026-06-01')
+    expect(Number(extended.body.totalAmount)).toBe(15000)
+
+    const audit = await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.entityId, rental.id))
+    const extendAudit = audit.find((row) => row.action === 'rental.extend' && row.actorRole === 'dealer')
+    expect(extendAudit).toBeTruthy()
+    expect(extendAudit?.after).toMatchObject({ months: 2, newTermMonths: 5, addedAmount: 6000 })
+
+    const { agent: dealer2Agent } = await loginAs(app, fixtures.dealer2.email, 'dealer')
+    const blocked = await dealer2Agent.post(`/api/dealer/rentals/${rental.id}/extend`).send({ months: 1 })
+    expect(blocked.status).toBe(404)
+
+    const [freshRental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[1].id,
+        startDate: '2026-02-01',
+        endDate: '2026-05-01',
+        status: 'active',
+        totalAmount: '9000',
+        monthlyAmount: '3000',
+        termMonths: 3,
+      })
+      .returning()
+
+    const [first, second] = await Promise.all([
+      extendRentalTerm({
+        rentalId: freshRental.id,
+        scope: { dealerId: fixtures.dealer.dealerId },
+        actor: { id: fixtures.dealer.id, role: 'dealer' },
+        months: 2,
+      }),
+      extendRentalTerm({
+        rentalId: freshRental.id,
+        scope: { dealerId: fixtures.dealer.dealerId },
+        actor: { id: fixtures.dealer.id, role: 'dealer' },
+        months: 2,
+      }),
+    ])
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+
+    const [updated] = await db.select().from(rentals).where(eq(rentals.id, freshRental.id))
+    expect(Number(updated.totalAmount)).toBe(21000)
+    expect(updated.termMonths).toBe(7)
+
+    const extensions = await db
+      .select()
+      .from(rentalExtensions)
+      .where(eq(rentalExtensions.rentalId, freshRental.id))
+    expect(extensions).toHaveLength(2)
+  })
+
+  it('DEAL-22: dealer can acknowledge delivery scheduled/delivered on own rental', async () => {
+    const fixtures = await seedFixtures()
+    const [rental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[0].id,
+        startDate: '2026-01-01',
+        endDate: '2026-04-01',
+        status: 'reserved',
+        totalAmount: '9000',
+        monthlyAmount: '3000',
+        termMonths: 3,
+        pickupLocation: 'West Bay',
+        pickupDate: '2026-01-05',
+        pickupTime: '09:00–12:00',
+      })
+      .returning()
+
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    const scheduled = await agent
+      .post(`/api/dealer/rentals/${rental.id}/pickup-fulfilment`)
+      .send({ status: 'scheduled' })
+    expect(scheduled.status).toBe(200)
+    expect(scheduled.body.pickupFulfilmentStatus).toBe('scheduled')
+
+    const delivered = await agent
+      .post(`/api/dealer/rentals/${rental.id}/pickup-fulfilment`)
+      .send({ status: 'delivered' })
+    expect(delivered.status).toBe(200)
+    expect(delivered.body.pickupFulfilmentStatus).toBe('delivered')
+
+    const { agent: dealer2Agent } = await loginAs(app, fixtures.dealer2.email, 'dealer')
+    const blocked = await dealer2Agent
+      .post(`/api/dealer/rentals/${rental.id}/pickup-fulfilment`)
+      .send({ status: 'scheduled' })
+    expect(blocked.status).toBe(404)
+  })
+
+  it('DEAL-23: dealer can accept, schedule, and complete customer maintenance requests', async () => {
+    const fixtures = await seedFixtures()
+    const [rental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[0].id,
+        startDate: '2026-01-01',
+        endDate: '2026-04-01',
+        status: 'active',
+        totalAmount: '9000',
+        monthlyAmount: '3000',
+        termMonths: 3,
+      })
+      .returning()
+
+    const { agent: customerAgent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const created = await customerAgent
+      .post(`/api/customer/rentals/${rental.id}/maintenance-requests`)
+      .send({ description: 'Engine warning light' })
+    expect(created.status).toBe(201)
+
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    const list = await agent.get('/api/dealer/maintenance')
+    expect(list.status).toBe(200)
+    expect(list.body.items.some((item: { id: string }) => item.id === created.body.id)).toBe(true)
+
+    const scheduled = await agent
+      .patch(`/api/dealer/maintenance/${created.body.id}/schedule`)
+      .send({ scheduledAt: '2026-02-15' })
+    expect(scheduled.status).toBe(200)
+    expect(scheduled.body.status).toBe('scheduled')
+
+    const completed = await agent.patch(`/api/dealer/maintenance/${created.body.id}/complete`)
+    expect(completed.status).toBe(200)
+
+    const [record] = await db
+      .select()
+      .from(maintenanceRecords)
+      .where(eq(maintenanceRecords.id, created.body.id))
+    expect(record.status).toBe('completed')
+    expect(record.completedAt).toBeTruthy()
+
+    const customerNotifs = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, fixtures.customer.id))
+    expect(customerNotifs.some((n) => n.title === 'Service completed')).toBe(true)
+
+    const customerList = await customerAgent.get(`/api/customer/rentals/${rental.id}/maintenance-requests`)
+    expect(customerList.body.items[0].status).toBe('completed')
+
+    const acceptFlow = await customerAgent
+      .post(`/api/customer/rentals/${rental.id}/maintenance-requests`)
+      .send({ description: 'AC not cooling' })
+    const accepted = await agent.patch(`/api/dealer/maintenance/${acceptFlow.body.id}/accept`)
+    expect(accepted.status).toBe(200)
+    expect(accepted.body.status).toBe('open')
+
+    const [vehicle] = await db.select().from(vehicles).where(eq(vehicles.id, fixtures.vehicles[0].id))
+    expect(vehicle.status).toBe('maintenance')
   })
 })

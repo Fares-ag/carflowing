@@ -1,13 +1,14 @@
-import { useState, useCallback, memo, useEffect, useMemo } from 'react'
-import type { DealerAnalyticsData } from '../services/dealerService'
-import { getDealerAnalytics } from '../services/dealerService'
-import { Sidebar } from '../components/Sidebar'
-import { Header } from '../components/Header'
+import { formatDate } from '@carflow/shared'
 import { CalendarDays, Download, DollarSign, LineChart as LineChartIcon, Users, Car, Star, Lightbulb } from 'lucide-react'
+import { useState, useCallback, memo, useEffect, useMemo } from 'react'
 import { 
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts'
+import { Header } from '../components/Header'
+import { Sidebar } from '../components/Sidebar'
+import type { DealerAnalyticsData, DealerAnalyticsInsights } from '../services/dealerService'
+import { getDealerAnalytics, getDealerAnalyticsInsights } from '../services/dealerService'
 import './Analytics.css'
 
 const PIE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'] as const
@@ -50,6 +51,7 @@ function filterSeriesForRange<T extends { createdAt?: string; month?: string }>(
 export const Analytics = memo(function Analytics() {
   const [activeTab, setActiveTab] = useState<'overview' | 'revenue' | 'customers' | 'vehicles' | 'insights'>('overview')
   const [analytics, setAnalytics] = useState<DealerAnalyticsData | null>(null)
+  const [insightsData, setInsightsData] = useState<DealerAnalyticsInsights | null>(null)
   const [dateRange, setDateRange] = useState<DateRangeKey>('7d')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -60,8 +62,11 @@ export const Analytics = memo(function Analytics() {
     setError(null)
     ;(async () => {
       try {
-        const data = await getDealerAnalytics()
-        if (!cancelled) setAnalytics(data)
+        const [data, insights] = await Promise.all([getDealerAnalytics(), getDealerAnalyticsInsights()])
+        if (!cancelled) {
+          setAnalytics(data)
+          setInsightsData(insights)
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load analytics')
@@ -327,7 +332,7 @@ export const Analytics = memo(function Analytics() {
                             tick={{ fontSize: 12 }}
                             tickFormatter={(v) => {
                               const d = new Date(v)
-                              return Number.isFinite(d.getTime()) ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : String(v)
+                              return Number.isFinite(d.getTime()) ? formatDate(d) : String(v)
                             }}
                           />
                           <YAxis yAxisId="left" stroke="#666" tick={{ fontSize: 12 }} />
@@ -472,39 +477,54 @@ export const Analytics = memo(function Analytics() {
                     <span className="insights-icon"><Lightbulb size={16} /></span>
                     <h3 className="insights-main-title">Insights &amp; recommendations</h3>
                   </div>
-                  <p className="insights-subtitle">Smart analytics to optimize your business</p>
-                  <p className="insights-coming-soon">AI-powered insights coming soon. Below are example tips only.</p>
+                  <p className="insights-subtitle">Rule-based fleet and operations guidance</p>
                 </div>
-                <div className="insights-grid">
-                  {[
-                    {
-                      title: 'Fleet utilization',
-                      badge: 'info',
-                      description: 'Vehicles with steady weekend demand often benefit from flexible pickup windows.',
-                      action: 'Review peak booking times and adjust availability where it makes sense for your operation.',
-                      impact: 'Example insight — not personalized yet.',
-                    },
-                    {
-                      title: 'Revenue mix',
-                      badge: 'info',
-                      description: 'Longer rentals can improve predictability; short trips can lift turnover.',
-                      action: 'Balance daily rates and minimum rental length based on what your data shows.',
-                      impact: 'Example insight — not personalized yet.',
-                    },
-                  ].map((insight, i) => (
-                    <div key={i} className="insight-card">
-                      <div className="insight-header">
-                        <h4 className="insight-title">{insight.title}</h4>
-                        <span className={`insight-badge ${insight.badge}`}>{insight.badge}</span>
+
+                {insightsData ? (
+                  <div className="stats-grid" style={{ marginBottom: '20px' }}>
+                    <div className="stat-card">
+                      <div className="stat-info">
+                        <div className="stat-label">Fleet total</div>
+                        <div className="stat-value">{insightsData.fleet.total}</div>
                       </div>
-                      <p className="insight-description">{insight.description}</p>
-                      <div className="insight-actions">
-                        <div className="insight-action-label">Recommended Action:</div>
-                        <div className="insight-action">{insight.action}</div>
-                        <div className="insight-impact">{insight.impact}</div>
-                      </div>
+                      <div className="stat-icon"><Car size={18} /></div>
                     </div>
-                  ))}
+                    <div className="stat-card">
+                      <div className="stat-info">
+                        <div className="stat-label">Utilization</div>
+                        <div className="stat-value">{insightsData.fleet.utilizationPct}%</div>
+                      </div>
+                      <div className="stat-icon"><LineChartIcon size={18} /></div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-info">
+                        <div className="stat-label">Rented</div>
+                        <div className="stat-value">{insightsData.fleet.rented}</div>
+                      </div>
+                      <div className="stat-icon"><CalendarDays size={18} /></div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-info">
+                        <div className="stat-label">In maintenance</div>
+                        <div className="stat-value">{insightsData.fleet.maintenance}</div>
+                      </div>
+                      <div className="stat-icon"><Car size={18} /></div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="insights-grid">
+                  {(insightsData?.insights?.length ? insightsData.insights : ['No insights available yet.']).map(
+                    (insight, i) => (
+                      <div key={i} className="insight-card">
+                        <div className="insight-header">
+                          <h4 className="insight-title">Recommendation {i + 1}</h4>
+                          <span className="insight-badge info">insight</span>
+                        </div>
+                        <p className="insight-description">{insight}</p>
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             )}

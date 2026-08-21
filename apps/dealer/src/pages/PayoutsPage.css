@@ -1,0 +1,154 @@
+.dealer-payouts-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  display: flex;
+}
+
+.dealer-payouts-content {
+  margin-left: var(--app-shell-sidebar-width);
+  margin-top: var(--app-shell-header-height);
+  flex: 1;
+  padding: var(--app-shell-content-padding);
+  box-sizing: border-box;
+  width: calc(100% - var(--app-shell-sidebar-width));
+}
+
+.dealer-payouts-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dealer-payouts-stat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.dealer-payouts-stat-label {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.dealer-payouts-stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.dealer-earnings-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.dealer-earnings-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dealer-earnings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.dealer-earnings-item {
+  border: 1px solid #f3f4f6;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.dealer-earnings-status {
+  font-weight: 600;
+  text-transform: capitalize;
+  margin-bottom: 6px;
+  color: #111827;
+}
+
+.dealer-payouts-table-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.dealer-payouts-table-wrap {
+  overflow-x: auto;
+}
+
+.dealer-payouts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.dealer-payouts-table th,
+.dealer-payouts-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.dealer-payouts-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.dealer-payouts-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.dealer-payouts-status--paid {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.dealer-payouts-status--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.dealer-payouts-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+.dealer-payouts-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.dealer-payouts-pagination button {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.dealer-payouts-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

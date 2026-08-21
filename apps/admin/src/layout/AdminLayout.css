@@ -163,30 +163,75 @@
   box-shadow: 0 0 0 2px white;
 }
 
+.adminTopbarNav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+  padding-right: 12px;
+  border-right: 1px solid #e5e7eb;
+}
+
+.adminTopbarLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.adminTopbarLink:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.adminTopbarLink--active {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.adminTopbarLink--active:hover {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
 .adminPillBtn {
-  height: 32px;
-  border-radius: 6.8px;
-  border: 1px solid rgba(229, 229, 229, 1);
-  background: rgba(229, 229, 229, 0.3);
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
   padding: 0 12px;
   font-size: 14px;
   font-weight: 500;
-  color: #0a0a0a;
+  color: #4b5563;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .adminPillBtn:hover {
-  background: rgba(229, 229, 229, 0.45);
+  background: #f3f4f6;
+  color: #111827;
 }
 
 .adminPillBtn--primary {
-  background: #685ff7;
-  border-color: #685ff7;
-  color: white;
+  background: #4f46e5;
+  color: #fff;
 }
 
 .adminPillBtn--primary:hover {
-  background: #5c55e6;
+  background: #4338ca;
+  color: #fff;
 }
 
 .adminMain {

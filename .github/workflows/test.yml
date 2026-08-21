@@ -70,7 +70,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
-        continue-on-error: true
 
   unit-api:
     runs-on: ubuntu-latest

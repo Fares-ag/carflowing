@@ -11,6 +11,11 @@
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
+.adminSettingsCard--danger {
+  border: 1px solid #fecaca;
+  background: #fff7f7;
+}
+
 .adminSettingsRow {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -48,6 +53,65 @@
   cursor: pointer;
 }
 
+.adminSettingsButton--danger {
+  background: #b91c1c;
+}
+
+.adminSettingsButtonSecondary {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #374151;
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.adminSettingsModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 16px;
+}
+
+.adminSettingsModal {
+  width: min(100%, 480px);
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+}
+
+.adminSettingsModal--danger {
+  border: 1px solid #fecaca;
+}
+
+.adminSettingsModal h3 {
+  margin: 0 0 8px;
+}
+
+.adminSettingsModal p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.adminSettingsConfirmList {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.adminSettingsModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .adminSettingsMessage {
   font-size: 13px;
   color: #2563eb;
@@ -61,4 +125,34 @@
 .adminSettingsLoading {
   font-size: 13px;
   color: #6b7280;
+}
+
+.adminSettingsSectionTitle {
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: #111827;
+}
+
+.adminSettingsHint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.adminSettingsHint--danger {
+  color: #991b1b;
+}
+
+.adminSettingsToggles {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.adminSettingsToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #374151;
 }

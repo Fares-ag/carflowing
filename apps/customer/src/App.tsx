@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
-import { ErrorBoundary } from './components/ErrorBoundary'
-import { ProtectedRoute } from './components/ProtectedRoute'
+import { ErrorBoundary, ProtectedRoute } from '@carflow/shared'
+import { useAuth } from './contexts/AuthContext'
 import { ScrollToTop } from './components/ScrollToTop'
 import './App.css'
 
@@ -31,6 +31,12 @@ const PaymentStatusPage = lazy(() =>
 )
 const CheckoutPage = lazy(() =>
   import('./pages/CheckoutPage').then((m) => ({ default: m.CheckoutPage }))
+)
+const NotificationsPage = lazy(() =>
+  import('./pages/NotificationsPage').then((m) => ({ default: m.NotificationsPage }))
+)
+const MessagesPage = lazy(() =>
+  import('./pages/MessagesPage').then((m) => ({ default: m.MessagesPage }))
 )
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })))
 
@@ -63,13 +69,15 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/verify-email" element={<VerifyEmailPage />} />
-            <Route element={<ProtectedRoute allow={['customer']} />}>
+            <Route element={<ProtectedRoute useAuth={useAuth} allow={['customer']} />}>
               <Route path="/checkout" element={<CheckoutPage />} />
               <Route path="/my-booking" element={<MyBookingPage />} />
               <Route path="/payment-status" element={<PaymentStatusPage />} />
               <Route path="/favorites" element={<Navigate to="/settings?section=saved" replace />} />
               <Route path="/billing" element={<Navigate to="/settings?section=billing" replace />} />
               <Route path="/settings" element={<AccountSettings />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/messages" element={<MessagesPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

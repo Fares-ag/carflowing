@@ -1,8 +1,9 @@
-import { FormEvent, useState } from 'react'
+import type { FormEvent} from 'react';
+import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { login } from '../services/authService'
 import { useAuth } from '../contexts/AuthContext'
-import { getRedirectTarget, withRedirectParam } from '../utils/authRedirect'
+import { login } from '../services/authService'
+import { getRedirectTarget, withRedirectParam } from '@carflow/shared'
 import './LoginPage.css'
 
 export function LoginPage() {

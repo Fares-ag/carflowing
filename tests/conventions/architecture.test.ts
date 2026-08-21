@@ -52,18 +52,24 @@ describe('BP-SEC security conventions', () => {
 
 describe('BP-API api design conventions', () => {
   it('BP-API-03: protected routers use requireAuth middleware', () => {
-    for (const file of ['customer.ts', 'dealer.ts', 'admin.ts']) {
+    for (const file of ['customer.ts', 'dealer.ts']) {
       const src = read(`apps/backend/src/routes/${file}`)
       expect(src).toMatch(/requireAuth/)
       expect(src).toMatch(/requireRole/)
     }
+    const adminSrc = read('apps/backend/src/routes/admin.ts')
+    expect(adminSrc).toMatch(/requireAuth/)
+    expect(adminSrc).toMatch(/requireAdminPortal/)
   })
 })
 
 describe('BP-REACT react conventions', () => {
-  it('BP-REACT-04: apps define ProtectedRoute component', () => {
+  it('BP-REACT-04: apps use shared ProtectedRoute (no per-app copy)', () => {
     for (const app of ['customer', 'dealer', 'admin']) {
-      expect(exists(`apps/${app}/src/components/ProtectedRoute.tsx`)).toBe(true)
+      expect(exists(`apps/${app}/src/components/ProtectedRoute.tsx`)).toBe(false)
+      const appSrc = read(`apps/${app}/src/App.tsx`)
+      expect(appSrc).toMatch(/ProtectedRoute/)
+      expect(appSrc).toMatch(/@carflow\/shared/)
     }
   })
 

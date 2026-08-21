@@ -45,6 +45,7 @@
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 
 .adminInfoModalBtn {
@@ -59,4 +60,19 @@
 
 .adminInfoModalBtn:hover {
   background: #f1f5f9;
+}
+
+.adminInfoModalBtn--danger {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.adminInfoModalBtn--danger:hover {
+  background: #b91c1c;
+}
+
+.adminInfoModalBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

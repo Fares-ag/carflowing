@@ -1,13 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import { computeRentalTotal, vehicleCategoryLabel } from '@carflow/shared'
-import { addFavorite, listCatalogVehicles } from '../services/customerService'
-import { useAuth } from '../contexts/AuthContext'
-import { toast } from '../hooks/useToast'
-import { Header } from '../components/shared/Header'
-import { Footer } from '../components/shared/Footer'
-import { CarCard } from '../components/shared/CarCard'
+import { useQuery } from '@tanstack/react-query'
 import {
   ArrowRight,
   CalendarDays,
@@ -22,6 +14,15 @@ import {
   Shield,
   Wrench,
 } from 'lucide-react'
+import type { FormEvent} from 'react';
+import { useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { CarCard } from '../components/shared/CarCard'
+import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
+import { useAuth } from '../contexts/AuthContext'
+import { toast } from '../hooks/useToast'
+import { addFavorite, listCatalogVehicles } from '../services/customerService'
 import './HomePage.css'
 
 const CATEGORIES = ['All', 'Sedan', 'SUV', 'Electric'] as const

@@ -1,0 +1,11 @@
+{
+  "_notice": "DEPRECATED for production API: Railway (railway.toml) is the supported target. This config remains for legacy/serverless experiments only — requires EXTERNAL_SCHEDULER=true + cron on POST /api/admin/jobs/run-once.",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build --workspace=@carflow/shared && npm run build --workspace=@carflow/backend",
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+}

@@ -1,14 +1,10 @@
-import { useState, useCallback, memo, useEffect } from 'react'
-
 import type { Notification as ApiNotification } from '@carflow/shared'
-
-import { listNotifications, markAllNotificationsRead, markNotificationRead } from '../services/dealerService'
-
-import { Sidebar } from '../components/Sidebar'
-
-import { Header } from '../components/Header'
-
+import { formatDate } from '@carflow/shared'
 import { AlertTriangle, CalendarCheck, CreditCard, Info } from 'lucide-react'
+import { useState, useCallback, memo, useEffect } from 'react'
+import { Header } from '../components/Header'
+import { Sidebar } from '../components/Sidebar'
+import { listNotifications, markAllNotificationsRead, markNotificationRead } from '../services/dealerService'
 
 import './Notifications.css'
 
@@ -36,7 +32,7 @@ function formatTimeAgo(dateStr: string): string {
 
   if (diffDays < 7) return `${diffDays}d ago`
 
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return formatDate(date)
 
 }
 

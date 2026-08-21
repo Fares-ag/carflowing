@@ -1,3 +1,19 @@
+import {
+  MOCK_BOOKING_REQUESTS,
+  MOCK_COMPLAINTS,
+  MOCK_DEALERS,
+  MOCK_FAVORITES,
+  MOCK_INVOICES,
+  MOCK_LEADS,
+  MOCK_MESSAGES,
+  MOCK_NOTIFICATIONS,
+  MOCK_PAYMENTS,
+  MOCK_PLANS,
+  MOCK_RENTALS,
+  MOCK_SUBSCRIPTIONS,
+  MOCK_USERS,
+  MOCK_VEHICLES,
+} from './mocks'
 import type {
   BookingRequest,
   Complaint,
@@ -16,22 +32,6 @@ import type {
   User,
   Vehicle,
 } from './types'
-import {
-  MOCK_BOOKING_REQUESTS,
-  MOCK_COMPLAINTS,
-  MOCK_DEALERS,
-  MOCK_FAVORITES,
-  MOCK_INVOICES,
-  MOCK_LEADS,
-  MOCK_MESSAGES,
-  MOCK_NOTIFICATIONS,
-  MOCK_PAYMENTS,
-  MOCK_PLANS,
-  MOCK_RENTALS,
-  MOCK_SUBSCRIPTIONS,
-  MOCK_USERS,
-  MOCK_VEHICLES,
-} from './mocks'
 
 const STORAGE_KEY = 'carflow:mockdb'
 const DEFAULT_LATENCY_MS = 250
@@ -69,6 +69,15 @@ export interface MockDb {
   bookingRequests: BookingRequest[]
   favorites: Favorite[]
   complaints: Complaint[]
+  complaintReplies: Array<{
+    id: string
+    complaintId: string
+    authorId: string
+    body: string
+    createdAt: string
+    authorName?: string
+    authorRole?: string
+  }>
   messages: Message[]
   notifications: Notification[]
   leads: Lead[]
@@ -96,6 +105,7 @@ function getDefaultDb(): MockDb {
     bookingRequests: clone(MOCK_BOOKING_REQUESTS),
     favorites: clone(MOCK_FAVORITES),
     complaints: clone(MOCK_COMPLAINTS),
+    complaintReplies: [],
     messages: clone(MOCK_MESSAGES),
     notifications: clone(MOCK_NOTIFICATIONS),
     leads: clone(MOCK_LEADS),

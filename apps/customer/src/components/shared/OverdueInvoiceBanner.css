@@ -1,0 +1,43 @@
+.overdue-invoice-banner {
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+}
+
+.overdue-invoice-banner__inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 10px 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #991b1b;
+}
+
+.overdue-invoice-banner__text {
+  margin: 0;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.overdue-invoice-banner__action {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.overdue-invoice-banner__action:hover {
+  background: #b91c1c;
+}
+
+@media (max-width: 768px) {
+  .overdue-invoice-banner__inner {
+    padding: 10px 16px;
+    flex-wrap: wrap;
+  }
+}

@@ -124,10 +124,59 @@
   width: 100%;
 }
 
+.security-footnote--muted {
+  color: #94a3b8;
+}
+
+.security-footnote--dev {
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
 .security-local-prefs-note {
   font-size: 13px;
   color: #666;
   margin: 0 0 16px 0;
+}
+
+.security-2fa-setup,
+.security-sms-form {
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.security-2fa-setup p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #666;
+}
+
+.security-2fa-secret {
+  display: block;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.security-2fa-uri {
+  display: inline-block;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #007bff;
+}
+
+.security-2fa-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .divider {

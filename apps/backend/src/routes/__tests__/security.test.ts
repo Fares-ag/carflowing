@@ -1,7 +1,9 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Express } from 'express'
-import request from 'supertest'
 import { SignJWT } from 'jose'
+import request from 'supertest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { db } from '../../db/index.js'
+import { userSecurity } from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 /**
@@ -21,6 +23,14 @@ describe('Cross-cutting security', () => {
 
   it('SEC-06: GET /health is publicly reachable', async () => {
     const res = await request(app).get('/health')
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('ok')
+    expect(res.body).toHaveProperty('lastJobsSweepAt')
+    expect(typeof res.body.stuckPendingCount).toBe('number')
+  })
+
+  it('SEC-06b: GET /health/live does not depend on the database', async () => {
+    const res = await request(app).get('/health/live')
     expect(res.status).toBe(200)
     expect(res.body.status).toBe('ok')
   })
@@ -43,7 +53,7 @@ describe('Cross-cutting security', () => {
   })
 
   it('SEC-02: a token signed with the wrong secret is rejected even with correct shape', async () => {
-    const forged = await new SignJWT({ role: 'admin', email: 'hacker@test.dev' })
+    const forged = await new SignJWT({ purpose: 'access', role: 'admin', email: 'hacker@test.dev' })
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject('00000000-0000-0000-0000-000000000000')
       .setIssuedAt()
@@ -51,6 +61,27 @@ describe('Cross-cutting security', () => {
       .sign(new TextEncoder().encode('wrong-secret'))
     const res = await request(app).get('/api/auth/me').set('Cookie', `cf_access=${forged}`)
     expect(res.status).toBe(401)
+  })
+
+  it('SEC-02b: a 2FA challenge token cannot be used as an access cookie', async () => {
+    const fixtures = await seedFixtures()
+    const secret = 'TEST2FASECRETABCDEFGHIJKLMNOPQRSTUV'
+    await db.insert(userSecurity).values({
+      userId: fixtures.customer.id,
+      totpSecret: secret,
+      totpEnabled: true,
+    })
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email: fixtures.customer.email, password: 'password123', expectedRole: 'customer' })
+    expect(login.status).toBe(200)
+    expect(login.body.requires2fa).toBe(true)
+    expect(login.body.challengeToken).toBeTruthy()
+
+    const me = await request(app)
+      .get('/api/auth/me')
+      .set('Cookie', `cf_access=${login.body.challengeToken}`)
+    expect(me.status).toBe(401)
   })
 
   it('SEC-02: an expired access token is rejected with 401 while refresh still works', async () => {

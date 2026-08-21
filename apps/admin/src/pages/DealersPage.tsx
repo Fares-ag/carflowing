@@ -1,11 +1,6 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dealer } from '@carflow/shared'
-import { toast } from 'sonner'
-import { createDealer, deleteDealer, listDealers, updateDealerStatus } from '../services/adminService'
-import { AdminLayout } from '../layout/AdminLayout'
-import { InfoModal } from '../components/InfoModal'
+import { formatCurrency, formatDate } from '@carflow/shared'
 import {
-  ChevronDown,
   Download,
   Eye,
   Mail,
@@ -22,6 +17,13 @@ import {
   Clock,
   X,
 } from 'lucide-react'
+import type { FormEvent} from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
+import { InfoModal } from '../components/InfoModal'
+import { useAuth } from '../contexts/AuthContext'
+import { AdminLayout } from '../layout/AdminLayout'
+import { createDealer, deleteDealer, listDealers, updateDealerBankDetails, updateDealerStatus } from '../services/adminService'
 import './DealersPage.css'
 
 const downloadCsv = (filename: string, rows: Array<Record<string, string>>) => {
@@ -46,6 +48,7 @@ const STATUS_CLASS: Record<string, string> = {
 }
 
 export function DealersPage() {
+  const { session } = useAuth()
   const [dealers, setDealers] = useState<Dealer[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -67,6 +70,8 @@ export function DealersPage() {
   const [addAddress, setAddAddress] = useState('')
   const [addError, setAddError] = useState('')
   const [addSubmitting, setAddSubmitting] = useState(false)
+  const [detailDealerId, setDetailDealerId] = useState<string | null>(null)
+  const [bankSaving, setBankSaving] = useState(false)
 
   const refreshDealers = useCallback(() => {
     setIsLoading(true)
@@ -124,6 +129,25 @@ export function DealersPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
+  const detailDealer = useMemo(
+    () => (detailDealerId ? dealers.find((d) => d.id === detailDealerId) ?? null : null),
+    [dealers, detailDealerId]
+  )
+
+  const handleVerifyBank = async (verified: boolean) => {
+    if (!detailDealer || session?.role !== 'admin') return
+    setBankSaving(true)
+    try {
+      const updated = await updateDealerBankDetails(detailDealer.id, { verified })
+      setDealers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)))
+      toast.success(verified ? 'Bank details verified' : 'Bank verification removed')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to update bank details')
+    } finally {
+      setBankSaving(false)
+    }
+  }
+
   const dealerRows = useMemo(() => {
     return dealers.map((dealer) => {
       const pending = dealer.status === 'pending'
@@ -138,7 +162,7 @@ export function DealersPage() {
         location: dealer.address?.trim() || '—',
         fleetSize: `${dealer.vehiclesCount} cars`,
         activeRentals: String(dealer.activeRentals),
-        revenue: `QAR ${dealer.totalRevenue.toLocaleString('en-US')}`,
+        revenue: formatCurrency(dealer.totalRevenue),
         ratingValue: dealer.rating,
         status: dealer.status === 'suspended' ? 'Suspended' : pending ? 'Pending Approval' : 'Active',
         rawStatus: dealer.status,
@@ -286,7 +310,6 @@ export function DealersPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown size={14} />
             </label>
             <button
               className="dealersExportBtn"
@@ -392,12 +415,7 @@ export function DealersPage() {
                               type="button"
                               className="dealersActionBtn"
                               title="View details"
-                              onClick={() =>
-                                setInfoModal({
-                                  title: row.name,
-                                  message: `Location: ${row.location}\nStatus: ${row.status}`,
-                                })
-                              }
+                              onClick={() => setDetailDealerId(row.sourceId)}
                             >
                               <Eye size={16} />
                             </button>
@@ -475,6 +493,87 @@ export function DealersPage() {
         onConfirm={confirmDealerAction}
         confirmLabel={confirmAction?.type === 'delete' ? 'Delete' : 'Confirm'}
       />
+
+      {detailDealer ? (
+        <div className="dealersAddOverlay" role="dialog" aria-modal="true" aria-labelledby="dealerDetailTitle">
+          <div className="dealersAddModal dealersDetailModal">
+            <button
+              type="button"
+              className="dealersAddClose"
+              onClick={() => setDetailDealerId(null)}
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+            <h3 id="dealerDetailTitle" className="dealersAddTitle">
+              {detailDealer.name}
+            </h3>
+            <p className="dealersAddHint">
+              {detailDealer.contactEmail}
+              {detailDealer.contactPhone ? ` · ${detailDealer.contactPhone}` : ''}
+            </p>
+            <dl className="dealersDetailList">
+              <div>
+                <dt>Status</dt>
+                <dd>{detailDealer.status}</dd>
+              </div>
+              <div>
+                <dt>Address</dt>
+                <dd>{detailDealer.address?.trim() || '—'}</dd>
+              </div>
+              <div>
+                <dt>Fleet</dt>
+                <dd>{detailDealer.vehiclesCount} vehicles · {detailDealer.activeRentals} active rentals</dd>
+              </div>
+            </dl>
+            <div className="dealersBankBlock">
+              <h4 className="dealersBankTitle">
+                <Wallet size={16} />
+                Payout bank details
+              </h4>
+              {!detailDealer.bankIban ? (
+                <p className="dealersBankEmpty">No bank details on file.</p>
+              ) : (
+                <>
+                  <p>
+                    <strong>{detailDealer.bankAccountName || '—'}</strong>
+                    <br />
+                    {detailDealer.bankName || 'Bank'} · {detailDealer.bankIban}
+                  </p>
+                  <p className="dealersBankStatus">
+                    {detailDealer.bankDetailsVerifiedAt
+                      ? `Verified ${formatDate(detailDealer.bankDetailsVerifiedAt)}`
+                      : 'Not verified — payouts will be skipped until verified.'}
+                  </p>
+                </>
+              )}
+              {session?.role === 'admin' && detailDealer.bankIban ? (
+                <div className="dealersBankActions">
+                  {!detailDealer.bankDetailsVerifiedAt ? (
+                    <button
+                      type="button"
+                      className="dealersAddBtn"
+                      disabled={bankSaving}
+                      onClick={() => handleVerifyBank(true)}
+                    >
+                      Verify bank details
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="dealersExportBtn"
+                      disabled={bankSaving}
+                      onClick={() => handleVerifyBank(false)}
+                    >
+                      Revoke verification
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {addOpen ? (
         <div className="dealersAddOverlay" role="dialog" aria-modal="true" aria-labelledby="dealersAddTitle">

@@ -1,12 +1,14 @@
+import { formatCurrency, formatDateTime, rentalStatusLabel } from '@carflow/shared'
+import { CalendarDays, Car, DollarSign, Users } from 'lucide-react'
 import { useMemo, memo, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { toast } from 'sonner'
+import { Header } from '../components/Header'
+import { Sidebar } from '../components/Sidebar'
+import { getCurrentUser } from '../services/authService'
 import type { DealerDashboardData, DealerDashboardRecentRental } from '../services/dealerService'
 import { getDealerDashboard, recordOfflinePayment } from '../services/dealerService'
-import { getCurrentUser } from '../services/authService'
-import { Sidebar } from '../components/Sidebar'
-import { Header } from '../components/Header'
-import { toast } from 'sonner'
-import { CalendarDays, Car, DollarSign, Users } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import './Dashboard.css'
 
 
@@ -26,7 +28,6 @@ export const Dashboard = memo(function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [payModal, setPayModal] = useState<DealerDashboardRecentRental | null>(null)
-  const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState<'card' | 'bank' | 'wallet'>('bank')
   const [paySubmitting, setPaySubmitting] = useState(false)
 
@@ -47,7 +48,7 @@ export const Dashboard = memo(function Dashboard() {
 
   // Memoize tooltip formatter to prevent recreation
   const formatTooltip = useMemo(() => {
-    return (value: number) => [`QAR ${value.toLocaleString()}`, 'Revenue'] as const
+    return (value: number) => [formatCurrency(value), 'Revenue'] as const
   }, [])
 
   const kpis = useMemo(() => {
@@ -71,32 +72,20 @@ export const Dashboard = memo(function Dashboard() {
     const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000))
     if (diffDays === 0) return `Today, ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
     if (diffDays === 1) return `Yesterday, ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return formatDateTime(d)
   }
 
-  const statusLabel = (status: string) => {
-    if (status === 'active') return 'Active'
-    if (status === 'reserved') return 'Confirmed'
-    if (status === 'completed') return 'Completed'
-    if (status === 'cancelled') return 'Cancelled'
-    return status
-  }
+  const statusLabel = (status: string) => rentalStatusLabel(status as Parameters<typeof rentalStatusLabel>[0])
 
   const openPayModal = (booking: DealerDashboardRecentRental) => {
     setPayModal(booking)
-    setPayAmount(booking.totalAmount > 0 ? String(booking.totalAmount) : '')
     setPayMethod('bank')
   }
 
   const submitOfflinePayment = () => {
     if (!payModal) return
-    const n = parseFloat(payAmount.replace(/,/g, ''))
-    if (!Number.isFinite(n) || n <= 0) {
-      toast.error('Enter a valid amount in QAR.')
-      return
-    }
     setPaySubmitting(true)
-    recordOfflinePayment({ rentalId: payModal.id, amount: n, method: payMethod })
+    recordOfflinePayment({ rentalId: payModal.id, method: payMethod })
       .then(() => {
         toast.success('Payment recorded')
         setPayModal(null)
@@ -138,7 +127,7 @@ export const Dashboard = memo(function Dashboard() {
           <div className="stat-card">
             <div className="stat-info">
               <div className="stat-label">Total Revenue</div>
-              <div className="stat-value">QAR {Number(kpis.revenue).toLocaleString('en-US')}</div>
+              <div className="stat-value">{formatCurrency(Number(kpis.revenue))}</div>
             </div>
             <div className="stat-icon"><DollarSign size={18} /></div>
           </div>
@@ -205,7 +194,12 @@ export const Dashboard = memo(function Dashboard() {
 
         <div className="bottom-section">
           <div className="recent-bookings-card">
-            <h3 className="card-title">Recent Bookings</h3>
+            <div className="recent-bookings-head">
+              <h3 className="card-title">Recent Bookings</h3>
+              <Link to="/rentals" className="rentals-quick-link">
+                View rentals →
+              </Link>
+            </div>
             <p className="card-hint">Record cash, transfer, or POS payments taken outside CarFlow.</p>
             <div className="bookings-list">
               {recentRentals.length === 0 ? (
@@ -274,19 +268,9 @@ export const Dashboard = memo(function Dashboard() {
           <div className="dash-pay-modal" onClick={(e) => e.stopPropagation()}>
             <h3 id="dash-pay-title">Record offline payment</h3>
             <p className="dash-pay-desc">
-              Use this when the customer paid in cash, by bank transfer, or on your POS — not through CarFlow.
+              Use this when the customer paid in cash, by bank transfer, or on your POS — not through
+              CarFlow. The amount is taken from the oldest unpaid invoice automatically.
             </p>
-            <label className="dash-pay-label">
-              Amount (QAR)
-              <input
-                type="number"
-                min={0.01}
-                step={0.01}
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                disabled={paySubmitting}
-              />
-            </label>
             <label className="dash-pay-label">
               Method
               <select value={payMethod} onChange={(e) => setPayMethod(e.target.value as 'card' | 'bank' | 'wallet')} disabled={paySubmitting}>

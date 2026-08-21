@@ -1,8 +1,8 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import { PaymentsPage } from '../PaymentsPage'
-import { renderWithProviders } from '../../test/render'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import * as adminService from '../../services/adminService'
+import { renderWithProviders } from '../../test/render'
+import { PaymentsPage } from '../PaymentsPage'
 
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -28,11 +28,14 @@ describe('PaymentsPage contract', () => {
   beforeEach(() => {
     vi.mocked(adminService.getPaymentSummary).mockResolvedValue({
       totalRevenue: 1000,
+      grossRevenue: 1000,
       pendingCount: 0,
       completedCount: 1,
       refundedCount: 0,
       refundTotal: 0,
       needsRefundCount: 0,
+      stuckPendingCount: 0,
+      overdueInvoicesCount: 0,
     })
     vi.mocked(adminService.listPaymentsWithDetails).mockResolvedValue({
       items: [

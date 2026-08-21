@@ -1,8 +1,8 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { VehicleCategory } from '@carflow/shared'
-import { Modal } from './Modal'
+import { BROWSE_LOCATION_OPTIONS, formatCurrency, uploadVehicleImage, VEHICLE_FEATURE_OPTIONS } from '@carflow/shared'
 import { Car, CheckCircle2, DollarSign, FileText, ImagePlus, Wrench } from 'lucide-react'
-import { uploadVehicleImage } from '@carflow/shared'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Modal } from './Modal'
 import './AddVehicleModal.css'
 
 function splitNameToMakeModel(fullName: string): { make: string; model: string } {
@@ -32,6 +32,13 @@ export type AddVehicleValues = {
   dailyRateQar: number
   status: 'Available' | 'Rented' | 'Maintenance'
   imageUrl?: string
+  imageUrls?: string[]
+  description?: string
+  color?: string
+  locationCity?: string
+  locationArea?: string
+  mileageCapKm?: number
+  features?: string[]
   mileage?: number
   fuelType?: 'gas' | 'diesel' | 'electric' | 'hybrid'
   transmission?: 'automatic' | 'manual'
@@ -60,6 +67,12 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
   const [fuelType, setFuelType] = useState<'gas' | 'diesel' | 'electric' | 'hybrid'>('gas')
   const [transmission, setTransmission] = useState<'automatic' | 'manual'>('automatic')
   const [seats, setSeats] = useState('5')
+  const [description, setDescription] = useState('')
+  const [color, setColor] = useState('')
+  const [locationCity, setLocationCity] = useState<string>(BROWSE_LOCATION_OPTIONS[0])
+  const [locationArea, setLocationArea] = useState('')
+  const [mileageCapKm, setMileageCapKm] = useState('')
+  const [features, setFeatures] = useState<string[]>([])
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState('')
@@ -81,6 +94,12 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
       setFuelType('gas')
       setTransmission('automatic')
       setSeats('5')
+      setDescription('')
+      setColor('')
+      setLocationCity(BROWSE_LOCATION_OPTIONS[0])
+      setLocationArea('')
+      setMileageCapKm('')
+      setFeatures([])
     }
   }, [isOpen])
 
@@ -146,6 +165,8 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
     setFormError('')
     setSubmitting(true)
     const { make, model } = splitNameToMakeModel(trimmed)
+    const uploadedPhotos = imageUrls.filter(Boolean)
+    const cap = Number(mileageCapKm.replace(/\D/g, ''))
     try {
       await onCreate?.({
         name: trimmed,
@@ -155,7 +176,14 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
         year: yearNum,
         dailyRateQar: rateNum,
         status,
-        imageUrl: imageUrls[0],
+        imageUrl: uploadedPhotos[0],
+        imageUrls: uploadedPhotos,
+        description: description.trim() || undefined,
+        color: color.trim() || undefined,
+        locationCity,
+        locationArea: locationArea.trim() || undefined,
+        mileageCapKm: Number.isFinite(cap) && cap > 0 ? cap : undefined,
+        features: features.length ? features : undefined,
         mileage: Number(mileage.replace(/\D/g, '')) || 0,
         fuelType,
         transmission,
@@ -214,7 +242,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                   >
                     <div className="avPhotoSlotInner">
                       {url ? (
-                        <img src={url} alt={`Photo ${i + 1}`} className="avPhotoPreview" />
+                        <img src={url} alt={`Vehicle upload ${i + 1}`} className="avPhotoPreview" />
                       ) : (
                         <>
                           <div className="avPhotoPlus" aria-hidden="true">
@@ -386,6 +414,98 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
             </div>
           </section>
 
+          <section className="avSection">
+            <div className="avSectionHeading">
+              <span className="avSectionIcon" aria-hidden="true">
+                <FileText size={16} />
+              </span>
+              <div className="avSectionTitle">Description &amp; features</div>
+            </div>
+            <div className="avFields">
+              <label className="avField">
+                <span className="avLabelCaps">Description</span>
+                <textarea
+                  className="avTextarea"
+                  rows={3}
+                  placeholder="Describe the vehicle, its condition, and highlights…"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+              <label className="avField">
+                <span className="avLabelCaps">Color</span>
+                <input
+                  className="avInput avInputTall"
+                  placeholder="e.g. Pearl White"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  disabled={submitting}
+                />
+              </label>
+              <div className="avRow2">
+                <label className="avField">
+                  <span className="avLabelCaps">City</span>
+                  <select
+                    className="avSelect"
+                    value={locationCity}
+                    onChange={(e) => setLocationCity(e.target.value)}
+                    disabled={submitting}
+                  >
+                    {BROWSE_LOCATION_OPTIONS.map((city) => (
+                      <option key={city} value={city}>
+                        {city}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="avField">
+                  <span className="avLabelCaps">Area / branch</span>
+                  <input
+                    className="avInput avInputTall"
+                    placeholder="e.g. West Bay"
+                    value={locationArea}
+                    onChange={(e) => setLocationArea(e.target.value)}
+                    disabled={submitting}
+                  />
+                </label>
+              </div>
+              <label className="avField">
+                <span className="avLabelCaps">Monthly mileage cap (km)</span>
+                <div className="avUnitWrap">
+                  <input
+                    className="avInput avInputTall"
+                    value={mileageCapKm}
+                    onChange={(e) => setMileageCapKm(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Optional — e.g. 2500"
+                    disabled={submitting}
+                  />
+                  <span className="avUnit">km/mo</span>
+                </div>
+              </label>
+              <fieldset className="avFeatures">
+                <legend className="avLabelCaps">Features</legend>
+                <div className="avFeatureGrid">
+                  {VEHICLE_FEATURE_OPTIONS.map((feature) => (
+                    <label key={feature} className="avFeatureOption">
+                      <input
+                        type="checkbox"
+                        checked={features.includes(feature)}
+                        onChange={(e) => {
+                          setFeatures((prev) =>
+                            e.target.checked ? [...prev, feature] : prev.filter((f) => f !== feature)
+                          )
+                        }}
+                        disabled={submitting}
+                      />
+                      <span>{feature}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </div>
+          </section>
+
           <section className="avPreviewSection">
             <div className="avPreviewInner">
               <div className="avPreviewHeader">
@@ -414,7 +534,7 @@ export const AddVehicleModal = memo(function AddVehicleModal({ isOpen, onClose, 
                   </div>
                   <div className="avPreviewCardLabel">Pricing &amp; Year</div>
                   <div className="avPreviewCardValue avPreviewCardValue--accent">
-                    {summary.dailyRate ? `QAR ${summary.dailyRate}` : 'Price not set'}
+                    {summary.dailyRate ? formatCurrency(Number(summary.dailyRate)) : 'Price not set'}
                   </div>
                   <div className="avPreviewCardMeta">{summary.year || 'Year not specified'}</div>
                   <div className="avPreviewCardSub">Per day rental rate</div>

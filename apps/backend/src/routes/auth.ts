@@ -1,27 +1,41 @@
-import { Router } from 'express'
-import { and, eq, gt, isNull } from 'drizzle-orm'
 import crypto from 'crypto'
-import type { UserRole } from '@carflow/shared'
-import { db } from '../db/index.js'
-import { customerProfiles, dealers, emailVerificationTokens, passwordResetTokens, profiles } from '../db/schema.js'
-import { mapProfileToUser } from '../db/mappers.js'
+import { ADMIN_PORTAL_ROLES, type UserRole } from '@carflow/shared/types'
+import { and, eq, gt, isNull } from 'drizzle-orm'
+import { Router } from 'express'
 import { hashPassword, verifyPassword } from '../auth/password.js'
-import { validatePassword } from '../auth/validatePassword.js'
-import {
-  clearAuthCookies,
-  setAuthCookies,
-  signAccessToken,
-  signRefreshToken,
-  verifyRefreshToken,
-} from '../auth/tokens.js'
 import {
   createRefreshSession,
   isRefreshSessionActive,
   revokeAllRefreshSessions,
   revokeRefreshSession,
 } from '../auth/sessions.js'
+import {
+  clearAuthCookies,
+  setAuthCookies,
+  sign2faChallengeToken,
+  signAccessToken,
+  signRefreshToken,
+  verify2faChallengeToken,
+  verifyRefreshToken,
+} from '../auth/tokens.js'
+import { consume2faChallenge, create2faChallenge, validate2faChallenge } from '../auth/twoFaChallenges.js'
+import { trackAnalyticsEventSafe } from '../services/analyticsEvents.js'
+import {
+  isAccountLocked,
+  recordFailedLoginAttempt,
+  resetLoginAttempts,
+  sendAccountLocked,
+} from '../auth/loginLockout.js'
+import { validatePassword } from '../auth/validatePassword.js'
+import { sendVerificationEmail } from '../auth/verification.js'
+import { db } from '../db/index.js'
+import { mapProfileToUser } from '../db/mappers.js'
+import { customerProfiles, dealers, emailVerificationTokens, passwordResetTokens, profiles, staffInvites, userSecurity } from '../db/schema.js'
 import { getRefreshCookie, requireAuth, type AuthedRequest } from '../middleware/auth.js'
 import { sendEmail } from '../services/mail.js'
+import { verifyTotp } from '../services/totp.js'
+import { areDealerSignupsEnabled, areSignupsEnabled } from '../services/appSettings.js'
+import { asyncHandler } from '../utils/http.js'
 
 export const authRouter = Router()
 
@@ -29,6 +43,7 @@ async function issueSession(
   res: import('express').Response,
   user: { id: string; role: UserRole; email: string; name: string; emailVerifiedAt?: Date | null }
 ) {
+  await resetLoginAttempts(user.id)
   const payload = { sub: user.id, role: user.role, email: user.email }
   const accessToken = await signAccessToken(payload)
   const { token: refreshToken, jti } = await signRefreshToken(payload)
@@ -43,23 +58,6 @@ async function issueSession(
   }
 }
 
-async function sendVerificationEmail(user: { id: string; email: string }) {
-  const raw = crypto.randomBytes(32).toString('hex')
-  const tokenHash = crypto.createHash('sha256').update(raw).digest('hex')
-  await db.insert(emailVerificationTokens).values({
-    userId: user.id,
-    tokenHash,
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-  })
-  const frontend = process.env.CUSTOMER_APP_URL || 'http://localhost:5173'
-  const link = `${frontend}/verify-email?token=${raw}`
-  await sendEmail({
-    to: user.email,
-    subject: 'Verify your CarFlow email',
-    html: `<p>Verify your email: <a href="${link}">${link}</a></p><p>This link expires in 24 hours.</p>`,
-  })
-}
-
 authRouter.post('/signup', async (req, res) => {
   try {
     const { email, password, name, expectedRole, meta } = req.body as {
@@ -68,6 +66,16 @@ authRouter.post('/signup', async (req, res) => {
       name?: string
       expectedRole?: UserRole
       meta?: { businessName?: string; phone?: string; address?: string }
+    }
+    const role: UserRole = expectedRole === 'dealer' ? 'dealer' : 'customer'
+    if (role === 'dealer') {
+      if (!(await areDealerSignupsEnabled())) {
+        res.status(503).json({ error: 'Dealer signups are temporarily unavailable', unavailable: true })
+        return
+      }
+    } else if (!(await areSignupsEnabled())) {
+      res.status(503).json({ error: 'Signups are temporarily unavailable', unavailable: true })
+      return
     }
     if (!email || !password || !name?.trim()) {
       res.status(400).json({ error: 'email, password, and name are required' })
@@ -78,7 +86,6 @@ authRouter.post('/signup', async (req, res) => {
       res.status(400).json({ error: passwordError })
       return
     }
-    const role: UserRole = expectedRole === 'dealer' ? 'dealer' : 'customer'
     const existing = await db.select().from(profiles).where(eq(profiles.email, email.toLowerCase())).limit(1)
     if (existing[0]) {
       res.status(409).json({ error: 'An account with this email already exists' })
@@ -112,6 +119,14 @@ authRouter.post('/signup', async (req, res) => {
       await sendVerificationEmail(user).catch((err) => console.error('verify email send failed', err))
     }
 
+    trackAnalyticsEventSafe({
+      eventType: 'signup',
+      userId: user.id,
+      entityType: 'profile',
+      entityId: user.id,
+      properties: { role },
+    })
+
     const session = await issueSession(res, user)
     res.status(201).json(session)
   } catch (err) {
@@ -136,7 +151,18 @@ authRouter.post('/login', async (req, res) => {
       .from(profiles)
       .where(eq(profiles.email, email.toLowerCase()))
       .limit(1)
+    if (user && isAccountLocked(user.lockedUntil)) {
+      sendAccountLocked(res, user.lockedUntil!)
+      return
+    }
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      if (user) {
+        const lockedUntil = await recordFailedLoginAttempt(user.id)
+        if (lockedUntil && isAccountLocked(lockedUntil)) {
+          sendAccountLocked(res, lockedUntil)
+          return
+        }
+      }
       res.status(401).json({ error: 'Invalid email or password' })
       return
     }
@@ -144,9 +170,13 @@ authRouter.post('/login', async (req, res) => {
       res.status(403).json({ error: 'Account is suspended' })
       return
     }
-    if (expectedRole && user.role !== expectedRole) {
-      res.status(403).json({ error: `Not authorized for ${expectedRole} access` })
-      return
+    if (expectedRole) {
+      const portalMatch =
+        expectedRole === 'admin' && (ADMIN_PORTAL_ROLES as readonly string[]).includes(user.role)
+      if (!portalMatch && user.role !== expectedRole) {
+        res.status(403).json({ error: `Not authorized for ${expectedRole} access` })
+        return
+      }
     }
     if (expectedRole === 'dealer' && user.role === 'dealer') {
       const [dealer] = await db
@@ -158,6 +188,13 @@ authRouter.post('/login', async (req, res) => {
         res.status(403).json({ error: 'Your dealer account is pending admin approval' })
         return
       }
+    }
+    const [sec] = await db.select().from(userSecurity).where(eq(userSecurity.userId, user.id)).limit(1)
+    if (sec?.totpEnabled && sec.totpSecret) {
+      const { token: challengeToken, jti } = await sign2faChallengeToken(user.id)
+      await create2faChallenge(user.id, jti)
+      res.json({ requires2fa: true, challengeToken, userId: user.id })
+      return
     }
     const session = await issueSession(res, user)
     res.json(session)
@@ -180,6 +217,16 @@ authRouter.post('/logout', async (req, res) => {
   clearAuthCookies(res)
   res.status(204).end()
 })
+
+authRouter.post(
+  '/logout-all',
+  requireAuth,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    await revokeAllRefreshSessions(req.user!.sub)
+    clearAuthCookies(res)
+    res.status(204).end()
+  })
+)
 
 authRouter.get('/me', requireAuth, async (req: AuthedRequest, res) => {
   try {
@@ -342,6 +389,26 @@ authRouter.post('/change-password', requireAuth, async (req: AuthedRequest, res)
   }
 })
 
+/** In-app recovery when the signup verification email was lost (audit gap). */
+authRouter.post('/resend-verification', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const [user] = await db.select().from(profiles).where(eq(profiles.id, req.user!.sub)).limit(1)
+    if (!user) {
+      res.status(401).json({ error: 'Not authenticated' })
+      return
+    }
+    if (user.emailVerifiedAt) {
+      res.json({ ok: true, alreadyVerified: true })
+      return
+    }
+    await sendVerificationEmail(user)
+    res.json({ ok: true })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Unable to resend verification email' })
+  }
+})
+
 authRouter.post('/verify-email', async (req, res) => {
   try {
     const { token } = req.body as { token?: string }
@@ -377,9 +444,97 @@ authRouter.post('/verify-email', async (req, res) => {
       .update(emailVerificationTokens)
       .set({ usedAt: new Date() })
       .where(eq(emailVerificationTokens.id, row.id))
+    trackAnalyticsEventSafe({
+      eventType: 'email_verified',
+      userId: row.userId,
+      entityType: 'profile',
+      entityId: row.userId,
+    })
     res.json({ ok: true })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Unable to verify email' })
+  }
+})
+
+authRouter.post('/2fa/verify-login', async (req, res) => {
+  try {
+    const { challengeToken, code } = req.body as { challengeToken?: string; code?: string }
+    if (!challengeToken || !code) {
+      res.status(400).json({ error: 'challengeToken and code are required' })
+      return
+    }
+    const { sub: userId, jti } = await verify2faChallengeToken(challengeToken)
+    if (!(await validate2faChallenge(userId, jti))) {
+      res.status(401).json({ error: 'Invalid or expired challenge' })
+      return
+    }
+    const [user] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1)
+    if (user && isAccountLocked(user.lockedUntil)) {
+      sendAccountLocked(res, user.lockedUntil!)
+      return
+    }
+    const [sec] = await db.select().from(userSecurity).where(eq(userSecurity.userId, userId)).limit(1)
+    if (!user || !sec?.totpEnabled || !sec.totpSecret || !verifyTotp(sec.totpSecret, String(code))) {
+      if (user) {
+        const lockedUntil = await recordFailedLoginAttempt(user.id)
+        if (lockedUntil && isAccountLocked(lockedUntil)) {
+          sendAccountLocked(res, lockedUntil)
+          return
+        }
+      }
+      res.status(401).json({ error: 'Invalid authentication code' })
+      return
+    }
+    if (!(await consume2faChallenge(userId, jti))) {
+      res.status(401).json({ error: 'Invalid or expired challenge' })
+      return
+    }
+    const session = await issueSession(res, user)
+    res.json(session)
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired challenge' })
+  }
+})
+
+authRouter.post('/staff-invite/accept', async (req, res) => {
+  try {
+    const { token, password, name } = req.body as { token?: string; password?: string; name?: string }
+    if (!token || !password) {
+      res.status(400).json({ error: 'token and password are required' })
+      return
+    }
+    const passwordError = validatePassword(password)
+    if (passwordError) {
+      res.status(400).json({ error: passwordError })
+      return
+    }
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+    const [invite] = await db
+      .select()
+      .from(staffInvites)
+      .where(and(eq(staffInvites.tokenHash, tokenHash), isNull(staffInvites.acceptedAt)))
+      .limit(1)
+    if (!invite || invite.expiresAt < new Date()) {
+      res.status(400).json({ error: 'Invite is invalid or expired' })
+      return
+    }
+    const passwordHash = await hashPassword(password)
+    const [user] = await db
+      .insert(profiles)
+      .values({
+        email: invite.email,
+        name: name?.trim() || invite.name,
+        passwordHash,
+        role: invite.role as UserRole,
+        status: 'active',
+        emailVerifiedAt: new Date(),
+      })
+      .returning()
+    await db.update(staffInvites).set({ acceptedAt: new Date() }).where(eq(staffInvites.id, invite.id))
+    res.status(201).json({ userId: user.id, email: user.email, role: user.role })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Unable to accept invite' })
   }
 })

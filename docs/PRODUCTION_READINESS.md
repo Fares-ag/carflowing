@@ -9,15 +9,17 @@
 | Component | Service | Notes |
 |-----------|---------|-------|
 | Database | **Neon** Postgres | `DATABASE_URL` connection string |
-| API | **Fly.io** | Production Docker image (`node dist/index.js`); `min_machines_running = 1` |
+| API | **Railway** (supported production target) | Long-lived Node (`node dist/index.js`); in-process scheduler + Sentry; Dockerfile deploy from monorepo root |
 | Frontends | **Vercel** (3 projects) | Customer, Dealer, Admin — each with `vercel.json` SPA rewrites |
-| Uploads | **Vercel Blob** | Set `UPLOAD_DRIVER=blob` + `BLOB_READ_WRITE_TOKEN` |
+| Uploads | **Vercel Blob** | Required: `UPLOAD_DRIVER=blob` + `BLOB_READ_WRITE_TOKEN` (local disk refused at boot) |
 | Email | **Resend** | Password reset, booking confirmation, email verification |
 | Payments | **SkipCash** | Sandbox first, then production keys |
 
+> **API on Vercel is deprecated.** `api/index.ts` / `apps/backend/vercel.json` do not run billing jobs or Sentry. Production must use **Railway**. The serverless entry only loads when `EXTERNAL_SCHEDULER=true` and an external cron calls `POST /api/admin/jobs/run-once` — not a supported launch topology.
+
 ```mermaid
 flowchart LR
-  CustomerApp[Customer Vercel] --> API[Express Fly.io]
+  CustomerApp[Customer Vercel] --> API[Express Railway]
   DealerApp[Dealer Vercel] --> API
   AdminApp[Admin Vercel] --> API
   API --> Neon[(Neon Postgres)]
@@ -44,7 +46,8 @@ flowchart LR
 ### Auth / sessions
 - Refresh sessions persisted with `jti`; revoked on logout, password change, admin suspend
 - `requireAuth` rejects suspended profiles mid-session
-- `SameSite=None; Secure` cookies when `COOKIE_SECURE=true`
+- `SameSite=Lax; Secure` cookies with `COOKIE_DOMAIN=.yourdomain.tld` (recommended: api + app subdomains on one registrable domain)
+- `SameSite=None; Secure` fallback when `COOKIE_DOMAIN` is unset (cross-origin; blocked as third-party in Safari/Chrome)
 - Password min 8 + letter + number; weak JWT secrets refused at production boot
 
 ### Deploy / ops
@@ -60,7 +63,7 @@ flowchart LR
 
 ### CI
 - `.github/workflows/test.yml` — lint, typecheck, conventions, API (167 tests), E2E
-- `.github/workflows/deploy.yml` — requires green tests before Fly/Vercel deploy
+- `.github/workflows/deploy.yml` — requires green tests before Railway/Vercel deploy
 
 ---
 
@@ -73,7 +76,9 @@ DATABASE_URL=postgresql://...
 # JWT (rotate before launch — 32+ chars, not dev placeholders)
 JWT_ACCESS_SECRET=<strong-random>
 JWT_REFRESH_SECRET=<strong-random>
+JWT_2FA_SECRET=<strong-random-distinct-from-above>
 COOKIE_SECURE=true
+COOKIE_DOMAIN=.carflow.qa
 
 # API
 PORT=8080
@@ -84,6 +89,11 @@ CUSTOMER_APP_URL=https://customer.example.com
 # Uploads
 UPLOAD_DRIVER=blob
 BLOB_READ_WRITE_TOKEN=...
+
+# Background jobs (Railway — in-process scheduler on long-lived Node)
+ENABLE_JOBS=true
+# Set EXTERNAL_SCHEDULER=true only for legacy serverless API + external cron on POST /api/admin/jobs/run-once
+# EXTERNAL_SCHEDULER=true
 
 # Email
 RESEND_API_KEY=...
@@ -111,31 +121,39 @@ VITE_USE_MOCK_API=false
 
 ## SkipCash configuration
 
+> **SECURITY NOTE (added by remediation):** earlier revisions of this file
+> committed real SkipCash client ids, key ids, and webhook keys. Treat every
+> one of those values as compromised: rotate them in the SkipCash merchant
+> portal and scrub this file from git history before launch. Production boot
+> now refuses the previously committed webhook keys.
+
+
 Create-intent sends `ReturnUrl` and `WebhookUrl` on each payment (overrides portal defaults when set). Routes are mounted at both `/skipcash-pay/*` (portal paths) and `/api/payments/skipcash/*` (legacy/tests).
 
 | Setting | Sandbox (test) | Production (www.carflow.qa) |
 |---------|----------------|----------------------------|
 | `SKIPCASH_MODE` | `sandbox` | `production` |
-| `SKIPCASH_CLIENT_ID` | `f68772da-eb04-4458-a667-34e86e574fe0` | `d708480d-b1ca-4792-9c67-5bee32821072` |
-| `SKIPCASH_KEY_ID` | `ce487912-1950-40d6-86e3-ad295e1b3e34` | `b9bbdbce-d0e3-4a37-9e35-3fc07581df51` (enabled Card Checkout) |
+| `SKIPCASH_CLIENT_ID` | `<sandbox client id — from SkipCash portal>` | `<production client id — from SkipCash portal>` |
+| `SKIPCASH_KEY_ID` | `<sandbox key id — from SkipCash portal>` | `<production key id — from SkipCash portal>` (enabled Card Checkout) |
 | `SKIPCASH_KEY_SECRET` | From portal Copy Key | From portal Copy Key — **host secrets only** |
-| `SKIPCASH_WEBHOOK_KEY` | `7adcc306-8732-46b9-9da6-f8769699e8c4` | `29d76865-b757-43c4-887a-53bab3519088` |
+| `SKIPCASH_WEBHOOK_KEY` | `<sandbox webhook key — from SkipCash portal>` | `<production webhook key — ROTATE: previous value was committed>` |
 | Portal webhook | `http://test.carflow.4livedemo.com/skipcash-pay/callback` | `https://www.carflow.qa/skipcash-pay/callback` |
 | Portal return | `http://test.carflow.4livedemo.com/skipcash-pay/return` | `https://www.carflow.qa/skipcash-pay/return` |
 
 **Local dev:** set sandbox vars in gitignored `.env`. SkipCash cannot POST webhooks to `localhost` — use the deployed test host (`test.carflow.4livedemo.com`) or an HTTPS tunnel, and set `PUBLIC_API_URL` to that public origin.
 
-**Production deploy (Fly.io):** set production `SKIPCASH_*` via `fly secrets set` (never in local `.env`). If the API runs on a separate host from `www.carflow.qa`, either proxy `/skipcash-pay/*` to the API or set `PUBLIC_API_URL` to the API origin that mounts these routes.
+**Production deploy (Railway):** set production `SKIPCASH_*` via Railway service variables (never in local `.env`). If the API runs on a separate host from `www.carflow.qa`, either proxy `/skipcash-pay/*` to the API or set `PUBLIC_API_URL` to the API origin that mounts these routes.
 
-```bash
-# Example Fly secrets (paste full KEY_SECRET from portal)
-fly secrets set \
-  SKIPCASH_MODE=production \
-  SKIPCASH_CLIENT_ID=d708480d-b1ca-4792-9c67-5bee32821072 \
-  SKIPCASH_KEY_ID=b9bbdbce-d0e3-4a37-9e35-3fc07581df51 \
-  SKIPCASH_KEY_SECRET='...' \
-  SKIPCASH_WEBHOOK_KEY=29d76865-b757-43c4-887a-53bab3519088 \
-  PUBLIC_API_URL=https://www.carflow.qa \
+```powershell
+# Example Railway service variables (paste full KEY_SECRET from portal)
+railway service carflow-api
+railway variable set `
+  SKIPCASH_MODE=production `
+  SKIPCASH_CLIENT_ID=<production client id — from SkipCash portal> `
+  SKIPCASH_KEY_ID=<production key id — from SkipCash portal> `
+  SKIPCASH_KEY_SECRET='...' `
+  SKIPCASH_WEBHOOK_KEY=<production webhook key — ROTATE: previous value was committed> `
+  PUBLIC_API_URL=https://www.carflow.qa `
   CUSTOMER_APP_URL=https://www.carflow.qa
 ```
 
@@ -146,9 +164,10 @@ fly secrets set \
 | Check | Pass |
 |-------|------|
 | Secrets rotated; no `dev-*-change-me` JWT values | ☐ |
-| `COOKIE_SECURE=true`; login works from all 3 Vercel origins against Fly API | ☐ |
-| `GET /health` returns `"db":"connected"`; Fly `min_machines_running = 1` | ☐ |
+| `COOKIE_SECURE=true` + `COOKIE_DOMAIN=.carflow.qa` (optional until custom domain); login works from customer/dealer/admin Vercel origins against Railway API | ☐ |
+| `GET /health` returns `"db":"connected"`; Railway service stays online after deploy | ☐ |
 | SkipCash sandbox: create-intent → webhook at `/skipcash-pay/callback` → booking → dealer approve → rental | ☐ |
+| SkipCash keys **rotated in merchant portal** after any doc/history exposure (production boot refuses old webhook keys) | ☐ |
 | Admin refund flow for a `needsRefund` payment (or manual note path) | ☐ |
 | IDOR regression: cross-dealer document access denied (API tests green) | ☐ |
 | Pricing regression: client `total: 1` cannot underpay (PAY-04b green) | ☐ |
@@ -165,14 +184,16 @@ fly secrets set \
 
 ## Deploy steps
 
-1. Create Neon database; set `DATABASE_URL` on Fly.io
-2. `npm run db:push --workspace=apps/backend` against Neon (or deploy workflow migrate job)
-3. `fly secrets import` from `apps/backend`
+1. Create Neon database; set `DATABASE_URL` on Railway
+2. `npm run db:migrate --workspace=apps/backend` against Neon (or deploy workflow migrate job)
+3. Set Railway variables — include `UPLOAD_DRIVER=blob`, `ENABLE_JOBS=true`, and all secrets from the checklist above
 4. Tag release: `git tag v1.0.0 && git push origin v1.0.0` (triggers deploy workflow after tests pass)
-5. Create three Vercel projects pointing at `apps/customer`, `apps/dealer`, `apps/admin`
-6. Configure GitHub secrets: `FLY_API_TOKEN`, `VERCEL_*`, `DATABASE_URL`, `PUBLIC_API_URL`
+5. Create three Vercel projects pointing at `apps/customer`, `apps/dealer`, `apps/admin` (frontends only — not the API)
+6. Configure GitHub secrets: `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID`, `VERCEL_*`, `DATABASE_URL`, `PUBLIC_API_URL`
 7. Complete staging go/no-go checklist above
 8. Switch SkipCash from sandbox to production keys
+
+Do **not** deploy the API with `apps/backend/vercel.json` or `npm run deploy:vercel:api` (removed). **Railway** is the supported production API target.
 
 ---
 
@@ -184,4 +205,4 @@ Tracked in `tests/gap-registry.json`: Stripe, 2FA, SMS verify, rental extensions
 
 ## Verdict
 
-CarFlow is **ready for careful production launch** after staging signoff on Neon + Fly.io + Vercel with SkipCash sandbox fully green, then production payment keys.
+CarFlow is **ready for careful production launch** after staging signoff on Neon + Railway + Vercel with SkipCash sandbox fully green, then production payment keys.

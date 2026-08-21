@@ -126,7 +126,72 @@
   color: #4f46e5;
 }
 
+.header-locale {
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.header-locale:hover {
+  background: #f9fafb;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+}
+
+.header-messages,
+.header-notifications {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #111827;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.header-notifications:hover {
+  background: #f9fafb;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+}
+
+.header-messages:hover {
+  background: #f9fafb;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+}
+
+.header-notifications-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
 .header-signin-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -139,6 +204,10 @@
   font-weight: 600;
   white-space: nowrap;
   transition: background 0.15s;
+}
+
+.header-account-link {
+  gap: 8px;
 }
 
 .header-signin-btn:hover {

@@ -1,18 +1,24 @@
-import { memo } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CarflowLogo } from '@carflow/shared'
-import { useAuth } from '../contexts/AuthContext'
 import {
   Bell,
   CalendarCheck,
+  Car,
   CreditCard,
+  KeyRound,
   LayoutDashboard,
   LineChart,
   LogOut,
+  MessageSquare,
+  MessageSquare,
+  Repeat,
   Settings,
   Users,
+  Wallet,
   Wrench,
 } from 'lucide-react'
+import { memo } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import './Sidebar.css'
 
 interface NavItem {
@@ -27,7 +33,13 @@ const NAV_ITEMS: readonly NavItem[] = [
   { path: '/analytics', icon: 'analytics', label: 'Analytics' },
   { path: '/inventory', icon: 'inventory', label: 'Inventory' },
   { path: '/requests', icon: 'requests', label: 'Booking Requests' },
+  { path: '/rentals', icon: 'rentals', label: 'Rentals' },
+  { path: '/swaps', icon: 'swaps', label: 'Swaps' },
+  { path: '/maintenance', icon: 'maintenance', label: 'Maintenance' },
+  { path: '/reviews', icon: 'reviews', label: 'Reviews' },
+  { path: '/payouts', icon: 'payouts', label: 'Payouts' },
   { path: '/leads', icon: 'leads', label: 'Leads' },
+  { path: '/messages', icon: 'messages', label: 'Messages' },
   { path: '/notifications', icon: 'notifications', label: 'Notifications' },
   { path: '/subscription', icon: 'subscription', label: 'Subscription' },
   { path: '/settings', icon: 'settings', label: 'Settings' },
@@ -66,9 +78,15 @@ export const Sidebar = memo(function Sidebar() {
             <span className="nav-icon">
               {icon === 'dashboard' ? <LayoutDashboard size={16} /> : null}
               {icon === 'analytics' ? <LineChart size={16} /> : null}
-              {icon === 'inventory' ? <Wrench size={16} /> : null}
+              {icon === 'inventory' ? <Car size={16} /> : null}
               {icon === 'requests' ? <CalendarCheck size={16} /> : null}
+              {icon === 'rentals' ? <KeyRound size={16} /> : null}
+              {icon === 'swaps' ? <Repeat size={16} /> : null}
+              {icon === 'maintenance' ? <Wrench size={16} /> : null}
+              {icon === 'reviews' ? <MessageSquare size={16} /> : null}
+              {icon === 'payouts' ? <Wallet size={16} /> : null}
               {icon === 'leads' ? <Users size={16} /> : null}
+              {icon === 'messages' ? <MessageSquare size={16} /> : null}
               {icon === 'notifications' ? <Bell size={16} /> : null}
               {icon === 'subscription' ? <CreditCard size={16} /> : null}
               {icon === 'settings' ? <Settings size={16} /> : null}

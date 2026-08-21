@@ -50,7 +50,7 @@ export default defineConfig({
     {
       name: 'mobile',
       testDir: './e2e/mobile',
-      use: { ...devices['iPhone 13'] },
+      use: { ...devices['iPhone 13'], baseURL: 'http://localhost:5173' },
     },
   ],
   webServer: [

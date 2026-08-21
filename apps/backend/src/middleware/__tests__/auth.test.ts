@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { NextFunction, Request, Response } from 'express'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { requireAuth, requireRole } from '../auth.js'
 
 vi.mock('../../auth/tokens.js', () => ({
@@ -37,7 +37,7 @@ describe('auth middleware', () => {
 
   it('requireAuth attaches user on valid token', async () => {
     vi.mocked(verifyAccessToken).mockResolvedValue({ sub: 'u1', role: 'customer', email: 'c@test.dev' })
-    const req = { cookies: { cf_access: 'token' } } as Request
+    const req = { cookies: { cf_access: 'token' } } as unknown as Request
     const next = vi.fn()
     await requireAuth(req as any, {} as Response, next)
     expect(next).toHaveBeenCalled()

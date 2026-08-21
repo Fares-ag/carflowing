@@ -6,6 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react'
+import { UNAUTHORIZED_EVENT } from '@carflow/shared'
 import type { AuthSession } from '../services/authService'
 import { getSession, logout as authLogout } from '../services/authService'
 import { useCartStore } from '../stores/cartStore'
@@ -43,6 +44,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  // Global 401 handling (audit BUG-10): when any API call ultimately fails
+  // with 401 after the silent refresh, drop the session. ProtectedRoute then
+  // redirects to /login and the Header switches back to "Sign In". Public
+  // pages (including /login) just re-render with a null session — no loop.
+  useEffect(() => {
+    const handleUnauthorized = () => setSession(null)
+    window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized)
+  }, [])
 
   return (
     <AuthContext.Provider value={{ session, isLoading, refetch, logout }}>

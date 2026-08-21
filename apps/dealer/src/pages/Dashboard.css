@@ -144,6 +144,26 @@
   margin-top: 24px;
 }
 
+.recent-bookings-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rentals-quick-link {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6366f1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.rentals-quick-link:hover {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
 .card-hint {
   font-size: 12px;
   color: #6b7280;

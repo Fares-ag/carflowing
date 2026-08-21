@@ -16,7 +16,7 @@ test.describe('E2E-C03 customer auth flow', () => {
 
     await page.getByLabel(/Confirm Password/i).fill('password123')
 
-    await page.getByRole('button', { name: /sign up/i }).click()
+    await page.getByRole('button', { name: /create account/i }).click()
 
     await expect(page).toHaveURL(/browse|login/)
 
@@ -24,11 +24,13 @@ test.describe('E2E-C03 customer auth flow', () => {
 
 
 
-  test('E2E-S02 login respects redirect query', async ({ page, loginAs }) => {
+  test('E2E-S02 login respects redirect query', async ({ page }) => {
 
     await page.goto('/login?redirect=%2Fmy-booking')
 
-    await loginAs(page, 'customer')
+    await page.getByLabel('Email').fill('customer@carflow.dev')
+    await page.getByLabel('Password').fill('password123')
+    await page.getByRole('button', { name: /^Sign in$/i }).click()
 
     await expect(page).toHaveURL(/my-booking/)
 

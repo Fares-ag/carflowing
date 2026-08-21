@@ -1,6 +1,12 @@
-import { useState, useCallback, memo, useEffect, useMemo } from 'react'
 import type { Invoice, PaymentMethod } from '@carflow/shared'
-import { apiRequest } from '@carflow/shared'
+import { apiRequest, formatCurrency, formatDateOrDash } from '@carflow/shared'
+import { CreditCard } from 'lucide-react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
+import { InfoModal } from '../components/shared/InfoModal'
+import { Sidebar } from '../components/shared/Sidebar'
+import { toast } from '../hooks/useToast'
 import {
   listInvoices,
   listPaymentMethods,
@@ -8,12 +14,6 @@ import {
   removePaymentMethod,
   setDefaultPaymentMethod,
 } from '../services/customerService'
-import { toast } from '../hooks/useToast'
-import { Header } from '../components/shared/Header'
-import { Footer } from '../components/shared/Footer'
-import { Sidebar } from '../components/shared/Sidebar'
-import { CreditCard } from 'lucide-react'
-import { InfoModal } from '../components/shared/InfoModal'
 import './SubscriptionBilling.css'
 
 export const SubscriptionBilling = memo(function SubscriptionBilling() {
@@ -46,11 +46,7 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
         ).length
         setActiveRentalsCount(active)
         const created = full.profile?.createdAt || (full.profile as any)?.created_at
-        setMemberSince(
-          created
-            ? new Date(created).toLocaleDateString(undefined, { dateStyle: 'medium' })
-            : '—'
-        )
+        setMemberSince(formatDateOrDash(created))
       } catch (e) {
         if (!cancelled) {
           setLoadError(e instanceof Error ? e.message : 'Failed to load billing data')
@@ -76,7 +72,7 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
       ['Invoice ID', invoice.id],
       ['Date', invoice.date],
       ['Description', invoice.description],
-      ['Amount', `QAR ${invoice.amount.toLocaleString('en-US')}`],
+      ['Amount', formatCurrency(invoice.amount)],
       ['Status', invoice.status],
     ]
     const csv = rows.map((row) => `"${row[0]}","${row[1]}"`).join('\n')
@@ -92,7 +88,7 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
   const handleViewInvoice = useCallback((invoice: Invoice) => {
     setInfoModal({
       title: `Invoice ${invoice.id}`,
-      message: `${invoice.description} — QAR ${invoice.amount.toLocaleString('en-US')} (${invoice.status})`,
+      message: `${invoice.description} — ${formatCurrency(invoice.amount)} (${invoice.status})`,
     })
   }, [])
 
@@ -148,7 +144,7 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                   <div className="billing-stat-cards">
                     <div className="billing-stat-card">
                       <div className="billing-stat-label">Total spent</div>
-                      <div className="billing-stat-value">QAR {totalSpent.toLocaleString('en-US')}</div>
+                      <div className="billing-stat-value">{formatCurrency(totalSpent)}</div>
                       <div className="billing-stat-hint">From paid invoices</div>
                     </div>
                     <div className="billing-stat-card">
@@ -217,7 +213,7 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                                 <td>{invoice.id}</td>
                                 <td>{invoice.date}</td>
                                 <td>{invoice.description}</td>
-                                <td>QAR {invoice.amount.toLocaleString('en-US')}</td>
+                                <td>{formatCurrency(invoice.amount)}</td>
                                 <td>
                                   <span className={`status-badge ${invoice.status}`}>
                                     {invoice.status === 'paid'
@@ -321,7 +317,8 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                       ))
                     )}
                     <p className="billing-empty-hint" style={{ marginTop: '1rem' }}>
-                      To add a payment method, please visit the dealership.
+                      Saved cards are not available online yet. Pay monthly invoices from My booking via SkipCash, or
+                      pay at your dealer.
                     </p>
                   </div>
                 </div>

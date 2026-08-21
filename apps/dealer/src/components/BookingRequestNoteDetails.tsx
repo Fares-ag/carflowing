@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { formatCurrency } from '@carflow/shared'
 
 /** Shape of JSON stored in booking_requests.note from customer checkout */
 export interface BookingNotePayload {
@@ -8,6 +9,7 @@ export interface BookingNotePayload {
   quantity?: number
   notes?: string
   delivery?: {
+    mode?: 'delivery' | 'dealer_pickup'
     location?: string
     date?: string
     time?: string
@@ -41,11 +43,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <span className="brDetailValue">{children}</span>
     </div>
   )
-}
-
-function formatQar(n: number | undefined): string | null {
-  if (n == null || Number.isNaN(n)) return null
-  return `QAR ${n.toLocaleString()}`
 }
 
 export function BookingRequestNoteDetails({ note }: { note: string | undefined }) {
@@ -96,7 +93,12 @@ export function BookingRequestNoteDetails({ note }: { note: string | undefined }
       {(delivery?.location || delivery?.date || delivery?.time) && (
         <>
           <div className="brDetailSubhead">Delivery & schedule</div>
-          <Row label="Location">{delivery?.location}</Row>
+          <Row label="Method">
+            {delivery?.mode === 'dealer_pickup' ? 'Collect from dealer' : 'Deliver to address'}
+          </Row>
+          <Row label="Location">
+            {delivery?.mode === 'dealer_pickup' ? 'Dealer location' : delivery?.location}
+          </Row>
           <Row label="Date">{delivery?.date}</Row>
           <Row label="Time">{delivery?.time}</Row>
         </>
@@ -117,7 +119,9 @@ export function BookingRequestNoteDetails({ note }: { note: string | undefined }
       )}
 
       <Row label="Payment">{parsed.paymentMethod?.replace(/_/g, ' ')}</Row>
-      <Row label="Estimated total">{formatQar(parsed.total)}</Row>
+      <Row label="Estimated total">
+        {parsed.total != null && !Number.isNaN(parsed.total) ? formatCurrency(parsed.total) : null}
+      </Row>
       <Row label="Customer notes">{parsed.notes}</Row>
     </div>
   )

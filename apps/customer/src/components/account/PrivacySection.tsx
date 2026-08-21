@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Download, Trash2, X } from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from '../../hooks/useToast'
 import { apiRequest } from '@carflow/shared'
 import { logout } from '../../services/authService'
-import { toast } from '../../hooks/useToast'
 import './PrivacySection.css'
 
 export default function PrivacySection() {
@@ -88,7 +88,7 @@ export default function PrivacySection() {
         <div className="data-retention">
           <h4 className="group-title">Data Retention</h4>
           <ul className="retention-list">
-            <li>Rental history: Kept for 7 years for tax and legal purposes</li>
+            <li>Rental history: Kept for 7 years for legal and regulatory purposes</li>
             <li>Profile data: Kept until account deletion</li>
             <li>Communication logs: Kept for 2 years</li>
             <li>Payment information: Handled by secure payment processors</li>

@@ -5,7 +5,6 @@ describe('dealerService', () => {
   it('creates vehicles and updates status in mock mode', async () => {
     const initial = await listInventory({ pageSize: 50 })
     const created = await createVehicle({
-      dealerId: 'dealer_1',
       name: 'Test Vehicle',
       make: 'Test',
       model: 'Vehicle',

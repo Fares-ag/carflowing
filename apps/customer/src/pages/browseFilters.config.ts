@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import { Bolt, Fuel, Leaf, User } from 'lucide-react'
+import { BROWSE_LOCATION_OPTIONS, formatCurrency } from '@carflow/shared'
 
 /** Catalog row shape used by browse filtering. Extend fields as data grows. */
 export type BrowseCar = {
@@ -17,14 +18,16 @@ export type BrowseCar = {
   mileage: number
   year: number
   image?: string
-  /** Optional until vehicles expose features in the API */
+  location?: string
   features: string[]
-  /** Optional until vehicles expose ratings in the API */
   rating: number
+  reviewCount?: number
 }
 
 export type BrowseFilterState = {
   sortBy: string
+  location: string
+  startDate: string
   brands: string[]
   categories: string[]
   features: string[]
@@ -100,6 +103,17 @@ export type FilterSectionConfig =
       options: number[]
       optionIcon?: LucideIcon
     } & CollapsibleFilterMeta)
+  | ({
+      type: 'select'
+      id: 'location'
+      label: string
+      options: CheckboxOption[]
+    } & CollapsibleFilterMeta)
+  | ({
+      type: 'date'
+      id: 'startDate'
+      label: string
+    } & CollapsibleFilterMeta)
 
 export const SORT_OPTIONS = [
   'Recommended',
@@ -114,6 +128,8 @@ export const YEAR_FILTER_MAX = new Date().getFullYear() + 1
 
 export const DEFAULT_FILTER_STATE: BrowseFilterState = {
   sortBy: SORT_OPTIONS[0],
+  location: '',
+  startDate: '',
   brands: [],
   categories: [],
   features: [],
@@ -121,7 +137,7 @@ export const DEFAULT_FILTER_STATE: BrowseFilterState = {
   transmissions: [],
   seats: [],
   priceMin: 0,
-  priceMax: 5000,
+  priceMax: 20000,
   minRating: 0,
   maxMileage: 50000,
   yearMin: YEAR_FILTER_MIN,
@@ -130,7 +146,7 @@ export const DEFAULT_FILTER_STATE: BrowseFilterState = {
 
 /**
  * Add a new filter by appending a section here, extending BrowseFilterState /
- * DEFAULT_FILTER_STATE, and teaching applyBrowseFilters how to use it.
+ * DEFAULT_FILTER_STATE, and mapping it in browseCatalogQuery.ts for the API.
  * Use `collapsible`, `defaultOpen`, and `previewCount` to control expand UX.
  */
 export const BROWSE_FILTER_SECTIONS: FilterSectionConfig[] = [
@@ -142,13 +158,31 @@ export const BROWSE_FILTER_SECTIONS: FilterSectionConfig[] = [
     collapsible: false,
   },
   {
+    type: 'select',
+    id: 'location',
+    label: 'Location',
+    options: [
+      { value: '', label: 'All areas' },
+      ...BROWSE_LOCATION_OPTIONS.map((value) => ({ value, label: value })),
+    ],
+    collapsible: true,
+    defaultOpen: true,
+  },
+  {
+    type: 'date',
+    id: 'startDate',
+    label: 'Available from',
+    collapsible: true,
+    defaultOpen: true,
+  },
+  {
     type: 'dualRange',
     id: 'price',
     label: 'Price Range',
     min: 0,
-    max: 5000,
+    max: 20000,
     step: 50,
-    formatLabel: (min, max) => `Price Range: QAR ${min.toLocaleString()} – QAR ${max.toLocaleString()}`,
+    formatLabel: (min, max) => `Price Range: ${formatCurrency(min)} – ${formatCurrency(max)}`,
     collapsible: true,
     defaultOpen: true,
   },
@@ -191,8 +225,7 @@ export const BROWSE_FILTER_SECTIONS: FilterSectionConfig[] = [
     collapsible: true,
     defaultOpen: false,
     previewCount: 4,
-    // Vehicles do not expose features in the API yet — hide until they do.
-    enabled: false,
+    enabled: true,
   },
   {
     type: 'checkbox',
@@ -261,60 +294,10 @@ export const BROWSE_FILTER_SECTIONS: FilterSectionConfig[] = [
   },
 ]
 
-function matchesCategory(car: BrowseCar, selected: string[]): boolean {
-  if (selected.length === 0) return true
-  return selected.some((cat) => {
-    if (cat === 'Electric') return car.type === 'Electric' || car.isElectric
-    if (cat === 'Economy') return car.type === 'Other' || car.type === 'Economy'
-    if (cat === 'Sports') return car.type === 'Sports'
-    return car.type === cat
-  })
-}
-
-export function applyBrowseFilters(cars: BrowseCar[], state: BrowseFilterState): BrowseCar[] {
-  return cars
-    .filter((car) => {
-      if (state.brands.length === 0) return true
-      return state.brands.includes(car.make)
-    })
-    .filter((car) => matchesCategory(car, state.categories))
-    .filter((car) => {
-      if (state.features.length === 0) return true
-      // Until vehicles expose feature data, don't empty the catalog.
-      if (car.features.length === 0) return true
-      return state.features.every((feature) => car.features.includes(feature))
-    })
-    .filter((car) => {
-      if (state.fuelTypes.length === 0) return true
-      const fuelLabel = car.fuelType === 'gas' ? 'petrol' : car.fuelType
-      return state.fuelTypes.includes(fuelLabel)
-    })
-    .filter((car) => {
-      if (state.transmissions.length === 0) return true
-      return state.transmissions.includes(car.transmission)
-    })
-    .filter((car) => {
-      if (state.seats.length === 0) return true
-      return state.seats.includes(car.seats)
-    })
-    .filter((car) => car.price >= state.priceMin && car.price <= state.priceMax)
-    .filter((car) => {
-      // Unrated vehicles (0) stay visible until ratings ship in the API.
-      if (car.rating <= 0) return true
-      return car.rating >= state.minRating
-    })
-    .filter((car) => car.mileage <= state.maxMileage)
-    .filter((car) => car.year >= state.yearMin && car.year <= state.yearMax)
-    .sort((a, b) => {
-      if (state.sortBy === 'Price: Low to High') return a.price - b.price
-      if (state.sortBy === 'Price: High to Low') return b.price - a.price
-      if (state.sortBy === 'Newest') return b.year - a.year
-      return 0
-    })
-}
-
 export function countActiveBrowseFilters(state: BrowseFilterState): number {
   let count = 0
+  if (state.location) count += 1
+  if (state.startDate) count += 1
   count += state.brands.length
   count += state.categories.length
   count += state.features.length

@@ -1,5 +1,6 @@
+import { formatCurrency, RENTAL_STATUS_LABELS, rentalStatusLabel, type RentalStatus } from '@carflow/shared'
+import { CalendarCheck, DollarSign, Users, Car } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { formatCurrency } from '@carflow/shared'
 import {
   CartesianGrid,
   Cell,
@@ -12,12 +13,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { CalendarCheck, DollarSign, Users, Car } from 'lucide-react'
+import { InfoModal } from '../components/InfoModal'
+import { AdminLayout } from '../layout/AdminLayout'
 import type { AdminDashboardData } from '../services/adminService'
 import { getAdminDashboard } from '../services/adminService'
 import { getCurrentUser } from '../services/authService'
-import { AdminLayout } from '../layout/AdminLayout'
-import { InfoModal } from '../components/InfoModal'
 import './DashboardPage.css'
 
 export function DashboardPage() {
@@ -26,7 +26,7 @@ export function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [bookingQuery, setBookingQuery] = useState('')
-  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'Active' | 'Pending' | 'Completed' | 'Cancelled'>('all')
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | string>('all')
   const [showBookingSearch, setShowBookingSearch] = useState(false)
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
 
@@ -55,10 +55,10 @@ export function DashboardPage() {
   const bookingStatusData = useMemo(() => {
     const counts = dashboard?.bookingStatusCounts ?? { active: 0, reserved: 0, completed: 0, cancelled: 0 }
     return [
-      { name: 'Active', value: Math.max(0, counts.active) },
-      { name: 'Pending', value: Math.max(0, counts.reserved) },
-      { name: 'Completed', value: Math.max(0, counts.completed) },
-      { name: 'Cancelled', value: Math.max(0, counts.cancelled) },
+      { name: RENTAL_STATUS_LABELS.active, value: Math.max(0, counts.active) },
+      { name: RENTAL_STATUS_LABELS.reserved, value: Math.max(0, counts.reserved) },
+      { name: RENTAL_STATUS_LABELS.completed, value: Math.max(0, counts.completed) },
+      { name: RENTAL_STATUS_LABELS.cancelled, value: Math.max(0, counts.cancelled) },
     ].filter((d) => d.value > 0)
   }, [dashboard])
 
@@ -87,8 +87,15 @@ export function DashboardPage() {
         ret: rental.endDate,
         location: '—',
         amount: formatCurrency(rental.totalAmount),
-        status: rental.status === 'active' ? 'Active' : rental.status === 'reserved' ? 'Pending' : rental.status === 'completed' ? 'Completed' : 'Cancelled',
-        tone: rental.status === 'active' ? 'blue' : rental.status === 'reserved' ? 'amber' : rental.status === 'completed' ? 'green' : 'red',
+        status: rentalStatusLabel(rental.status as RentalStatus),
+        tone:
+          rental.status === 'active' || rental.status === 'past_due'
+            ? 'blue'
+            : rental.status === 'reserved'
+              ? 'amber'
+              : rental.status === 'completed'
+                ? 'green'
+                : 'red',
       }
     })
   }, [dashboard])
@@ -131,7 +138,7 @@ export function DashboardPage() {
   }
 
   const cycleStatusFilter = () => {
-    const options: Array<'all' | 'Active' | 'Pending' | 'Completed' | 'Cancelled'> = ['all', 'Active', 'Pending', 'Completed', 'Cancelled']
+    const options = ['all', ...Object.values(RENTAL_STATUS_LABELS)]
     const nextIndex = (options.indexOf(bookingStatusFilter) + 1) % options.length
     setBookingStatusFilter(options[nextIndex])
   }

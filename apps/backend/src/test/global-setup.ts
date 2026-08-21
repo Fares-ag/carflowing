@@ -48,6 +48,7 @@ export default async function globalSetup() {
       `DATABASE_URL=${connectionString}`,
       'JWT_ACCESS_SECRET=test-access-secret-minimum-32-characters-long',
       'JWT_REFRESH_SECRET=test-refresh-secret-minimum-32-characters-long',
+      'JWT_2FA_SECRET=test-2fa-secret-minimum-32-characters-long-distinct',
       'COOKIE_SECURE=false',
       'UPLOAD_DRIVER=local',
       `UPLOAD_DIR=${path.resolve(backendRoot, '.uploads-test').replace(/\\/g, '/')}`,

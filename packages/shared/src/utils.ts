@@ -9,6 +9,24 @@ export function formatDate(date: Date | string): string {
   })
 }
 
+/** Nullable-safe date formatting for tables and detail rows. */
+export function formatDateOrDash(value?: string | Date | null): string {
+  if (value == null || value === '') return '—'
+  const d = typeof value === 'string' ? new Date(value) : value
+  return Number.isNaN(d.getTime()) ? '—' : formatDate(d)
+}
+
+/** Date + time for activity feeds and dashboards. */
+export function formatDateTime(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function formatCurrency(amount: number, currency: string = 'QAR'): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',

@@ -8,6 +8,181 @@
       "when": 1722806400000,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0001_subscriptions_ops",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786800000000,
+      "tag": "0002_production_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786900000000,
+      "tag": "0003_remove_tax",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787000000000,
+      "tag": "0004_jobs_heartbeat",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787100000000,
+      "tag": "0005_dealer_bank_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0006_invoice_reminder_sends",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787300000000,
+      "tag": "0007_feature_gaps",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787400000000,
+      "tag": "0008_two_fa_challenges",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787500000000,
+      "tag": "0009_commission_payout_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787600000000,
+      "tag": "0010_promo_redemption_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787700000000,
+      "tag": "0011_email_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787800000000,
+      "tag": "0012_login_lockout",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787900000000,
+      "tag": "0013_audit_logs_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0014_analytics_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0016_deposit_resolution",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788300000000,
+      "tag": "0017_delivery_fulfilment",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788400000000,
+      "tag": "0018_maintenance_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788500000000,
+      "tag": "0019_business_settings_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788600000000,
+      "tag": "0020_promo_admin_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788700000000,
+      "tag": "0021_dealer_signups_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1788800000000,
+      "tag": "0022_broadcasts",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1788900000000,
+      "tag": "0023_vehicle_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0024_vehicle_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789100000000,
+      "tag": "0025_rental_pause",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1789200000000,
+      "tag": "0026_review_responses",
+      "breakpoints": true
     }
   ]
 }

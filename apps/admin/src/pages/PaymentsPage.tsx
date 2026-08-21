@@ -1,6 +1,26 @@
+import { ApiError, formatCurrency } from '@carflow/shared'
+import {
+  AlertTriangle,
+  ArrowDownToLine,
+  BadgeCheck,
+  BadgeX,
+  Car,
+  CheckCircle,
+  CircleDollarSign,
+  Clock,
+  FileWarning,
+  MoreVertical,
+  Search,
+  SlidersHorizontal,
+  Undo2,
+  User,
+  WalletCards,
+  X,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { formatCurrency } from '@carflow/shared'
 import { toast } from 'sonner'
+import { InfoModal } from '../components/InfoModal'
+import { AdminLayout } from '../layout/AdminLayout'
 import {
   getPaymentSummary,
   listPaymentsWithDetails,
@@ -8,23 +28,6 @@ import {
   type PaymentSummary,
   type PaymentWithDetails,
 } from '../services/adminService'
-import { AdminLayout } from '../layout/AdminLayout'
-import { InfoModal } from '../components/InfoModal'
-import {
-  ArrowDownToLine,
-  BadgeCheck,
-  BadgeX,
-  Car,
-  CheckCircle,
-  ChevronDown,
-  CircleDollarSign,
-  Clock,
-  MoreVertical,
-  Search,
-  SlidersHorizontal,
-  User,
-  WalletCards,
-} from 'lucide-react'
 import './PaymentsPage.css'
 
 const downloadCsv = (filename: string, rows: Array<Record<string, string>>) => {
@@ -42,6 +45,19 @@ const downloadCsv = (filename: string, rows: Array<Record<string, string>>) => {
   link.remove()
 }
 
+const remainingOf = (payment: PaymentWithDetails) =>
+  Math.max(0, payment.amount - (payment.refundedAmount ?? 0))
+
+interface RefundModalState {
+  payment: PaymentWithDetails
+  amountInput: string
+  /** 'confirm' = amount + warning; 'manual' = 409 requiresManualConfirmation follow-up. */
+  step: 'confirm' | 'manual'
+  serverMessage: string | null
+  manualChecked: boolean
+  isSubmitting: boolean
+}
+
 export function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentWithDetails[]>([])
   const [total, setTotal] = useState(0)
@@ -57,7 +73,7 @@ export function PaymentsPage() {
   const [minAmount, setMinAmount] = useState('')
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
   const [summary, setSummary] = useState<PaymentSummary | null>(null)
-  const [refundingId, setRefundingId] = useState<string | null>(null)
+  const [refundModal, setRefundModal] = useState<RefundModalState | null>(null)
 
   const refresh = useCallback(() => {
     setIsLoading(true)
@@ -93,7 +109,7 @@ export function PaymentsPage() {
       {
         label: 'Total Revenue',
         value: formatCurrency(summary.totalRevenue),
-        sub: 'From completed payments',
+        sub: `Net of refunds · Gross ${formatCurrency(summary.grossRevenue ?? summary.totalRevenue)}`,
         icon: <CircleDollarSign size={18} />,
         badgeTone: 'success' as const,
         iconTone: 'green' as const,
@@ -128,6 +144,26 @@ export function PaymentsPage() {
         badgeTone: 'danger' as const,
         iconTone: 'violet' as const,
       },
+      {
+        label: 'Stuck Pending Payments',
+        value: String(summary.stuckPendingCount ?? 0),
+        sub: 'Pending too long — investigate',
+        icon: <AlertTriangle size={18} />,
+        badgeIcon: <BadgeX size={14} />,
+        badge: String(summary.stuckPendingCount ?? 0),
+        badgeTone: 'warning' as const,
+        iconTone: 'red' as const,
+      },
+      {
+        label: 'Overdue Invoices',
+        value: String(summary.overdueInvoicesCount ?? 0),
+        sub: 'Unpaid past their due date',
+        icon: <FileWarning size={18} />,
+        badgeIcon: <BadgeX size={14} />,
+        badge: String(summary.overdueInvoicesCount ?? 0),
+        badgeTone: 'danger' as const,
+        iconTone: 'blue' as const,
+      },
     ]
   }, [summary])
 
@@ -139,19 +175,38 @@ export function PaymentsPage() {
         payment.customer?.name?.trim() ||
         payment.customer?.email?.trim() ||
         '—'
-      const car = payment.type === 'subscription' ? 'Plan subscription' : '—'
+      const isRefundRow = payment.type === 'refund'
+      const car = isRefundRow
+        ? payment.refundOfPaymentId
+          ? `Refund of ${payment.refundOfPaymentId.slice(0, 8).toUpperCase()}`
+          : 'Refund'
+        : payment.type === 'subscription'
+          ? 'Plan subscription'
+          : '—'
+      const remaining = remainingOf(payment)
+      const canRefund =
+        !isRefundRow &&
+        remaining > 0 &&
+        payment.status !== 'refunded' &&
+        (payment.status === 'completed' ||
+          payment.needsRefund === true ||
+          (payment.status === 'failed' && payment.provider === 'skipcash'))
       return {
+        payment,
         paymentId: payment.id,
         id: payment.id.slice(0, 8).toUpperCase(),
         status: payment.status,
         type: payment.type,
+        isRefundRow,
         customer,
         car,
         time: created.toLocaleString('en-US'),
         method: payment.method.replace('_', ' '),
         amount: formatCurrency(payment.amount),
+        refundedAmount: payment.refundedAmount ?? 0,
         age: `${days} day${days === 1 ? '' : 's'}`,
         needsRefund: payment.needsRefund === true,
+        canRefund,
       }
     })
   }, [payments])
@@ -185,6 +240,69 @@ export function PaymentsPage() {
     const values = Array.from(new Set(transactions.map(txn => txn.type)))
     return ['all', ...values]
   }, [transactions])
+
+  const openRefundModal = (payment: PaymentWithDetails) => {
+    const remaining = remainingOf(payment)
+    setRefundModal({
+      payment,
+      amountInput: String(Number(remaining.toFixed(2))),
+      step: 'confirm',
+      serverMessage: null,
+      manualChecked: false,
+      isSubmitting: false,
+    })
+  }
+
+  const refundRemaining = refundModal ? remainingOf(refundModal.payment) : 0
+  const refundAmountValue = refundModal ? Number(refundModal.amountInput) : 0
+  const refundAmountValid =
+    Number.isFinite(refundAmountValue) &&
+    refundAmountValue > 0 &&
+    refundAmountValue <= refundRemaining + 0.001
+
+  const submitRefund = (manualConfirmed: boolean) => {
+    if (!refundModal || !refundAmountValid) return
+    const { payment } = refundModal
+    setRefundModal((m) => (m ? { ...m, isSubmitting: true } : m))
+    refundPayment(payment.id, {
+      amount: refundAmountValue,
+      ...(manualConfirmed ? { manualConfirmed: true } : {}),
+    })
+      .then((updated) => {
+        const fully = updated.status === 'refunded'
+        toast.success(
+          fully
+            ? `Payment ${payment.id.slice(0, 8).toUpperCase()} fully refunded`
+            : `Refunded ${formatCurrency(refundAmountValue)} (partial refund)`
+        )
+        setRefundModal(null)
+        refresh()
+      })
+      .catch((err) => {
+        const details =
+          err instanceof ApiError
+            ? (err.details as { requiresManualConfirmation?: boolean } | null)
+            : null
+        if (err instanceof ApiError && err.status === 409 && details?.requiresManualConfirmation) {
+          // Provider refund not possible — money has NOT moved. Ask for explicit
+          // attestation that the operator processed it manually before retrying.
+          setRefundModal((m) =>
+            m
+              ? {
+                  ...m,
+                  step: 'manual',
+                  serverMessage: err.message,
+                  manualChecked: false,
+                  isSubmitting: false,
+                }
+              : m
+          )
+          return
+        }
+        toast.error(err instanceof Error ? err.message : 'Refund failed')
+        setRefundModal((m) => (m ? { ...m, isSubmitting: false } : m))
+      })
+  }
 
   if (error && payments.length === 0) {
     return (
@@ -264,7 +382,6 @@ export function PaymentsPage() {
                 </option>
               ))}
             </select>
-            <ChevronDown size={14} />
           </label>
           <label className="paymentsSelect">
             <select
@@ -278,7 +395,6 @@ export function PaymentsPage() {
                 </option>
               ))}
             </select>
-            <ChevronDown size={14} />
           </label>
           <button
             className="paymentsMoreFilters"
@@ -302,7 +418,6 @@ export function PaymentsPage() {
                 <option value="bank">Bank Transfer</option>
                 <option value="wallet">Wallet</option>
               </select>
-              <ChevronDown size={14} />
             </label>
             <label className="paymentsSelect">
               <input
@@ -327,14 +442,28 @@ export function PaymentsPage() {
             <>
               <div className="paymentsTransactionsBody">
                 {filteredTransactions.map((txn) => (
-                  <div key={txn.paymentId} className="paymentsRow">
+                  <div
+                    key={txn.paymentId}
+                    className={`paymentsRow${txn.isRefundRow ? ' paymentsRow--refund' : ''}`}
+                  >
                     <div className="paymentsRowLeft">
-                      <div className="paymentsRowIcon">
-                        {txn.status === 'pending' ? <Clock size={16} /> : txn.status === 'refunded' ? <WalletCards size={16} /> : <BadgeCheck size={16} />}
+                      <div className={`paymentsRowIcon${txn.isRefundRow ? ' paymentsRowIcon--refund' : ''}`}>
+                        {txn.isRefundRow ? (
+                          <Undo2 size={16} />
+                        ) : txn.status === 'pending' ? (
+                          <Clock size={16} />
+                        ) : txn.status === 'refunded' ? (
+                          <WalletCards size={16} />
+                        ) : (
+                          <BadgeCheck size={16} />
+                        )}
                       </div>
                       <div className="paymentsRowDetails">
                         <div className="paymentsRowMeta">
                           <span className="paymentsRowId">{txn.id}</span>
+                          {txn.isRefundRow ? (
+                            <span className="paymentsBadge paymentsBadge--refundTag">Refund</span>
+                          ) : null}
                           <span className={`paymentsBadge paymentsBadge--${txn.status}`}>{txn.status}</span>
                           <span className="paymentsBadge paymentsBadge--type">{txn.type}</span>
                         </div>
@@ -359,28 +488,23 @@ export function PaymentsPage() {
                       </div>
                     </div>
                     <div className="paymentsRowRight">
-                      <div className="paymentsRowAmount">
-                        <div>{txn.amount}</div>
+                      <div
+                        className={`paymentsRowAmount${txn.isRefundRow ? ' paymentsRowAmount--negative' : ''}`}
+                      >
+                        <div>{txn.isRefundRow ? `−${txn.amount}` : txn.amount}</div>
                         {txn.needsRefund ? <span className="paymentsBadge paymentsBadge--failed">needs refund</span> : null}
+                        {!txn.isRefundRow && txn.refundedAmount > 0 && txn.status !== 'refunded' ? (
+                          <span className="paymentsBadge paymentsBadge--refunded">
+                            {formatCurrency(txn.refundedAmount)} refunded
+                          </span>
+                        ) : null}
                         {txn.age && <span>{txn.age}</span>}
                       </div>
-                      {txn.needsRefund || txn.status === 'failed' ? (
+                      {txn.canRefund ? (
                         <button
-                          className="paymentsRowAction"
+                          className="paymentsRowAction paymentsRowAction--refund"
                           type="button"
-                          disabled={refundingId === txn.paymentId}
-                          onClick={() => {
-                            setRefundingId(txn.paymentId)
-                            refundPayment(txn.paymentId)
-                              .then(() => {
-                                toast.success('Payment marked refunded')
-                                refresh()
-                              })
-                              .catch((err) =>
-                                toast.error(err instanceof Error ? err.message : 'Refund failed')
-                              )
-                              .finally(() => setRefundingId(null))
-                          }}
+                          onClick={() => openRefundModal(txn.payment)}
                         >
                           Refund
                         </button>
@@ -391,7 +515,11 @@ export function PaymentsPage() {
                         onClick={() =>
                           setInfoModal({
                             title: `Transaction ${txn.id}`,
-                            message: `Status: ${txn.status}\nAmount: ${txn.amount}`,
+                            message: `Status: ${txn.status}\nAmount: ${txn.amount}${
+                              txn.refundedAmount > 0
+                                ? `\nRefunded: ${formatCurrency(txn.refundedAmount)}`
+                                : ''
+                            }`,
                           })
                         }
                       >
@@ -432,6 +560,133 @@ export function PaymentsPage() {
         message={infoModal?.message ?? ''}
         onClose={() => setInfoModal(null)}
       />
+      {refundModal ? (
+        <div className="adminInfoModalOverlay" role="dialog" aria-modal="true" aria-label="Refund payment">
+          <div className="adminInfoModal refundModal">
+            <button
+              className="adminInfoModalClose"
+              type="button"
+              onClick={() => setRefundModal(null)}
+              aria-label="Close"
+              disabled={refundModal.isSubmitting}
+            >
+              <X size={16} />
+            </button>
+            {refundModal.step === 'confirm' ? (
+              <>
+                <h3 className="adminInfoModalTitle">
+                  Refund payment {refundModal.payment.id.slice(0, 8).toUpperCase()}
+                </h3>
+                <div className="refundModalRows">
+                  <div className="refundModalRow">
+                    <span>Payment amount</span>
+                    <strong>{formatCurrency(refundModal.payment.amount)}</strong>
+                  </div>
+                  <div className="refundModalRow">
+                    <span>Already refunded</span>
+                    <strong>{formatCurrency(refundModal.payment.refundedAmount ?? 0)}</strong>
+                  </div>
+                  <div className="refundModalRow">
+                    <span>Remaining refundable</span>
+                    <strong>{formatCurrency(refundRemaining)}</strong>
+                  </div>
+                </div>
+                <label className="refundModalField">
+                  Refund amount
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    max={refundRemaining}
+                    value={refundModal.amountInput}
+                    onChange={(event) =>
+                      setRefundModal((m) => (m ? { ...m, amountInput: event.target.value } : m))
+                    }
+                  />
+                </label>
+                {!refundAmountValid ? (
+                  <div className="refundModalError">
+                    Enter an amount between 0 and {formatCurrency(refundRemaining)}.
+                  </div>
+                ) : null}
+                <div className="refundModalWarning">
+                  <AlertTriangle size={16} />
+                  <span>
+                    This moves real money back to the customer
+                    {refundAmountValid && refundAmountValue < refundRemaining
+                      ? ' (partial refund)'
+                      : ''}
+                    . This action cannot be undone.
+                  </span>
+                </div>
+                <div className="adminInfoModalActions">
+                  <button
+                    className="adminInfoModalBtn adminInfoModalBtn--danger"
+                    type="button"
+                    disabled={!refundAmountValid || refundModal.isSubmitting}
+                    onClick={() => submitRefund(false)}
+                  >
+                    {refundModal.isSubmitting
+                      ? 'Refunding...'
+                      : `Refund ${refundAmountValid ? formatCurrency(refundAmountValue) : ''}`}
+                  </button>
+                  <button
+                    className="adminInfoModalBtn"
+                    type="button"
+                    onClick={() => setRefundModal(null)}
+                    disabled={refundModal.isSubmitting}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="adminInfoModalTitle">Manual refund confirmation required</h3>
+                <div className="refundModalWarning refundModalWarning--danger">
+                  <AlertTriangle size={16} />
+                  <span>{refundModal.serverMessage ?? 'Automatic refund is not available.'}</span>
+                </div>
+                <p className="adminInfoModalMessage">
+                  No money has moved yet. Process the refund of{' '}
+                  <strong>{formatCurrency(refundAmountValue)}</strong> yourself in the SkipCash
+                  dashboard or hand it over in cash, then confirm below.
+                </p>
+                <label className="refundModalCheck">
+                  <input
+                    type="checkbox"
+                    checked={refundModal.manualChecked}
+                    onChange={(event) =>
+                      setRefundModal((m) =>
+                        m ? { ...m, manualChecked: event.target.checked } : m
+                      )
+                    }
+                  />
+                  I have processed this refund manually in SkipCash/cash
+                </label>
+                <div className="adminInfoModalActions">
+                  <button
+                    className="adminInfoModalBtn adminInfoModalBtn--danger"
+                    type="button"
+                    disabled={!refundModal.manualChecked || refundModal.isSubmitting}
+                    onClick={() => submitRefund(true)}
+                  >
+                    {refundModal.isSubmitting ? 'Recording...' : 'Confirm manual refund'}
+                  </button>
+                  <button
+                    className="adminInfoModalBtn"
+                    type="button"
+                    onClick={() => setRefundModal(null)}
+                    disabled={refundModal.isSubmitting}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
     </AdminLayout>
   )
 }

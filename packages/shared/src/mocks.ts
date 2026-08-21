@@ -100,6 +100,9 @@ export const MOCK_RENTALS: Rental[] = [
     totalAmount: 745,
     paymentStatus: 'completed',
     createdAt: '2026-01-05',
+    monthlyAmount: 745,
+    termMonths: 1,
+    nextBillingDate: '2026-02-10',
   },
 ]
 

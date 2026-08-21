@@ -1,24 +1,39 @@
-import { useEffect, useRef, useState } from 'react'
+import { Check, Clock, Loader2, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
-import { getSkipCashPaymentStatus, type SkipCashPaymentStatus } from '../services/paymentService'
+import { Header } from '../components/shared/Header'
+import {
+  getSkipCashPaymentStatus,
+  retrySkipCashPayment,
+  type SkipCashPaymentStatus,
+} from '../services/paymentService'
 import { useCartStore } from '../stores/cartStore'
-import { Check, Clock, X } from 'lucide-react'
+import {
+  clearInvoicePaymentAttempt,
+  isRentalPayment,
+  isSubscriptionPayment,
+  restoreCheckoutCartFromNote,
+} from '../utils/paymentRetry'
 import './PaymentStatusPage.css'
 
 const POLL_INTERVAL_MS = 2000
 const MAX_ATTEMPTS = 15
 
 export function PaymentStatusPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const paymentId = searchParams.get('paymentId')
   const clearCart = useCartStore((s) => s.clearCart)
+  const setCart = useCartStore((s) => s.setCart)
+  const setVehicle = useCartStore((s) => s.setVehicle)
   const [payment, setPayment] = useState<SkipCashPaymentStatus | null>(null)
   const [timedOut, setTimedOut] = useState(false)
   const [error, setError] = useState('')
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState('')
   const attempts = useRef(0)
   const cartCleared = useRef(false)
+  const cartRestored = useRef(false)
 
   useEffect(() => {
     if (!paymentId) return
@@ -48,12 +63,37 @@ export function PaymentStatusPage() {
     }
   }, [paymentId])
 
-  // Clear cart only after a confirmed successful payment (keep cart if user cancels/fails).
   useEffect(() => {
     if (payment?.status !== 'completed' || cartCleared.current) return
     cartCleared.current = true
     clearCart()
+    clearInvoicePaymentAttempt()
   }, [payment?.status, clearCart])
+
+  useEffect(() => {
+    if (!payment || cartRestored.current) return
+    if (payment.status !== 'failed' && !timedOut) return
+    if (!isRentalPayment(payment) || !payment.vehicleId) return
+    cartRestored.current = true
+    void restoreCheckoutCartFromNote(payment.note, payment.vehicleId, setVehicle, setCart)
+  }, [payment, timedOut, setCart, setVehicle])
+
+  const handleRetry = useCallback(async () => {
+    if (!paymentId || retrying) return
+    setRetryError('')
+    setRetrying(true)
+    try {
+      const intent = await retrySkipCashPayment(paymentId)
+      setSearchParams({ paymentId: intent.paymentId }, { replace: true })
+      setPayment(null)
+      setTimedOut(false)
+      attempts.current = 0
+      window.location.href = intent.payUrl
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : 'Unable to restart payment')
+      setRetrying(false)
+    }
+  }, [paymentId, retrying, setSearchParams])
 
   if (!paymentId) {
     return (
@@ -116,6 +156,8 @@ export function PaymentStatusPage() {
     )
   }
 
+  const showRetry = payment.canRetry !== false && (payment.status === 'failed' || timedOut)
+
   if (payment.status === 'failed') {
     return (
       <PaymentStatusLayout>
@@ -123,10 +165,34 @@ export function PaymentStatusPage() {
           <X size={40} strokeWidth={2.5} />
         </div>
         <h2>Payment failed</h2>
-        <p>Your payment was not completed, so no booking request was created. You have not been charged.</p>
-        <Link className="btn-primary" to="/browse">
-          Browse cars
-        </Link>
+        <p>
+          {isSubscriptionPayment(payment)
+            ? 'Your invoice payment did not complete. You have not been charged — you can try again with one tap.'
+            : 'Your payment did not complete. Your booking details are saved — you can try again without re-entering documents.'}
+        </p>
+        {retryError && <p className="payment-status-error">{retryError}</p>}
+        <div className="payment-status-actions">
+          {showRetry && (
+            <button
+              type="button"
+              className="btn-primary payment-status-retry"
+              disabled={retrying}
+              onClick={() => void handleRetry()}
+            >
+              {retrying ? (
+                <>
+                  <Loader2 size={16} className="payment-status-spinner" aria-hidden />
+                  Restarting…
+                </>
+              ) : (
+                'Try again'
+              )}
+            </button>
+          )}
+          <Link className="btn-secondary" to="/my-booking">
+            My booking
+          </Link>
+        </div>
       </PaymentStatusLayout>
     )
   }
@@ -137,10 +203,33 @@ export function PaymentStatusPage() {
         <Clock size={40} strokeWidth={2.5} />
       </div>
       <h2>Still processing</h2>
-      <p>Your payment is taking longer than usual. Check My booking shortly, or contact support if this persists.</p>
-      <Link className="btn-primary" to="/my-booking">
-        My booking
-      </Link>
+      <p>
+        Your payment is taking longer than usual. You can wait a little longer or try the payment
+        again — we&apos;ll reuse your saved booking details.
+      </p>
+      {retryError && <p className="payment-status-error">{retryError}</p>}
+      <div className="payment-status-actions">
+        {showRetry && (
+          <button
+            type="button"
+            className="btn-primary payment-status-retry"
+            disabled={retrying}
+            onClick={() => void handleRetry()}
+          >
+            {retrying ? (
+              <>
+                <Loader2 size={16} className="payment-status-spinner" aria-hidden />
+                Restarting…
+              </>
+            ) : (
+              'Try again'
+            )}
+          </button>
+        )}
+        <Link className="btn-secondary" to="/my-booking">
+          My booking
+        </Link>
+      </div>
     </PaymentStatusLayout>
   )
 }

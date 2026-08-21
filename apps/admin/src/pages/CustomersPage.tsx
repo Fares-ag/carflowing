@@ -1,24 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CustomerStats, CustomerWithStats } from '../services/adminService'
-import { formatCurrency } from '@carflow/shared'
-import { toast } from 'sonner'
-import {
-  getCustomerDetails,
-  getCustomerStats,
-  listCustomersWithStats,
-  updateCustomerProfile,
-  updateCustomerStatus,
-  updateCustomerVerification,
-} from '../services/adminService'
-import { AdminLayout } from '../layout/AdminLayout'
-import { InfoModal } from '../components/InfoModal'
+import { formatCurrency, formatDate } from '@carflow/shared'
 import {
   Ban,
   Calendar,
   CheckCircle2,
-  ChevronDown,
   Download,
   Eye,
+  FileText,
   Mail,
   Pencil,
   Phone,
@@ -29,6 +16,20 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
+import { CustomerDocumentViewer } from '../components/CustomerDocumentViewer'
+import { InfoModal } from '../components/InfoModal'
+import { AdminLayout } from '../layout/AdminLayout'
+import type { CustomerStats, CustomerWithStats } from '../services/adminService'
+import {
+  getCustomerDetails,
+  getCustomerStats,
+  listCustomersWithStats,
+  updateCustomerProfile,
+  updateCustomerStatus,
+  updateCustomerVerification,
+} from '../services/adminService'
 import './CustomersPage.css'
 
 const getInitials = (name: string) =>
@@ -65,10 +66,13 @@ export function CustomersPage() {
   const [statusConfirmUser, setStatusConfirmUser] = useState<typeof customerRows[0] | null>(null)
   const [viewCustomer, setViewCustomer] = useState<CustomerWithStats | null>(null)
   const [editCustomer, setEditCustomer] = useState<CustomerWithStats | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', phone: '', verification: 'verified' as 'verified' | 'unverified' })
+  const [editForm, setEditForm] = useState({ name: '', phone: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [customerStatsData, setCustomerStatsData] = useState<CustomerStats | null>(null)
+  const [docViewer, setDocViewer] = useState<{ path: string; label: string } | null>(null)
+  const [verificationReason, setVerificationReason] = useState('')
+  const [verifying, setVerifying] = useState(false)
 
   const refresh = useCallback(() => {
     listCustomersWithStats({ page, pageSize })
@@ -97,11 +101,7 @@ export function CustomersPage() {
       id: c.id,
       displayId: `C-${c.id.slice(0, 8)}`,
       initials: getInitials(c.name),
-      joinDate: new Date(c.createdAt).toLocaleDateString('en-US', {
-        month: 'short',
-        day: '2-digit',
-        year: 'numeric',
-      }),
+      joinDate: formatDate(c.createdAt),
       rentals: String(c.rentalsCount),
       spent: formatCurrency(c.totalSpent),
       verification: c.verification,
@@ -144,7 +144,6 @@ export function CustomersPage() {
     setEditForm({
       name: user.name,
       phone: user.phone ?? '',
-      verification: user.verification,
     })
     setError(null)
   }, [])
@@ -155,7 +154,6 @@ export function CustomersPage() {
     setError(null)
     try {
       await updateCustomerProfile(editCustomer.id, { name: editForm.name, phone: editForm.phone || undefined })
-      await updateCustomerVerification(editCustomer.id, editForm.verification)
       refresh()
       setEditCustomer(null)
     } catch (e) {
@@ -183,6 +181,31 @@ export function CustomersPage() {
       })
     }
   }, [refresh, statusConfirmUser])
+
+  const handleVerificationDecision = useCallback(
+    async (decision: 'approve' | 'reject') => {
+      if (!viewCustomer) return
+      setVerifying(true)
+      try {
+        const status = decision === 'approve' ? 'verified' : 'unverified'
+        const reason = verificationReason.trim()
+        await updateCustomerVerification(viewCustomer.id, status, {
+          decision,
+          ...(reason ? { reason } : {}),
+        })
+        toast.success(decision === 'approve' ? 'Customer KYC approved' : 'Customer KYC rejected')
+        refresh()
+        const detail = await getCustomerDetails(viewCustomer.id)
+        if (detail) setViewCustomer(detail)
+        setVerificationReason('')
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to update verification')
+      } finally {
+        setVerifying(false)
+      }
+    },
+    [refresh, verificationReason, viewCustomer]
+  )
 
   return (
     <AdminLayout title="Customers" subtitle="Customer database and management">
@@ -224,7 +247,6 @@ export function CustomersPage() {
                 <option value="active">Active</option>
                 <option value="suspended">Suspended</option>
               </select>
-              <ChevronDown size={14} />
             </label>
             <button
               className="customersExport"
@@ -369,11 +391,14 @@ export function CustomersPage() {
       {/* View modal */}
       {viewCustomer && (
         <div className="adminInfoModalOverlay" role="dialog" aria-modal="true" aria-labelledby="view-customer-title">
-          <div className="adminInfoModal customersDetailModal">
+          <div className="adminInfoModal customersDetailModal customersDetailModal--wide">
             <button
               className="adminInfoModalClose"
               type="button"
-              onClick={() => setViewCustomer(null)}
+              onClick={() => {
+                setViewCustomer(null)
+                setVerificationReason('')
+              }}
               aria-label="Close"
             >
               <X size={16} />
@@ -385,19 +410,111 @@ export function CustomersPage() {
               <p><strong>Email:</strong> {viewCustomer.email}</p>
               <p><strong>Phone:</strong> {viewCustomer.phone ?? '—'}</p>
               <p><strong>Account Status:</strong> {viewCustomer.accountStatus}</p>
-              <p><strong>Verification:</strong> {viewCustomer.verification}</p>
+              <p>
+                <strong>Verification:</strong>{' '}
+                <span className={`customersBadge customersBadge--${viewCustomer.verification}`}>
+                  {viewCustomer.verification === 'verified' ? 'Verified' : 'Unverified'}
+                </span>
+              </p>
               <p><strong>Total Rentals:</strong> {viewCustomer.rentalsCount}</p>
               <p><strong>Total Spent:</strong> {formatCurrency(viewCustomer.totalSpent)}</p>
-              <p><strong>Joined:</strong> {new Date(viewCustomer.createdAt).toLocaleDateString()}</p>
+              <p><strong>Joined:</strong> {formatDate(viewCustomer.createdAt)}</p>
+
+              <section className="customersKycSection" aria-labelledby="customer-kyc-heading">
+                <h4 id="customer-kyc-heading" className="customersKycTitle">Identity documents (KYC)</h4>
+                <p className="customersKycHint">
+                  Review uploaded documents before approving or rejecting verification.
+                </p>
+                <div className="customersKycDocs">
+                  <div className="customersKycDocCard">
+                    <div className="customersKycDocLabel">
+                      <FileText size={16} />
+                      Qatar ID (QID)
+                    </div>
+                    <button
+                      type="button"
+                      className="customersKycViewBtn"
+                      disabled={!viewCustomer.qidDocumentPath}
+                      onClick={() =>
+                        viewCustomer.qidDocumentPath &&
+                        setDocViewer({ path: viewCustomer.qidDocumentPath, label: 'Qatar ID (QID)' })
+                      }
+                    >
+                      {viewCustomer.qidDocumentPath ? 'View document' : 'Not uploaded'}
+                    </button>
+                  </div>
+                  <div className="customersKycDocCard">
+                    <div className="customersKycDocLabel">
+                      <FileText size={16} />
+                      Driver&apos;s license
+                    </div>
+                    <button
+                      type="button"
+                      className="customersKycViewBtn"
+                      disabled={!viewCustomer.driversLicensePath}
+                      onClick={() =>
+                        viewCustomer.driversLicensePath &&
+                        setDocViewer({ path: viewCustomer.driversLicensePath, label: "Driver's license" })
+                      }
+                    >
+                      {viewCustomer.driversLicensePath ? 'View document' : 'Not uploaded'}
+                    </button>
+                  </div>
+                </div>
+
+                <label className="customersKycReason">
+                  Reason (optional)
+                  <textarea
+                    value={verificationReason}
+                    onChange={(e) => setVerificationReason(e.target.value)}
+                    placeholder="Optional note for the audit log (e.g. blurry QID photo)"
+                    rows={3}
+                    maxLength={2000}
+                  />
+                </label>
+
+                <div className="customersKycActions">
+                  <button
+                    type="button"
+                    className="customersKycRejectBtn"
+                    disabled={verifying}
+                    onClick={() => void handleVerificationDecision('reject')}
+                  >
+                    Reject verification
+                  </button>
+                  <button
+                    type="button"
+                    className="customersKycApproveBtn"
+                    disabled={verifying || (!viewCustomer.qidDocumentPath && !viewCustomer.driversLicensePath)}
+                    onClick={() => void handleVerificationDecision('approve')}
+                  >
+                    {verifying ? 'Saving…' : 'Approve verification'}
+                  </button>
+                </div>
+              </section>
             </div>
             <div className="adminInfoModalActions">
-              <button className="adminInfoModalBtn" type="button" onClick={() => setViewCustomer(null)}>
+              <button
+                className="adminInfoModalBtn"
+                type="button"
+                onClick={() => {
+                  setViewCustomer(null)
+                  setVerificationReason('')
+                }}
+              >
                 Close
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <CustomerDocumentViewer
+        open={!!docViewer}
+        path={docViewer?.path}
+        label={docViewer?.label ?? 'Document'}
+        onClose={() => setDocViewer(null)}
+      />
 
       {/* Edit modal */}
       {editCustomer && (
@@ -431,16 +548,9 @@ export function CustomersPage() {
                   onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
                 />
               </label>
-              <label>
-                Verification
-                <select
-                  value={editForm.verification}
-                  onChange={(e) => setEditForm((f) => ({ ...f, verification: e.target.value as 'verified' | 'unverified' }))}
-                >
-                  <option value="verified">Verified</option>
-                  <option value="unverified">Unverified</option>
-                </select>
-              </label>
+              <p className="customersEditHint">
+                KYC verification is managed from the customer detail view after reviewing identity documents.
+              </p>
               {error && <p className="customersEditError">{error}</p>}
             </div>
             <div className="adminInfoModalActions">

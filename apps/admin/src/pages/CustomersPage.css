@@ -101,38 +101,83 @@
 }
 
 .customersSelect {
+  position: relative;
   height: 36px;
-  border-radius: 6.8px;
-  border: 0.56px solid #e5e5e5;
-  background: rgba(229, 229, 229, 0.3);
-  padding: 0 12px;
+  min-width: 140px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 0 32px 0 12px;
   font-size: 14px;
+  font-weight: 500;
+  color: #374151;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.customersSelect::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid #6b7280;
+  border-bottom: 1.5px solid #6b7280;
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
 }
 
 .customersSelect select {
-  border: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: 0 !important;
+  outline: none;
+  box-shadow: none;
   background: transparent;
   font: inherit;
+  font-size: 14px;
+  font-weight: 500;
   color: inherit;
-  appearance: none;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.customersSelect select::-ms-expand {
+  display: none;
+}
+
+.customersSelect:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
 }
 
 .customersExport {
   height: 36px;
-  border-radius: 6.8px;
-  border: 0.56px solid #e5e5e5;
-  background: rgba(229, 229, 229, 0.3);
+  border-radius: 8px;
+  border: none;
+  background: transparent;
   padding: 0 12px;
   font-size: 14px;
+  font-weight: 500;
+  color: #4b5563;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.customersExport:hover {
+  background: #f3f4f6;
+  color: #111827;
 }
 
 .customersExport img {
@@ -331,6 +376,145 @@
   margin-top: 8px;
 }
 
+.customersEditHint {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.customersDetailModal--wide {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.customersKycSection {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.customersKycTitle {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.customersKycHint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.customersKycDocs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.customersKycDocCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.customersKycDocLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 10px;
+}
+
+.customersKycViewBtn {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.customersKycViewBtn:hover:not(:disabled) {
+  border-color: #685ff7;
+  color: #685ff7;
+}
+
+.customersKycViewBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.customersKycReason {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+  margin-bottom: 14px;
+}
+
+.customersKycReason textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.customersKycActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.customersKycRejectBtn,
+.customersKycApproveBtn {
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.customersKycRejectBtn {
+  background: #fff;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.customersKycRejectBtn:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.customersKycApproveBtn {
+  background: #685ff7;
+  color: #fff;
+}
+
+.customersKycApproveBtn:hover:not(:disabled) {
+  background: #5849e6;
+}
+
+.customersKycRejectBtn:disabled,
+.customersKycApproveBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .adminInfoModalBtn--primary {
   background: #685ff7;
   color: white;
@@ -383,6 +567,10 @@
   }
 
   .customersControlsRow {
+    grid-template-columns: 1fr;
+  }
+
+  .customersKycDocs {
     grid-template-columns: 1fr;
   }
 }

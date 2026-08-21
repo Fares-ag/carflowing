@@ -1,0 +1,112 @@
+.customerDocViewerOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.customerDocViewerModal {
+  background: #fff;
+  border-radius: 16px;
+  width: min(920px, 100%);
+  max-height: min(90vh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+}
+
+.customerDocViewerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.customerDocViewerTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.customerDocViewerClose {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #64748b;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.customerDocViewerClose:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.customerDocViewerBody {
+  flex: 1;
+  min-height: 360px;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 16px;
+}
+
+.customerDocViewerImage {
+  max-width: 100%;
+  max-height: min(70vh, 760px);
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+}
+
+.customerDocViewerFrame {
+  width: 100%;
+  height: min(70vh, 760px);
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.customerDocViewerLoading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.customerDocViewerSpinner {
+  animation: customerDocViewerSpin 0.8s linear infinite;
+}
+
+@keyframes customerDocViewerSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.customerDocViewerError,
+.customerDocViewerEmpty {
+  color: #64748b;
+  font-size: 14px;
+  text-align: center;
+  margin: 0;
+}
+
+.customerDocViewerError {
+  color: #e7000b;
+}

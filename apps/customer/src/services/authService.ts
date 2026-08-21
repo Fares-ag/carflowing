@@ -59,15 +59,38 @@ export async function signUp({ email, password, name }: SignUpInput): Promise<Au
   return data
 }
 
-export async function login(email: string, password: string): Promise<AuthSession> {
-  return apiRequest<AuthSession>('/auth/login', {
+export interface LoginRequires2fa {
+  requires2fa: true
+  challengeToken: string
+  userId: string
+}
+
+export type LoginResult = AuthSession | LoginRequires2fa
+
+export function isLoginRequires2fa(result: LoginResult): result is LoginRequires2fa {
+  return 'requires2fa' in result && result.requires2fa === true
+}
+
+export async function login(email: string, password: string): Promise<LoginResult> {
+  return apiRequest<LoginResult>('/auth/login', {
     method: 'POST',
     body: { email, password, expectedRole: 'customer' },
   })
 }
 
+export async function verify2faLogin(challengeToken: string, code: string): Promise<AuthSession> {
+  return apiRequest<AuthSession>('/auth/2fa/verify-login', {
+    method: 'POST',
+    body: { challengeToken, code },
+  })
+}
+
 export async function logout(): Promise<void> {
   await apiRequest('/auth/logout', { method: 'POST' })
+}
+
+export async function logoutAllDevices(): Promise<void> {
+  await apiRequest('/auth/logout-all', { method: 'POST' })
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -95,4 +118,12 @@ export async function changePassword(currentPassword: string, newPassword: strin
     method: 'POST',
     body: { currentPassword, newPassword },
   })
+}
+
+/**
+ * Re-sends the signup verification email to the signed-in user. Used when an
+ * online payment is blocked with a 403 "Verify your email" error.
+ */
+export async function resendVerificationEmail(): Promise<void> {
+  await apiRequest('/auth/resend-verification', { method: 'POST' })
 }

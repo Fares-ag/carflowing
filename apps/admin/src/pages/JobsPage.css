@@ -1,0 +1,92 @@
+.jobsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.jobsIntro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.jobsIntro p {
+  margin: 0;
+  max-width: 640px;
+  color: #6a7282;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.jobsRunBtn {
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: #155dfc;
+  color: #fff;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.jobsRunBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.jobsTableCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.jobsTableWrap {
+  overflow-x: auto;
+}
+
+.jobsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.jobsTable th,
+.jobsTable td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.jobsTable th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.jobsErrorCell {
+  color: #b91c1c;
+  max-width: 200px;
+  word-break: break-word;
+}
+
+.jobsEmpty {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+.jobsRefreshBtn {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  margin-left: 8px;
+}

@@ -1,5 +1,5 @@
-import { Link, useLocation } from 'react-router-dom'
 import { BarChart3, CreditCard, Settings } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
 import './Sidebar.css'
 
 export function Sidebar() {

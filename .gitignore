@@ -62,3 +62,5 @@ tests/compliance-report.md
 # Supabase CLI (legacy archive)
 supabase/.temp/
 
+.vercel
+.env*

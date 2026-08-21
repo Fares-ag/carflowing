@@ -1,6 +1,5 @@
-import type { ReactNode } from 'react'
-import { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { CarflowLogo } from '@carflow/shared'
+import type { AdminPortalRole } from '@carflow/shared/types'
 import {
   AlertTriangle,
   Bell,
@@ -12,14 +11,24 @@ import {
   LineChart,
   LogOut,
   Menu,
+  Megaphone,
   MessagesSquare,
   Package,
   Receipt,
+  ScrollText,
   Search,
   Settings,
+  Tag,
+  UserCog,
   Users,
+  Wallet,
+  Wrench,
+  Zap,
 } from 'lucide-react'
-import { CarflowLogo } from '@carflow/shared'
+import type { ReactNode } from 'react'
+import { useMemo, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { ADMIN_NAV_ITEMS, ADMIN_SETTINGS_ROLES, type AdminRouteAccess } from '../config/adminNav'
 import { useAuth } from '../contexts/AuthContext'
 import './AdminLayout.css'
 
@@ -29,24 +38,60 @@ export interface AdminLayoutProps {
   children: ReactNode
 }
 
-const NAV_ITEMS: Array<{ to: string; label: string; icon: ReactNode }> = [
-  { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-  { to: '/cars', label: 'Cars', icon: <Car size={18} /> },
-  { to: '/customers', label: 'Customers', icon: <Users size={18} /> },
-  { to: '/rental', label: 'Rental', icon: <Receipt size={18} /> },
-  { to: '/dealers', label: 'Dealers', icon: <Building2 size={18} /> },
-  { to: '/payments', label: 'Payments', icon: <CreditCard size={18} /> },
-  { to: '/plans', label: 'Plans', icon: <Package size={18} /> },
-  { to: '/booking-requests', label: 'Booking Requests', icon: <Receipt size={18} /> },
-  { to: '/complaints', label: 'Complaints', icon: <AlertTriangle size={18} /> },
-  { to: '/messages', label: 'Messages', icon: <MessagesSquare size={18} /> },
-  { to: '/analytics', label: 'Analytics', icon: <LineChart size={18} /> },
-]
+type NavItem = {
+  to: string
+  label: string
+  icon: ReactNode
+  roles: AdminRouteAccess
+}
+
+const NAV_ICONS: Record<string, ReactNode> = {
+  '/dashboard': <LayoutDashboard size={18} />,
+  '/cars': <Car size={18} />,
+  '/customers': <Users size={18} />,
+  '/rental': <Receipt size={18} />,
+  '/dealers': <Building2 size={18} />,
+  '/payments': <CreditCard size={18} />,
+  '/payouts': <Wallet size={18} />,
+  '/disputes': <AlertTriangle size={18} />,
+  '/plans': <Package size={18} />,
+  '/promos': <Tag size={18} />,
+  '/booking-requests': <Receipt size={18} />,
+  '/maintenance': <Wrench size={18} />,
+  '/jobs': <Zap size={18} />,
+  '/staff': <UserCog size={18} />,
+  '/complaints': <AlertTriangle size={18} />,
+  '/messages': <MessagesSquare size={18} />,
+  '/broadcasts': <Megaphone size={18} />,
+  '/analytics': <LineChart size={18} />,
+  '/audit': <ScrollText size={18} />,
+}
+
+const NAV_ITEMS: NavItem[] = ADMIN_NAV_ITEMS.map((item) => ({
+  ...item,
+  icon: NAV_ICONS[item.to] ?? <LayoutDashboard size={18} />,
+}))
+
+function canSeeNavItem(item: NavItem, role: AdminPortalRole | undefined): boolean {
+  if (!role) return false
+  if (item.roles === 'all') return true
+  return item.roles.includes(role)
+}
 
 export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
   const navigate = useNavigate()
-  const { logout } = useAuth()
+  const location = useLocation()
+  const { logout, session } = useAuth()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const path = location.pathname
+
+  const visibleNavItems = useMemo(
+    () => NAV_ITEMS.filter((item) => canSeeNavItem(item, session?.role)),
+    [session?.role]
+  )
+
+  const canSeeSettings = session?.role ? ADMIN_SETTINGS_ROLES.includes(session.role) : false
+
   return (
     <div className={`adminDash ${isSidebarCollapsed ? 'adminDash--collapsed' : ''}`}>
       <aside className="adminSidebar">
@@ -54,8 +99,9 @@ export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
           <div className="adminBrand">
             <img src={CarflowLogo} alt="Carflow" />
           </div>
+
           <nav className="adminNav" aria-label="Admin navigation">
-            {NAV_ITEMS.map((item) => (
+            {visibleNavItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -70,12 +116,14 @@ export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
           </nav>
 
           <div className="adminSidebarBottom">
-            <NavLink to="/settings" className="adminNavItem">
-              <span className="adminNavIcon" aria-hidden="true">
-                <Settings size={18} />
-              </span>
-              Settings
-            </NavLink>
+            {canSeeSettings ? (
+              <NavLink to="/settings" className="adminNavItem">
+                <span className="adminNavIcon" aria-hidden="true">
+                  <Settings size={18} />
+                </span>
+                Settings
+              </NavLink>
+            ) : null}
             <button
               className="adminNavItem adminNavItem--danger"
               type="button"
@@ -98,7 +146,7 @@ export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
             className="adminIconBtn"
             type="button"
             aria-label="Menu"
-            onClick={() => setIsSidebarCollapsed(prev => !prev)}
+            onClick={() => setIsSidebarCollapsed((prev) => !prev)}
           >
             <Menu size={18} />
           </button>
@@ -108,14 +156,26 @@ export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
           </div>
         </div>
         <div className="adminTopbarRight">
-          <button className="adminPillBtn" type="button" onClick={() => navigate('/dashboard')}>
-            <Home size={16} />
-            Home
-          </button>
-          <button className="adminPillBtn" type="button" onClick={() => navigate('/cars')}>
-            <Car size={16} />
-            Cars
-          </button>
+          <nav className="adminTopbarNav" aria-label="Quick links">
+            <button
+              className={`adminTopbarLink${path.startsWith('/dashboard') || path === '/' ? ' adminTopbarLink--active' : ''}`}
+              type="button"
+              onClick={() => navigate('/dashboard')}
+            >
+              <Home size={16} strokeWidth={1.75} />
+              Home
+            </button>
+            {canSeeNavItem(NAV_ITEMS[1], session?.role) ? (
+              <button
+                className={`adminTopbarLink${path.startsWith('/cars') ? ' adminTopbarLink--active' : ''}`}
+                type="button"
+                onClick={() => navigate('/cars')}
+              >
+                <Car size={16} strokeWidth={1.75} />
+                Cars
+              </button>
+            ) : null}
+          </nav>
           <button
             className="adminIconBtn"
             type="button"
@@ -139,4 +199,3 @@ export function AdminLayout({ title, subtitle, children }: AdminLayoutProps) {
     </div>
   )
 }
-

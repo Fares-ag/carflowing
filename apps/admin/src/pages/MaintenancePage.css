@@ -1,0 +1,106 @@
+.adminMaintenancePage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.adminMaintenanceToolbar {
+  display: flex;
+  gap: 12px;
+}
+
+.adminMaintenanceFilter {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.adminMaintenanceFilter select {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.adminMaintenanceCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.adminMaintenanceTableWrap {
+  overflow-x: auto;
+}
+
+.adminMaintenanceTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.adminMaintenanceTable th,
+.adminMaintenanceTable td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.adminMaintenanceTable th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.adminMaintenanceTitle {
+  font-weight: 500;
+}
+
+.adminMaintenanceDesc {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.adminMaintenanceStatus {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.adminMaintenanceStatus--open {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.adminMaintenanceStatus--completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.adminMaintenanceCompleteBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.adminMaintenanceEmpty {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}

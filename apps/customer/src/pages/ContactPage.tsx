@@ -1,5 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { whatsAppLink } from '@carflow/shared'
 import {
   Calendar,
   Headphones,
@@ -10,17 +9,19 @@ import {
   Shield,
   UserRound,
 } from 'lucide-react'
-import { whatsAppLink } from '@carflow/shared'
-import { Header } from '../components/shared/Header'
+import type { FormEvent} from 'react';
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Footer } from '../components/shared/Footer'
-import { useAuth } from '../contexts/AuthContext'
-import { submitComplaint } from '../services/customerService'
-import { toast } from '../hooks/useToast'
+import { Header } from '../components/shared/Header'
 import {
   SUPPORT_EMAIL,
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_TEL,
 } from '../constants/support'
+import { useAuth } from '../contexts/AuthContext'
+import { toast } from '../hooks/useToast'
+import { submitComplaint } from '../services/customerService'
 import './ContactPage.css'
 
 const SUPPORT_FEATURES = [

@@ -1,14 +1,18 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
 import type { Express } from 'express'
 import request from 'supertest'
-import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { db } from '../../db/index.js'
+import { vehicles } from '../../db/schema.js'
 import {
+  evilHtmlBuffer,
   fakePngBuffer,
   oversizedBuffer,
   svgWithScriptBuffer,
   tinyPdfBuffer,
   tinyPngBuffer,
 } from '../../test/fixtures/index.js'
+import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 /**
  * ID: UPL-01..UPL-06 (Phase 1.5) + UPL-N01..UPL-N20 negative/gap cases
@@ -64,15 +68,24 @@ describe('Uploads API', () => {
       expect(res.status).toBe(400)
     })
 
-    it('UPL-N03: mimetype spoofing (non-image bytes labeled image/png) is accepted today (@gap: no magic-byte check)', async () => {
+    it('UPL-N03: rejects mimetype spoofing when magic bytes do not match', async () => {
       await seedFixtures()
       const { agent } = await loginAs(app, 'dealer@test.dev', 'dealer')
       const res = await agent
         .post('/api/uploads/vehicle-image')
         .attach('file', fakePngBuffer, { filename: 'shell.png', contentType: 'image/png' })
-      // Documents the gap: multer/route only checks the client-supplied
-      // mimetype header, not the actual file signature.
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/content does not match/i)
+    })
+
+    it('UPL-N16: rejects path traversal in vehicle-image prefix', async () => {
+      await seedFixtures()
+      const { agent } = await loginAs(app, 'dealer@test.dev', 'dealer')
+      const res = await agent
+        .post('/api/uploads/vehicle-image')
+        .field('prefix', '../../etc')
+        .attach('file', tinyPngBuffer, { filename: 'car.png', contentType: 'image/png' })
+      expect(res.status).toBe(400)
     })
   })
 
@@ -205,22 +218,154 @@ describe('Uploads API', () => {
       const res = await agent.get('/api/uploads/documents').query({ path: '../../etc/passwd' })
       expect(res.status).toBe(400)
     })
+
+    it('SEC-DOC-01: identity documents are not served from /uploads static mount', async () => {
+      await seedFixtures()
+      const { agent } = await loginAs(app, 'customer@test.dev', 'customer')
+      const uploaded = await agent
+        .post('/api/uploads/document')
+        .field('type', 'qid')
+        .attach('file', tinyPdfBuffer, { filename: 'qid.pdf', contentType: 'application/pdf' })
+      expect(uploaded.status).toBe(200)
+      const staticRes = await request(app).get(`/uploads/${uploaded.body.path}`)
+      expect(staticRes.status).toBe(404)
+      const authed = await agent.get('/api/uploads/documents/file').query({ path: uploaded.body.path })
+      expect(authed.status).toBe(200)
+    })
+
+    it('SEC-DOC-02: admin may fetch any customer identity document via auth proxy', async () => {
+      const fixtures = await seedFixtures()
+      const { agent: customerAgent } = await loginAs(app, fixtures.customer.email, 'customer')
+      const uploaded = await customerAgent
+        .post('/api/uploads/document')
+        .field('type', 'qid')
+        .attach('file', tinyPdfBuffer, { filename: 'qid.pdf', contentType: 'application/pdf' })
+      expect(uploaded.status).toBe(200)
+
+      const { agent: adminAgent } = await loginAs(app, fixtures.admin.email, 'admin')
+      const adminFetch = await adminAgent
+        .get('/api/uploads/documents/file')
+        .query({ path: uploaded.body.path })
+      expect(adminFetch.status).toBe(200)
+      expect(adminFetch.headers['content-type']).toMatch(/pdf/i)
+    })
   })
 
-  describe('DELETE /api/uploads/by-url', () => {
-    it('UPL-06: removes a previously uploaded file', async () => {
+  describe('GET /api/uploads/media', () => {
+    it('UPL-07: serves uploaded vehicle images with cross-origin CORP for frontend img tags', async () => {
       await seedFixtures()
       const { agent } = await loginAs(app, 'dealer@test.dev', 'dealer')
       const uploaded = await agent
         .post('/api/uploads/vehicle-image')
         .attach('file', tinyPngBuffer, { filename: 'car.png', contentType: 'image/png' })
+      expect(uploaded.status).toBe(200)
+
+      const mediaPath = uploaded.body.path as string
+      expect(mediaPath).toMatch(/^vehicle-images\//)
+
+      const mediaRes = await request(app).get('/api/uploads/media').query({ path: mediaPath })
+      expect(mediaRes.status).toBe(200)
+      expect(mediaRes.headers['cross-origin-resource-policy']).toBe('cross-origin')
+      expect(mediaRes.headers['content-type']).toMatch(/^image\/png/)
+    })
+
+    it('UPL-N18: rejects non-public media paths', async () => {
+      const res = await request(app).get('/api/uploads/media').query({ path: 'documents/user/qid.pdf' })
+      expect(res.status).toBe(403)
+    })
+  })
+
+  describe('DELETE /api/uploads/by-url', () => {
+    it('UPL-06: removes a previously uploaded file', async () => {
+      const fixtures = await seedFixtures()
+      const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+      const uploaded = await agent
+        .post('/api/uploads/vehicle-image')
+        .attach('file', tinyPngBuffer, { filename: 'car.png', contentType: 'image/png' })
+      await db
+        .update(vehicles)
+        .set({ imageUrl: uploaded.body.url })
+        .where(eq(vehicles.id, fixtures.vehicles[0].id))
       const res = await agent.delete('/api/uploads/by-url').send({ url: uploaded.body.url })
       expect(res.status).toBe(204)
+    })
+
+    it('UPL-N17: dealer cannot delete another dealer vehicle image', async () => {
+      const fixtures = await seedFixtures()
+      const { agent: dealerAgent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+      const uploaded = await dealerAgent
+        .post('/api/uploads/vehicle-image')
+        .attach('file', tinyPngBuffer, { filename: 'car.png', contentType: 'image/png' })
+      expect(uploaded.status).toBe(200)
+      await db
+        .update(vehicles)
+        .set({ imageUrl: uploaded.body.url })
+        .where(eq(vehicles.id, fixtures.vehicles[0].id))
+
+      const { agent: dealer2Agent } = await loginAs(app, fixtures.dealer2.email, 'dealer')
+      const res = await dealer2Agent.delete('/api/uploads/by-url').send({ url: uploaded.body.url })
+      expect(res.status).toBe(403)
     })
 
     it('UPL-N12/N14: requires authentication', async () => {
       const res = await request(app).delete('/api/uploads/by-url').send({ url: 'http://x/y.png' })
       expect(res.status).toBe(401)
+    })
+  })
+
+  describe('Security hardening', () => {
+    it('SEC-UPL-01: rejects evil.html bytes with a spoofed image MIME', async () => {
+      await seedFixtures()
+      const { agent } = await loginAs(app, 'dealer@test.dev', 'dealer')
+      const res = await agent
+        .post('/api/uploads/vehicle-image')
+        .attach('file', evilHtmlBuffer, { filename: 'evil.html', contentType: 'image/png' })
+      expect(res.status).toBe(400)
+    })
+
+    it('SEC-UPL-02: stores PNG bytes with a .png extension even when filename is evil.html', async () => {
+      await seedFixtures()
+      const { agent } = await loginAs(app, 'dealer@test.dev', 'dealer')
+      const res = await agent
+        .post('/api/uploads/vehicle-image')
+        .attach('file', tinyPngBuffer, { filename: 'evil.html', contentType: 'image/png' })
+      expect(res.status).toBe(200)
+      expect(res.body.url).toMatch(/\.png($|\?)/)
+    })
+
+    it('SEC-UPL-03: static upload routes are served as attachment with restrictive Content-Type', async () => {
+      await seedFixtures()
+      const { agent } = await loginAs(app, 'dealer@test.dev', 'dealer')
+      const uploaded = await agent
+        .post('/api/uploads/vehicle-image')
+        .attach('file', tinyPngBuffer, { filename: 'car.png', contentType: 'image/png' })
+      expect(uploaded.status).toBe(200)
+
+      const staticRes = await request(app).get(uploaded.body.url.replace(/^https?:\/\/[^/]+/, ''))
+      expect(staticRes.status).toBe(200)
+      expect(staticRes.headers['content-disposition']).toBe('attachment')
+      expect(staticRes.headers['content-type']).toMatch(/^image\/png/)
+      expect(staticRes.headers['x-content-type-options']).toBe('nosniff')
+    })
+
+    it('SEC-CSP-01: sets Content-Security-Policy-Report-Only by default', async () => {
+      const res = await request(app).get('/health')
+      expect(res.headers['content-security-policy-report-only']).toBe("default-src 'self'")
+      expect(res.headers['content-security-policy']).toBeUndefined()
+    })
+
+    it('SEC-CSP-02: enforces CSP when CSP_ENFORCE=true', async () => {
+      const previous = process.env.CSP_ENFORCE
+      process.env.CSP_ENFORCE = 'true'
+      const enforcedApp = buildTestApp()
+      try {
+        const res = await request(enforcedApp).get('/health')
+        expect(res.headers['content-security-policy']).toBe("default-src 'self'")
+        expect(res.headers['content-security-policy-report-only']).toBeUndefined()
+      } finally {
+        if (previous === undefined) delete process.env.CSP_ENFORCE
+        else process.env.CSP_ENFORCE = previous
+      }
     })
   })
 })

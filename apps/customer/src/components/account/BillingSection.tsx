@@ -1,15 +1,18 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { Invoice, PaymentMethod } from '@carflow/shared'
-import { apiRequest } from '@carflow/shared'
+import { apiRequest, formatCurrency, formatDateOrDash } from '@carflow/shared'
+import { CreditCard } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from '../../hooks/useToast'
+import { t } from '../../i18n'
 import {
+  addPaymentMethod,
+  downloadInvoicePdf,
   listInvoices,
   listPaymentMethods,
   listRentalsWithDetails,
   removePaymentMethod,
   setDefaultPaymentMethod,
 } from '../../services/customerService'
-import { toast } from '../../hooks/useToast'
-import { CreditCard } from 'lucide-react'
 import { InfoModal } from '../shared/InfoModal'
 import '../../pages/SubscriptionBilling.css'
 
@@ -21,6 +24,15 @@ export default function BillingSection() {
   const [memberSince, setMemberSince] = useState<string>('—')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [infoModal, setInfoModal] = useState<{ title: string; message: string } | null>(null)
+  const [showAddCard, setShowAddCard] = useState(false)
+  const [addingCard, setAddingCard] = useState(false)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [newCard, setNewCard] = useState({
+    brand: 'Visa',
+    last4: '',
+    expiryMonth: '',
+    expiryYear: '',
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -43,11 +55,7 @@ export default function BillingSection() {
         ).length
         setActiveRentalsCount(active)
         const created = full.profile?.createdAt || (full.profile as { created_at?: string })?.created_at
-        setMemberSince(
-          created
-            ? new Date(created).toLocaleDateString(undefined, { dateStyle: 'medium' })
-            : '—'
-        )
+        setMemberSince(formatDateOrDash(created))
       } catch (e) {
         if (!cancelled) {
           setLoadError(e instanceof Error ? e.message : 'Failed to load billing data')
@@ -68,28 +76,59 @@ export default function BillingSection() {
     setActiveTab(tab)
   }, [])
 
-  const handleDownloadInvoice = useCallback((invoice: Invoice) => {
-    const rows = [
-      ['Invoice ID', invoice.id],
-      ['Date', invoice.date],
-      ['Description', invoice.description],
-      ['Amount', `QAR ${invoice.amount.toLocaleString('en-US')}`],
-      ['Status', invoice.status],
-    ]
-    const csv = rows.map((row) => `"${row[0]}","${row[1]}"`).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.setAttribute('download', `invoice-${invoice.id}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+  const handleDownloadInvoice = useCallback(async (invoice: Invoice) => {
+    setDownloadingId(invoice.id)
+    try {
+      const blob = await downloadInvoicePdf(invoice.id)
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.setAttribute('download', `invoice-${invoice.id.slice(0, 8)}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(link.href)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('billing.pdfError'))
+    } finally {
+      setDownloadingId(null)
+    }
   }, [])
+
+  const handleAddCard = async () => {
+    if (!/^\d{4}$/.test(newCard.last4)) {
+      toast.error('Enter the last 4 digits of your card.')
+      return
+    }
+    const em = Number(newCard.expiryMonth)
+    const ey = Number(newCard.expiryYear)
+    if (!em || em < 1 || em > 12 || !ey || ey < new Date().getFullYear()) {
+      toast.error('Enter a valid expiry date.')
+      return
+    }
+    setAddingCard(true)
+    try {
+      const method = await addPaymentMethod({
+        brand: newCard.brand,
+        last4: newCard.last4,
+        expiryMonth: em,
+        expiryYear: ey,
+        methodType: 'card',
+      })
+      setPaymentMethods((prev) => [...prev, method])
+      setShowAddCard(false)
+      setNewCard({ brand: 'Visa', last4: '', expiryMonth: '', expiryYear: '' })
+      toast.success('Payment method added.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add payment method')
+    } finally {
+      setAddingCard(false)
+    }
+  }
 
   const handleViewInvoice = useCallback((invoice: Invoice) => {
     setInfoModal({
       title: `Invoice ${invoice.id}`,
-      message: `${invoice.description} — QAR ${invoice.amount.toLocaleString('en-US')} (${invoice.status})`,
+      message: `${invoice.description} — ${formatCurrency(invoice.amount)} (${invoice.status})`,
     })
   }, [])
 
@@ -137,7 +176,7 @@ export default function BillingSection() {
               <div className="billing-stat-cards">
                 <div className="billing-stat-card">
                   <div className="billing-stat-label">Total spent</div>
-                  <div className="billing-stat-value">QAR {totalSpent.toLocaleString('en-US')}</div>
+                  <div className="billing-stat-value">{formatCurrency(totalSpent)}</div>
                   <div className="billing-stat-hint">From paid invoices</div>
                 </div>
                 <div className="billing-stat-card">
@@ -202,7 +241,7 @@ export default function BillingSection() {
                             <td>{invoice.id}</td>
                             <td>{invoice.date}</td>
                             <td>{invoice.description}</td>
-                            <td>QAR {invoice.amount.toLocaleString('en-US')}</td>
+                            <td>{formatCurrency(invoice.amount)}</td>
                             <td>
                               <span className={`status-badge ${invoice.status}`}>
                                 {invoice.status === 'paid'
@@ -219,10 +258,11 @@ export default function BillingSection() {
                                 <button
                                   type="button"
                                   className="action-icon"
-                                  title="Download"
+                                  title={t('billing.downloadPdf')}
+                                  disabled={downloadingId === invoice.id}
                                   onClick={() => handleDownloadInvoice(invoice)}
                                 >
-                                  Download
+                                  {downloadingId === invoice.id ? '…' : t('billing.downloadPdf')}
                                 </button>
                                 <button
                                   type="button"
@@ -247,7 +287,75 @@ export default function BillingSection() {
           {activeTab === 'payment' && (
             <div className="payment-tab">
               <div className="payment-methods-card">
-                <h3 className="billing-section-title">Payment methods</h3>
+                <div className="billing-overview-methods-header">
+                  <h3 className="billing-section-title">Payment methods</h3>
+                  <button
+                    type="button"
+                    className="billing-link-btn"
+                    onClick={() => setShowAddCard((v) => !v)}
+                  >
+                    {showAddCard ? 'Cancel' : t('billing.addCard')}
+                  </button>
+                </div>
+
+                {showAddCard && (
+                  <div className="billing-add-card-form">
+                    <label>
+                      Brand
+                      <select
+                        value={newCard.brand}
+                        onChange={(e) => setNewCard((c) => ({ ...c, brand: e.target.value }))}
+                      >
+                        <option value="Visa">Visa</option>
+                        <option value="Mastercard">Mastercard</option>
+                        <option value="Amex">Amex</option>
+                      </select>
+                    </label>
+                    <label>
+                      Last 4 digits
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={4}
+                        value={newCard.last4}
+                        onChange={(e) =>
+                          setNewCard((c) => ({ ...c, last4: e.target.value.replace(/\D/g, '').slice(0, 4) }))
+                        }
+                        placeholder="1234"
+                      />
+                    </label>
+                    <label>
+                      Expiry month
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={newCard.expiryMonth}
+                        onChange={(e) => setNewCard((c) => ({ ...c, expiryMonth: e.target.value }))}
+                        placeholder="MM"
+                      />
+                    </label>
+                    <label>
+                      Expiry year
+                      <input
+                        type="number"
+                        min={new Date().getFullYear()}
+                        value={newCard.expiryYear}
+                        onChange={(e) => setNewCard((c) => ({ ...c, expiryYear: e.target.value }))}
+                        placeholder="YYYY"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="billing-link-btn"
+                      disabled={addingCard}
+                      onClick={handleAddCard}
+                    >
+                      {addingCard ? 'Saving…' : 'Save card'}
+                    </button>
+                  </div>
+                )}
+
                 {paymentMethods.length === 0 ? (
                   <p className="billing-empty-hint">No payment methods on file.</p>
                 ) : (
@@ -309,8 +417,9 @@ export default function BillingSection() {
                     </div>
                   ))
                 )}
-                <p className="billing-empty-hint" style={{ marginTop: '1rem' }}>
-                  To add a payment method, please visit the dealership.
+                <p className="billing-empty-hint billing-payment-unavailable" style={{ marginTop: '1rem' }}>
+                  Card details are stored for reference only. Pay monthly invoices from My booking via SkipCash, or
+                  pay at your dealer.
                 </p>
               </div>
             </div>

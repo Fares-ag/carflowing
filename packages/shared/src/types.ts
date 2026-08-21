@@ -1,4 +1,12 @@
-export type UserRole = 'admin' | 'dealer' | 'customer'
+export type UserRole = 'admin' | 'dealer' | 'customer' | 'finance' | 'ops' | 'support'
+
+/** Roles that may access the admin portal (full admin + split ops roles). */
+export const ADMIN_PORTAL_ROLES = ['admin', 'finance', 'ops', 'support'] as const
+export type AdminPortalRole = (typeof ADMIN_PORTAL_ROLES)[number]
+
+export function isAdminPortalRole(role: string): role is AdminPortalRole {
+  return (ADMIN_PORTAL_ROLES as readonly string[]).includes(role)
+}
 
 export interface ApiResponse<T> {
   success: boolean
@@ -41,6 +49,10 @@ export interface Dealer {
   contactPhone?: string
   address?: string
   logoUrl?: string
+  bankAccountName?: string
+  bankName?: string
+  bankIban?: string
+  bankDetailsVerifiedAt?: string
   createdAt: string
 }
 
@@ -73,11 +85,62 @@ export interface Vehicle {
   fuelType: 'gas' | 'diesel' | 'electric' | 'hybrid'
   seats: number
   imageUrl?: string
+  imageUrls?: string[]
+  description?: string
   color?: string
+  mileageCapKm?: number
+  features?: string[]
   licensePlate?: string
+  locationCity?: string
+  locationArea?: string
+  latitude?: number
+  longitude?: number
+  /** Average star rating from completed rental reviews (1–5). */
+  averageRating?: number
+  /** Number of customer reviews for this vehicle. */
+  reviewCount?: number
 }
 
-export type RentalStatus = 'reserved' | 'active' | 'completed' | 'cancelled'
+/** A published customer review for a vehicle (browse/detail). */
+export interface VehicleReview {
+  id: string
+  rentalId: string
+  vehicleId: string
+  dealerId: string
+  rating: number
+  comment?: string
+  createdAt: string
+  /** First name only on public surfaces. */
+  customerName?: string
+  dealerResponse?: string
+  dealerRespondedAt?: string
+}
+
+export interface VehicleReviewList {
+  averageRating: number
+  reviewCount: number
+  items: VehicleReview[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+/** Dealer-portal view of a customer review (includes full customer name). */
+export interface DealerReview {
+  id: string
+  rentalId: string
+  vehicleId: string
+  vehicleName?: string
+  customerId: string
+  customerName?: string
+  rating: number
+  comment?: string
+  createdAt: string
+  dealerResponse?: string
+  dealerRespondedAt?: string
+}
+
+export type RentalStatus = 'reserved' | 'active' | 'paused' | 'past_due' | 'completed' | 'cancelled'
 export type PaymentStatus = 'pending' | 'completed' | 'refunded' | 'failed'
 
 export interface Rental {
@@ -94,7 +157,39 @@ export interface Rental {
   pickupLocation?: string
   pickupDate?: string
   pickupTime?: string
+  /** Dealer-marked delivery/handover progress for the initial pickup. */
+  pickupFulfilmentStatus?: 'scheduled' | 'delivered'
+  /** Customer-requested collection slot when cancelling. */
+  returnLocation?: string
+  returnDate?: string
+  returnTime?: string
   createdAt: string
+  /** Recurring monthly price (invygo/FINN-style subscription cycle). */
+  monthlyAmount: number
+  /** Minimum term in months; the subscription rolls monthly afterwards. */
+  termMonths: number
+  /** Start of the next unbilled period; absent once billing stops. */
+  nextBillingDate?: string
+  cancelRequestedAt?: string
+  /** Billing-boundary date the subscription ends after a cancel request. */
+  cancellationEffectiveDate?: string
+  cancelReason?: string
+  activatedAt?: string
+  completedAt?: string
+  /** Refundable deposit collected on the first invoice when configured. */
+  depositAmount?: number
+  depositRefundable?: boolean
+  /** Amount released back to the customer at return. */
+  depositResolvedAmount?: number
+  /** Amount withheld from the deposit at return. */
+  depositWithheldAmount?: number
+  depositResolutionNote?: string
+  depositResolvedAt?: string
+  /** When the customer paused the subscription (travel hold). */
+  pausedAt?: string
+  /** Latest calendar date the pause may run. */
+  pausedUntil?: string
+  pauseReason?: string
 }
 
 export type PaymentType = 'rental' | 'subscription' | 'refund'
@@ -121,6 +216,12 @@ export interface Payment {
   note?: string
   /** Ops flag when customer paid but booking creation failed. */
   needsRefund?: boolean
+  /** Subscription invoice this payment settles, when applicable. */
+  invoiceId?: string
+  /** Total amount refunded against this payment so far. */
+  refundedAmount?: number
+  /** For type='refund' rows: the original payment being refunded. */
+  refundOfPaymentId?: string
   createdAt: string
 }
 
@@ -150,6 +251,17 @@ export interface Complaint {
   description: string
   createdAt: string
   assignedTo?: string
+}
+
+export interface ComplaintReply {
+  id: string
+  complaintId: string
+  authorId: string
+  body: string
+  createdAt: string
+  authorName?: string
+  authorEmail?: string
+  authorRole?: UserRole
 }
 
 export type MessageFolder = 'inbox' | 'sent' | 'starred' | 'archived'
@@ -230,7 +342,7 @@ export interface PaymentMethod {
   methodType: PaymentMethodType
 }
 
-export type InvoiceStatus = 'paid' | 'due' | 'overdue' | 'refunded'
+export type InvoiceStatus = 'paid' | 'due' | 'overdue' | 'refunded' | 'void'
 
 export interface Invoice {
   id: string
@@ -240,6 +352,55 @@ export interface Invoice {
   status: InvoiceStatus
   date: string
   description: string
+  /** Subscription (rental) this invoice bills, for monthly-cycle invoices. */
+  rentalId?: string
+  dueDate?: string
+  periodStart?: string
+  periodEnd?: string
+}
+
+export type RentalEventType = 'pickup' | 'return' | 'swap_out' | 'swap_in' | 'inspection' | 'note'
+
+/** Physical-world record: handover, return, swap, inspection. */
+export interface RentalEvent {
+  id: string
+  rentalId: string
+  type: RentalEventType
+  mileage?: number
+  fuelLevel?: string
+  conditionNotes?: string
+  photos: string[]
+  recordedBy?: string
+  createdAt: string
+}
+
+export type SwapRequestStatus = 'pending' | 'approved' | 'declined' | 'cancelled'
+
+/** invygo-style car swap within the same dealer fleet. */
+export interface SwapRequest {
+  id: string
+  rentalId: string
+  customerId: string
+  currentVehicleId: string
+  requestedVehicleId: string
+  status: SwapRequestStatus
+  note?: string
+  declineReason?: string
+  createdAt: string
+  resolvedAt?: string
+}
+
+export interface AuditLog {
+  id: string
+  actorId?: string
+  actorRole?: string
+  action: string
+  entityType: string
+  entityId?: string
+  before?: unknown
+  after?: unknown
+  note?: string
+  createdAt: string
 }
 
 export type BillingStatus = 'paid' | 'due' | 'overdue' | 'refunded'
@@ -263,6 +424,8 @@ export interface BookingRequest {
   note?: string
   /** Set when status is `declined`; shown to the customer as the dealer's explanation. */
   declineReason?: string
+  /** True while an online payment holds this vehicle (hidden from dealers until paid). */
+  awaitingPayment?: boolean
 }
 
 export interface Favorite {

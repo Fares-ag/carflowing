@@ -76,7 +76,10 @@ export function CarCard({
             {showRating && (
               <div className="feature-item">
                 <Star size={11} />
-                <span>{rating}</span>
+                <span>
+                  {rating}
+                  {reviews != null && reviews > 0 ? ` (${reviews})` : ''}
+                </span>
               </div>
             )}
           </div>

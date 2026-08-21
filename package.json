@@ -31,13 +31,18 @@
     "test:conventions": "vitest run --config vitest.conventions.config.ts",
     "test:gaps": "vitest run --config vitest.conventions.config.ts tests/gaps",
     "test:e2e": "playwright test",
+    "deploy:vercel:customer": "vercel deploy . --prod --project carflow-customer --local-config apps/customer/vercel.json",
+    "deploy:vercel:admin": "vercel deploy . --prod --project carflow-admin --local-config apps/admin/vercel.json",
+    "deploy:vercel:dealer": "vercel deploy . --prod --project carflow-dealer --local-config apps/dealer/vercel.json",
+    "deploy:vercel": "npm run deploy:vercel:customer && npm run deploy:vercel:admin && npm run deploy:vercel:dealer",
     "test:ci": "npm run lint:strict && npm run typecheck && npm run test:conventions && npm run test && npm run test:e2e"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.49.1",
     "@types/node": "^20.10.0",
     "typescript": "^5.2.2",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   },
   "msw": {
     "workerDirectory": [
@@ -48,6 +53,19 @@
   },
   "allowScripts": {
     "@embedded-postgres/windows-x64@18.4.0-beta.17": true
+  },
+  "overrides": {
+    "brace-expansion": "^5.0.9",
+    "minimatch": "^10.0.3",
+    "flatted": "^3.4.2",
+    "js-yaml": "^4.3.1",
+    "lodash": "^4.17.21",
+    "nanoid": "^3.3.18",
+    "postcss": "^8.5.23",
+    "rollup": "^4.59.0",
+    "path-to-regexp": "^0.1.13",
+    "react-router": "^7.18.2",
+    "react-router-dom": "^7.18.2"
   },
   "dependencies": {
     "eslint-import-resolver-typescript": "^4.4.5",

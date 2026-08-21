@@ -142,16 +142,37 @@
   align-items: center;
 }
 
+.adminAddCarSelect::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid #6b7280;
+  border-bottom: 1.5px solid #6b7280;
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+  z-index: 1;
+}
+
 .adminAddCarSelect select {
   width: 100%;
   appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 32px 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
 }
 
-.adminAddCarSelect svg {
-  position: absolute;
-  right: 12px;
-  pointer-events: none;
-  color: #9aa3af;
+.adminAddCarSelect select::-ms-expand {
+  display: none;
 }
 
 .adminAddCarFileInput {

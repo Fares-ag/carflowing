@@ -1,6 +1,7 @@
-import { memo, useEffect, useMemo, useState } from 'react'
-import { Copy, Download } from 'lucide-react'
 import type { VehicleCategory } from '@carflow/shared'
+import { formatCurrency } from '@carflow/shared'
+import { Copy, Download } from 'lucide-react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { Modal } from './Modal'
 import './VehicleDetailsModal.css'
 
@@ -263,7 +264,7 @@ export const VehicleDetailsModal = memo(function VehicleDetailsModal({
                       ['Transmission', vehicle.transmission === 'automatic' ? 'Automatic' : 'Manual'],
                       ['Seats', `${vehicle.seats}`],
                       ['Mileage', `${vehicle.mileage.toLocaleString()} km`],
-                      ['Price per day', `QAR ${vehicle.dailyRateQar.toLocaleString()}`],
+                      ['Price per day', formatCurrency(vehicle.dailyRateQar)],
                     ] as const
                   ).map(([k, v]) => (
                     <div key={k} className="vfdSpecItem">

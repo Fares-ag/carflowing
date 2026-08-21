@@ -1,4 +1,11 @@
+import { formatDate, useLiveListRefresh, getSignedDocumentUrl } from '@carflow/shared'
+import { Check, Copy, Eye, FileText, Mail, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+import { BookingRequestNoteDetails } from '../components/BookingRequestNoteDetails'
+import { Header } from '../components/Header'
+import { Sidebar } from '../components/Sidebar'
 import {
   getCustomerDocumentsForDealer,
   listBookingRequests,
@@ -6,24 +13,22 @@ import {
   type BookingRequestWithVehicle,
   type CustomerDocumentsForDealer,
 } from '../services/dealerService'
-import { getSignedDocumentUrl } from '@carflow/shared'
-import { Sidebar } from '../components/Sidebar'
-import { Header } from '../components/Header'
-import { BookingRequestNoteDetails } from '../components/BookingRequestNoteDetails'
-import { toast } from 'sonner'
-import { Check, ChevronDown, Copy, Eye, FileText, Mail, Search, X } from 'lucide-react'
 import './BookingRequests.css'
 
-function mailtoCustomer(row: BookingRequestWithVehicle) {
-  const email = row.customer?.email?.trim()
-  if (!email) {
-    toast.error('No email on file for this customer.')
+function openCustomerThread(
+  navigate: ReturnType<typeof useNavigate>,
+  row: BookingRequestWithVehicle
+) {
+  const customerId = row.customer?.id
+  if (!customerId) {
+    toast.error('No customer profile on this request.')
     return
   }
-  const vehicle = row.vehicle?.name ?? 'vehicle'
-  const subject = `Booking request ${row.id.slice(0, 8)}… — ${vehicle}`
-  const body = `Hi,\n\nRegarding booking request:\n${row.id}\nVehicle: ${vehicle}\n\n`
-  window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  const params = new URLSearchParams({
+    customerId,
+    bookingRequestId: row.id,
+  })
+  navigate(`/messages?${params.toString()}`)
 }
 
 async function copyRequestId(id: string) {
@@ -36,6 +41,7 @@ async function copyRequestId(id: string) {
 }
 
 export function BookingRequests() {
+  const navigate = useNavigate()
   const [requests, setRequests] = useState<BookingRequestWithVehicle[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -67,6 +73,11 @@ export function BookingRequests() {
   useEffect(() => {
     void refresh(true)
   }, [])
+
+  const hasPending = useMemo(() => requests.some((r) => r.status === 'pending'), [requests])
+  useLiveListRefresh(() => {
+    void refresh(false)
+  }, { active: hasPending })
 
   useEffect(() => {
     if (!detailRow) {
@@ -235,7 +246,6 @@ export function BookingRequests() {
               <option value="approved">Approved</option>
               <option value="declined">Declined</option>
             </select>
-            <ChevronDown size={14} />
           </label>
         </div>
 
@@ -276,7 +286,7 @@ export function BookingRequests() {
                     <td>
                       <span className={`brBadge brBadge--${row.status}`}>{row.status}</span>
                     </td>
-                    <td>{new Date(row.createdAt).toLocaleDateString()}</td>
+                    <td>{formatDate(row.createdAt)}</td>
                     <td>
                       <div className="brActions">
                         <button
@@ -291,9 +301,9 @@ export function BookingRequests() {
                         <button
                           type="button"
                           className="brActionBtn brActionBtn--mail"
-                          onClick={() => mailtoCustomer(row)}
-                          title="Email customer"
-                          aria-label="Email customer"
+                          onClick={() => openCustomerThread(navigate, row)}
+                          title="Message customer"
+                          aria-label="Message customer"
                         >
                           <Mail size={16} />
                         </button>

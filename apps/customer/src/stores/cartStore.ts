@@ -22,9 +22,7 @@ export interface CartItem {
   startDate: string
   notes: string
   subtotal: number
-  tax: number
   total: number
-  promoCode?: string
 }
 
 interface CartState {
@@ -44,6 +42,6 @@ export const useCartStore = create<CartState>()(
       setCart: (cart) => set({ cart }),
       clearCart: () => set({ vehicle: null, cart: null }),
     }),
-    { name: 'carflow-cart', version: 1 }
+    { name: 'carflow-cart', version: 2 }
   )
 )

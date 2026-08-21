@@ -1,0 +1,13 @@
+# CarFlow API — deploy from monorepo root (Docker build context = repo root)
+# Manual: railway link && railway up --detach
+# CI: RAILWAY_TOKEN + railway up --service carflow-api --detach
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/backend/Dockerfile"
+watchPatterns = ["apps/backend/**", "packages/shared/**", "scripts/**", "package.json", "package-lock.json", "railway.toml", "railway.json"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 180
+restartPolicyType = "ON_FAILURE"

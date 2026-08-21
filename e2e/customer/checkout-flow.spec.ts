@@ -12,7 +12,7 @@ test.describe('E2E-C02 book on car detail', () => {
 
     await page.waitForURL(/\/car\//)
 
-    await page.getByRole('button', { name: /sign in to request/i }).click()
+    await page.getByRole('button', { name: /sign in to continue/i }).click()
 
     await expect(page).toHaveURL(/login/)
 
@@ -22,7 +22,7 @@ test.describe('E2E-C02 book on car detail', () => {
 
   test('E2E-S05 car detail shows book form for logged-in customer', async ({ page, loginAs }) => {
 
-    await loginAs(page, 'customer')
+    await loginAs('customer')
 
     await page.goto('/browse')
 
@@ -32,7 +32,7 @@ test.describe('E2E-C02 book on car detail', () => {
 
     await expect(page.getByRole('heading', { name: /book this car/i })).toBeVisible()
 
-    await expect(page.getByRole('button', { name: /request this car/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /continue to checkout/i })).toBeVisible()
 
   })
 
@@ -46,7 +46,7 @@ test.describe('E2E-C02 book on car detail', () => {
 
   }) => {
 
-    await loginAs(page, 'customer')
+    await loginAs('customer')
 
     await page.goto('/payment-status?paymentId=00000000-0000-0000-0000-000000000000')
 

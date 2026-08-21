@@ -1,5 +1,5 @@
-import request from 'supertest'
 import bcrypt from 'bcryptjs'
+import request from 'supertest'
 import { createApp } from '../app.js'
 import { db, sqlClient } from '../db/index.js'
 import { appSettings, customerProfiles, dealers, plans, profiles, vehicles } from '../db/schema.js'
@@ -17,7 +17,27 @@ export function buildTestApp() {
 export async function resetDb() {
   await sqlClient.unsafe(`
     TRUNCATE TABLE
+      analytics_rollups,
+      analytics_events,
+      broadcasts,
+      email_outbox,
+      staff_invites,
+      payment_disputes,
+      job_runs,
+      promo_redemptions,
+      promo_codes,
+      rental_extensions,
+      rental_reviews,
+      user_security,
+      user_preferences,
+      audit_logs,
+      rental_events,
+      swap_requests,
+      maintenance_records,
+      commission_ledger,
+      payouts,
       refresh_sessions,
+      two_fa_challenges,
       email_verification_tokens,
       password_reset_tokens,
       payment_methods,
@@ -25,6 +45,7 @@ export async function resetDb() {
       payments,
       notifications,
       messages,
+      complaint_replies,
       complaints,
       leads,
       favorites,
@@ -45,11 +66,14 @@ export interface SeededUser {
   id: string
   email: string
   name: string
-  role: 'admin' | 'dealer' | 'customer'
+  role: 'admin' | 'dealer' | 'customer' | 'finance' | 'ops' | 'support'
 }
 
 export interface SeededFixtures {
   admin: SeededUser
+  finance: SeededUser
+  ops: SeededUser
+  support: SeededUser
   dealer: SeededUser & { dealerId: string }
   dealer2: SeededUser & { dealerId: string }
   customer: SeededUser
@@ -62,7 +86,7 @@ export interface SeededFixtures {
 async function createUser(
   email: string,
   name: string,
-  role: 'admin' | 'dealer' | 'customer',
+  role: SeededUser['role'],
   extra: Partial<{ status: 'active' | 'suspended' | 'pending' }> = {}
 ): Promise<SeededUser> {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 4)
@@ -86,7 +110,11 @@ async function createUser(
  * customers. Returns every id/credential a test is likely to need.
  */
 export async function seedFixtures(): Promise<SeededFixtures> {
+  await resetDb()
   const admin = await createUser('admin@test.dev', 'Test Admin', 'admin')
+  const finance = await createUser('finance@test.dev', 'Test Finance', 'finance')
+  const ops = await createUser('ops@test.dev', 'Test Ops', 'ops')
+  const support = await createUser('support@test.dev', 'Test Support', 'support')
   const dealerUser = await createUser('dealer@test.dev', 'Test Dealer', 'dealer')
   const dealer2User = await createUser('dealer2@test.dev', 'Second Dealer', 'dealer')
   const customer = await createUser('customer@test.dev', 'Test Customer', 'customer')
@@ -94,6 +122,8 @@ export async function seedFixtures(): Promise<SeededFixtures> {
 
   await db.insert(customerProfiles).values({ userId: customer.id, status: 'verified' })
   await db.insert(customerProfiles).values({ userId: customer2.id, status: 'unverified' })
+
+  await db.insert(appSettings).values({})
 
   const [plan] = await db
     .insert(plans)
@@ -144,6 +174,8 @@ export async function seedFixtures(): Promise<SeededFixtures> {
         transmission: 'automatic',
         fuelType: 'gas',
         seats: 5,
+        locationCity: 'Doha',
+        locationArea: 'West Bay',
       },
       {
         dealerId: dealerRow.id,
@@ -157,6 +189,8 @@ export async function seedFixtures(): Promise<SeededFixtures> {
         transmission: 'automatic',
         fuelType: 'gas',
         seats: 5,
+        locationCity: 'Al Wakrah',
+        locationArea: 'Al Wukair',
       },
     ])
     .returning()
@@ -175,13 +209,16 @@ export async function seedFixtures(): Promise<SeededFixtures> {
       transmission: 'automatic',
       fuelType: 'electric',
       seats: 5,
+      locationCity: 'Lusail',
+      locationArea: 'Marina District',
     })
     .returning()
 
-  await db.insert(appSettings).values({})
-
   return {
     admin,
+    finance,
+    ops,
+    support,
     dealer: { ...dealerUser, dealerId: dealerRow.id },
     dealer2: { ...dealer2User, dealerId: dealer2Row.id },
     customer,
@@ -199,13 +236,14 @@ export async function seedFixtures(): Promise<SeededFixtures> {
 export async function loginAs(
   app: ReturnType<typeof createApp>,
   email: string,
-  role: 'admin' | 'dealer' | 'customer',
+  role: SeededUser['role'] | 'admin',
   password = DEMO_PASSWORD
 ) {
   const agent = request.agent(app)
+  const expectedRole = role === 'finance' || role === 'ops' || role === 'support' ? 'admin' : role
   const res = await agent
     .post('/api/auth/login')
-    .send({ email, password, expectedRole: role })
+    .send({ email, password, expectedRole })
   return { agent, res }
 }
 

@@ -1,7 +1,6 @@
+import { pathToFileURL } from 'url'
 import bcrypt from 'bcryptjs'
 import { eq } from 'drizzle-orm'
-import { pathToFileURL } from 'url'
-import { db } from './index.js'
 import {
   dealers,
   invoices,
@@ -12,10 +11,15 @@ import {
   customerProfiles,
   appSettings,
 } from './schema.js'
+import { db } from './index.js'
 
 const DEMO_PASSWORD = 'password123'
 
-async function upsertProfile(email: string, name: string, role: 'admin' | 'dealer' | 'customer') {
+async function upsertProfile(
+  email: string,
+  name: string,
+  role: 'admin' | 'dealer' | 'customer' | 'finance' | 'ops' | 'support'
+) {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10)
   const existing = await db.select().from(profiles).where(eq(profiles.email, email)).limit(1)
   if (existing[0]) {
@@ -43,6 +47,9 @@ export async function seedDemoData() {
   console.log('Seeding database...')
 
   const adminId = await upsertProfile('admin@carflow.dev', 'Admin', 'admin')
+  await upsertProfile('finance@carflow.dev', 'Finance Admin', 'finance')
+  await upsertProfile('ops@carflow.dev', 'Ops Admin', 'ops')
+  await upsertProfile('support@carflow.dev', 'Support Admin', 'support')
   const dealerUserId = await upsertProfile('dealer@carflow.dev', 'Dealer', 'dealer')
   const customerId = await upsertProfile('customer@carflow.dev', 'Customer', 'customer')
 
@@ -59,7 +66,7 @@ export async function seedDemoData() {
     await db.select().from(plans).where(eq(plans.tier, 'starter')).limit(1)
   )[0]
   if (!starterPlan) {
-    ;[starterPlan] = await db
+    [starterPlan] = await db
       .insert(plans)
       .values({
         name: 'Starter',
@@ -88,7 +95,7 @@ export async function seedDemoData() {
     await db.select().from(dealers).where(eq(dealers.ownerUserId, dealerUserId)).limit(1)
   )[0]
   if (!dealer) {
-    ;[dealer] = await db
+    [dealer] = await db
       .insert(dealers)
       .values({
         name: 'Prime Auto Group',
@@ -120,6 +127,8 @@ export async function seedDemoData() {
         transmission: 'automatic',
         fuelType: 'gas',
         seats: 5,
+        locationCity: 'Doha',
+        locationArea: 'West Bay',
       },
       {
         dealerId: dealer.id,
@@ -134,6 +143,8 @@ export async function seedDemoData() {
         transmission: 'automatic',
         fuelType: 'gas',
         seats: 5,
+        locationCity: 'Doha',
+        locationArea: 'The Pearl',
       },
       {
         dealerId: dealer.id,
@@ -148,6 +159,8 @@ export async function seedDemoData() {
         transmission: 'automatic',
         fuelType: 'electric',
         seats: 5,
+        locationCity: 'Lusail',
+        locationArea: 'Marina District',
       },
       {
         dealerId: dealer.id,
@@ -162,6 +175,8 @@ export async function seedDemoData() {
         transmission: 'automatic',
         fuelType: 'diesel',
         seats: 7,
+        locationCity: 'Al Wakrah',
+        locationArea: 'Al Wukair',
       },
       {
         dealerId: dealer.id,
@@ -176,6 +191,8 @@ export async function seedDemoData() {
         transmission: 'automatic',
         fuelType: 'gas',
         seats: 5,
+        locationCity: 'Al Rayyan',
+        locationArea: 'Education City',
       },
     ])
   }
@@ -217,7 +234,7 @@ export async function seedDemoData() {
 
   console.log('Seed complete.')
   console.log('Demo accounts (password: password123):')
-  console.log('  admin@carflow.dev / dealer@carflow.dev / customer@carflow.dev')
+  console.log('  admin@carflow.dev / finance@ / ops@ / support@ / dealer@ / customer@carflow.dev')
   console.log(`  ids: admin=${adminId} dealer=${dealerUserId} customer=${customerId}`)
   return { adminId, dealerUserId, customerId, dealerId: dealer.id }
 }

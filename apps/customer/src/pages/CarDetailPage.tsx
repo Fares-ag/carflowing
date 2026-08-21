@@ -1,26 +1,34 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import type { Vehicle } from '@carflow/shared'
 import {
-  computeRentalTotal,
-  computeTax,
-  defaultRentalStartDate,
+  apiRequest,
+  computeFirstMonthDue,
+  computeMinimumTermTotal,
+  computeSubscriptionMonthly,
   formatCurrency,
+  formatDate,
+  SUBSCRIPTION_DURATION_OPTIONS,
+  defaultRentalStartDate,
+  formatVehicleLocation,
   vehicleCategoryLabel,
+  vehicleGalleryUrls,
 } from '@carflow/shared'
-import { apiRequest } from '@carflow/shared'
-import { Header } from '../components/shared/Header'
+import { useQuery } from '@tanstack/react-query'
+import { Star } from 'lucide-react'
+import type { FormEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { SubscriptionPricingSummary } from '../components/booking/SubscriptionPricingSummary'
 import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
 import { useAuth } from '../contexts/AuthContext'
 import { useCartStore } from '../stores/cartStore'
+import { getPricingSettings, getVehicleReviews } from '../services/customerService'
 import './CarDetailPage.css'
 
-const DURATION_OPTIONS = [
-  { months: 1, label: '1 month' },
-  { months: 3, label: '3 months' },
-  { months: 6, label: '6 months' },
-]
+const DURATION_OPTIONS = SUBSCRIPTION_DURATION_OPTIONS.map((o) => ({
+  months: o.months,
+  label: o.label,
+}))
 
 const PENDING_BOOK_KEY = 'carflow-pending-book'
 
@@ -55,6 +63,7 @@ export function CarDetailPage() {
   )
   const [paymentMethod, setPaymentMethod] = useState<'pay_at_shop' | 'skipcash_online'>('pay_at_shop')
   const [error, setError] = useState('')
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0)
 
   const { data: vehicle, isLoading, isError, error: loadError } = useQuery({
     queryKey: ['vehicle', id],
@@ -63,14 +72,45 @@ export function CarDetailPage() {
     enabled: Boolean(id),
   })
 
-  const total = useMemo(() => {
+  const { data: pricingSettings } = useQuery({
+    queryKey: ['pricing-settings'],
+    queryFn: getPricingSettings,
+  })
+
+  const { data: reviewsData } = useQuery({
+    queryKey: ['vehicle-reviews', id],
+    queryFn: () => getVehicleReviews(id!, { pageSize: 20 }),
+    enabled: Boolean(id),
+  })
+
+  const gallery = useMemo(() => (vehicle ? vehicleGalleryUrls(vehicle) : []), [vehicle])
+  const activePhoto = gallery[activePhotoIndex] ?? gallery[0]
+
+  useEffect(() => {
+    setActivePhotoIndex(0)
+  }, [vehicle?.id])
+
+  const depositAmount = pricingSettings?.subscriptionDepositAmount ?? 0
+  const locationLabel = vehicle ? formatVehicleLocation(vehicle) : undefined
+
+  const monthlyPrice = useMemo(() => {
     if (!vehicle) return 0
-    return computeRentalTotal(vehicle.pricePerDay, durationMonths)
+    return computeSubscriptionMonthly(vehicle.pricePerDay, durationMonths)
   }, [vehicle, durationMonths])
 
-  const monthlyEstimate = useMemo(() => {
+  const firstMonth = useMemo(() => {
+    if (!vehicle) return { monthly: 0, total: 0 }
+    return computeFirstMonthDue(vehicle.pricePerDay, durationMonths)
+  }, [vehicle, durationMonths])
+
+  const termPricing = useMemo(() => {
+    if (!vehicle) return { subtotal: 0, total: 0 }
+    return computeMinimumTermTotal(vehicle.pricePerDay, durationMonths)
+  }, [vehicle, durationMonths])
+
+  const fromMonthlyPrice = useMemo(() => {
     if (!vehicle) return 0
-    return computeRentalTotal(vehicle.pricePerDay, 1)
+    return computeSubscriptionMonthly(vehicle.pricePerDay, 1)
   }, [vehicle])
 
   useEffect(() => {
@@ -125,10 +165,7 @@ export function CarDetailPage() {
       return
     }
 
-    const durationLabel = `${durationMonths} month${durationMonths > 1 ? 's' : ''}`
-    const subtotal = total
-    const tax = computeTax(subtotal)
-    const grandTotal = subtotal + tax
+    const durationLabel = `${durationMonths} month${durationMonths > 1 ? 's' : ''} minimum`
 
     setVehicle({
       id: vehicle.id,
@@ -137,7 +174,7 @@ export function CarDetailPage() {
       fuelType: vehicle.fuelType,
       transmission: vehicle.transmission,
       seats: vehicle.seats,
-      image: vehicle.imageUrl,
+      image: activePhoto ?? vehicle.imageUrl,
       pricePerDay: vehicle.pricePerDay,
     })
     setCart({
@@ -149,9 +186,8 @@ export function CarDetailPage() {
       quantity: 1,
       startDate,
       notes: JSON.stringify({ paymentMethod }),
-      subtotal,
-      tax,
-      total: grandTotal,
+      subtotal: termPricing.subtotal,
+      total: termPricing.total,
     })
     setError('')
     navigate('/checkout')
@@ -175,24 +211,118 @@ export function CarDetailPage() {
           </p>
         ) : vehicle ? (
           <div className="car-detail-layout">
-            <div className="car-detail-media">
-              {vehicle.imageUrl ? (
-                <img src={vehicle.imageUrl} alt={vehicle.name} className="car-detail-image" />
-              ) : (
-                <div className="car-detail-image car-detail-image--placeholder" aria-hidden />
+            <div className="car-detail-left">
+              <div className="car-detail-media">
+                {activePhoto ? (
+                  <img src={activePhoto} alt={vehicle.name} className="car-detail-image" />
+                ) : (
+                  <div className="car-detail-image car-detail-image--placeholder" aria-hidden />
+                )}
+              </div>
+              {gallery.length > 1 && (
+                <div className="car-detail-gallery" role="list" aria-label="Vehicle photos">
+                  {gallery.map((url, index) => (
+                    <button
+                      key={`${url}-${index}`}
+                      type="button"
+                      role="listitem"
+                      className={`car-detail-thumb ${index === activePhotoIndex ? 'active' : ''}`}
+                      onClick={() => setActivePhotoIndex(index)}
+                      aria-label={`View photo ${index + 1}`}
+                      aria-current={index === activePhotoIndex ? 'true' : undefined}
+                    >
+                      <img src={url} alt="" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {vehicle.description && (
+                <section className="car-detail-section">
+                  <h2 className="car-detail-section-title">About this vehicle</h2>
+                  <p className="car-detail-description">{vehicle.description}</p>
+                </section>
+              )}
+
+              {vehicle.features && vehicle.features.length > 0 && (
+                <section className="car-detail-section">
+                  <h2 className="car-detail-section-title">Features</h2>
+                  <ul className="car-detail-features">
+                    {vehicle.features.map((feature) => (
+                      <li key={feature}>{feature}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {(reviewsData?.reviewCount ?? vehicle.reviewCount ?? 0) > 0 && (
+                <section className="car-detail-section car-detail-reviews">
+                  <div className="car-detail-reviews__header">
+                    <h2 className="car-detail-section-title">Customer reviews</h2>
+                    <div className="car-detail-rating-summary">
+                      <Star size={18} fill="#f59e0b" color="#f59e0b" />
+                      <strong>
+                        {(reviewsData?.averageRating ?? vehicle.averageRating ?? 0).toFixed(1)}
+                      </strong>
+                      <span>
+                        ({reviewsData?.reviewCount ?? vehicle.reviewCount} review
+                        {(reviewsData?.reviewCount ?? vehicle.reviewCount) === 1 ? '' : 's'})
+                      </span>
+                    </div>
+                  </div>
+                  <ul className="car-detail-review-list">
+                    {(reviewsData?.items ?? []).map((review) => (
+                      <li key={review.id} className="car-detail-review">
+                        <div className="car-detail-review__head">
+                          <div className="car-detail-review__stars" aria-label={`${review.rating} out of 5`}>
+                            {Array.from({ length: 5 }, (_, i) => (
+                              <Star
+                                key={i}
+                                size={14}
+                                fill={i < review.rating ? '#f59e0b' : 'none'}
+                                color={i < review.rating ? '#f59e0b' : '#d1d5db'}
+                              />
+                            ))}
+                          </div>
+                          <span className="car-detail-review__meta">
+                            {review.customerName ? `${review.customerName} · ` : ''}
+                            {formatDate(review.createdAt)}
+                          </span>
+                        </div>
+                        {review.comment && <p className="car-detail-review__comment">{review.comment}</p>}
+                        {review.dealerResponse && (
+                          <blockquote className="car-detail-review__response">
+                            <strong>Dealer response</strong>
+                            <p>{review.dealerResponse}</p>
+                          </blockquote>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               )}
             </div>
 
             <div className="car-detail-panel">
               <h1 className="car-detail-title">{vehicle.name}</h1>
+              {(vehicle.averageRating ?? 0) > 0 && (
+                <p className="car-detail-rating-inline">
+                  <Star size={16} fill="#f59e0b" color="#f59e0b" />
+                  {vehicle.averageRating!.toFixed(1)}
+                  {vehicle.reviewCount ? ` (${vehicle.reviewCount} reviews)` : ''}
+                </p>
+              )}
               <p className="car-detail-subtitle">
                 {vehicle.make} {vehicle.model} · {vehicle.year} · {vehicleCategoryLabel(vehicle.category)}
               </p>
+              {locationLabel && (
+                <p className="car-detail-location">{locationLabel}</p>
+              )}
               <p className="car-detail-price">
-                From {formatCurrency(monthlyEstimate)} <span>/ month</span>
+                From {formatCurrency(fromMonthlyPrice)} <span>/ month</span>
               </p>
 
-              <dl className="car-detail-specs car-detail-specs--compact">
+              <dl className="car-detail-specs">
                 <div className="car-detail-spec">
                   <dt>Fuel</dt>
                   <dd>{fuelLabel(vehicle.fuelType)}</dd>
@@ -205,6 +335,28 @@ export function CarDetailPage() {
                   <dt>Seats</dt>
                   <dd>{vehicle.seats}</dd>
                 </div>
+                {vehicle.color && (
+                  <div className="car-detail-spec">
+                    <dt>Color</dt>
+                    <dd>{vehicle.color}</dd>
+                  </div>
+                )}
+                <div className="car-detail-spec">
+                  <dt>Odometer</dt>
+                  <dd>{vehicle.mileage.toLocaleString()} km</dd>
+                </div>
+                {vehicle.mileageCapKm != null && vehicle.mileageCapKm > 0 && (
+                  <div className="car-detail-spec">
+                    <dt>Monthly mileage cap</dt>
+                    <dd>{vehicle.mileageCapKm.toLocaleString()} km</dd>
+                  </div>
+                )}
+                {depositAmount > 0 && (
+                  <div className="car-detail-spec">
+                    <dt>Security deposit</dt>
+                    <dd>{formatCurrency(depositAmount)}</dd>
+                  </div>
+                )}
               </dl>
 
               <form id="car-book-form" className="car-book-form" onSubmit={handleRequest}>
@@ -265,10 +417,14 @@ export function CarDetailPage() {
                   </label>
                 </div>
 
-                <div className="car-book-total">
-                  <span>Total for {durationMonths} month{durationMonths > 1 ? 's' : ''}</span>
-                  <strong>{formatCurrency(total)}</strong>
-                </div>
+                <SubscriptionPricingSummary
+                  monthly={monthlyPrice}
+                  firstMonthTotal={firstMonth.total}
+                  durationMonths={durationMonths}
+                  minimumTermTotal={termPricing.total}
+                  depositAmount={depositAmount}
+                  showValueProps
+                />
 
                 {error && <p className="car-book-error">{error}</p>}
 

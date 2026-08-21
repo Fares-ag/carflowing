@@ -1,8 +1,9 @@
-import { FormEvent, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
 import { MIN_PASSWORD_LENGTH, validatePassword } from '@carflow/shared'
-import { Header } from '../components/shared/Header'
+import type { FormEvent} from 'react';
+import { useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
 import { resetPassword } from '../services/authService'
 import './LoginPage.css'
 

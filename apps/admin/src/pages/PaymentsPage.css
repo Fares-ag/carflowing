@@ -38,7 +38,7 @@
 
 .paymentsStats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 24px;
 }
 
@@ -87,6 +87,18 @@
 
 .paymentsStatIcon--violet {
   background: linear-gradient(135deg, #ad46ff 0%, #9810fa 100%);
+}
+
+.paymentsStatIcon--red {
+  background: linear-gradient(135deg, #ff6467 0%, #e7000b 100%);
+}
+
+.paymentsStatIcon--blue {
+  background: linear-gradient(135deg, #51a2ff 0%, #155dfc 100%);
+}
+
+.paymentsStatIcon svg {
+  color: #ffffff;
 }
 
 .paymentsStatBadge {
@@ -185,40 +197,83 @@
 }
 
 .paymentsSelect {
+  position: relative;
   height: 36px;
-  border-radius: 6.8px;
-  border: 0.56px solid #e5e7eb;
-  background: rgba(229, 229, 229, 0.3);
-  padding: 0 12px;
+  min-width: 140px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 0 32px 0 12px;
   font-size: 14px;
-  color: #0a0a0a;
+  font-weight: 500;
+  color: #374151;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.paymentsSelect::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid #6b7280;
+  border-bottom: 1.5px solid #6b7280;
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
 }
 
 .paymentsSelect select {
-  border: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: 0 !important;
+  outline: none;
+  box-shadow: none;
   background: transparent;
   font: inherit;
+  font-size: 14px;
+  font-weight: 500;
   color: inherit;
-  appearance: none;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.paymentsSelect select::-ms-expand {
+  display: none;
+}
+
+.paymentsSelect:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
 }
 
 .paymentsMoreFilters {
-  height: 32px;
-  border-radius: 6.8px;
-  border: 0.56px solid #e5e5e5;
-  background: rgba(229, 229, 229, 0.3);
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
   padding: 0 12px;
   font-size: 14px;
-  color: #0a0a0a;
+  font-weight: 500;
+  color: #4b5563;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.paymentsMoreFilters:hover {
+  background: #f3f4f6;
+  color: #111827;
 }
 
 .paymentsMoreFilters img {
@@ -396,6 +451,149 @@
   border-color: #e5e7eb;
   color: #4a5565;
   font-weight: 500;
+}
+
+/* --- Refund rows (type='refund') rendered distinctly --- */
+
+.paymentsRow--refund {
+  background: #fff7f7;
+  border-color: #ffc9c9;
+}
+
+.paymentsRowIcon--refund {
+  background: #fef2f2;
+  color: #c10007;
+}
+
+.paymentsBadge--refundTag {
+  background: #c10007;
+  border-color: #c10007;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.paymentsRowAmount--negative > div {
+  color: #c10007;
+}
+
+.paymentsRowAction--refund {
+  width: auto;
+  padding: 0 12px;
+  border: 0.56px solid #ffc9c9;
+  background: #fef2f2;
+  color: #c10007;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.paymentsRowAction--refund:hover {
+  background: #ffe2e2;
+}
+
+.paymentsRowAction--refund:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* --- Refund confirmation modal --- */
+
+.refundModal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.refundModalRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.refundModalRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #475569;
+}
+
+.refundModalRow strong {
+  color: #0f172a;
+}
+
+.refundModalField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.refundModalField input {
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.refundModalField input:focus {
+  outline: 2px solid #93c5fd;
+  border-color: #60a5fa;
+}
+
+.refundModalError {
+  font-size: 12.5px;
+  color: #c10007;
+}
+
+.refundModalWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #fffbeb;
+  border: 1px solid #fee685;
+  color: #92400e;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.refundModalWarning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.refundModalWarning--danger {
+  background: #fef2f2;
+  border-color: #ffc9c9;
+  color: #b91c1c;
+}
+
+.refundModalCheck {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: #0f172a;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.refundModalCheck input {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: #dc2626;
 }
 
 @media (max-width: 1200px) {

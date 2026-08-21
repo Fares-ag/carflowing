@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '@carflow/shared'
+import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
+import './LoginPage.css'
 
 export function VerifyEmailPage() {
   const [params] = useSearchParams()
@@ -26,16 +29,25 @@ export function VerifyEmailPage() {
   }, [params])
 
   return (
-    <main style={{ maxWidth: 480, margin: '4rem auto', padding: '0 1rem', textAlign: 'center' }}>
-      <h1>Email verification</h1>
-      <p>{message}</p>
-      {status !== 'loading' ? (
-        <p>
-          <Link to={status === 'success' ? '/browse' : '/login'}>
-            {status === 'success' ? 'Browse cars' : 'Back to login'}
-          </Link>
-        </p>
-      ) : null}
-    </main>
+    <div className="customerAuthPage">
+      <Header />
+      <div className="customerLogin">
+        <div className="customerLoginCard">
+          <div className="customerLoginTitle">Email verification</div>
+          <div className="customerLoginSubtitle">{message}</div>
+
+          {status === 'loading' ? (
+            <p className="customerLoginFooter">Please wait…</p>
+          ) : (
+            <p className="customerLoginFooter">
+              <Link to={status === 'success' ? '/browse' : '/login'}>
+                {status === 'success' ? 'Browse cars' : 'Back to login'}
+              </Link>
+            </p>
+          )}
+        </div>
+      </div>
+      <Footer />
+    </div>
   )
 }

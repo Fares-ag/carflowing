@@ -96,6 +96,20 @@
   padding-left: 4px;
 }
 
+.verification-phone-note--muted {
+  color: #94a3b8;
+}
+
+.verification-phone-note__dev {
+  color: #64748b;
+}
+
+.verification-phone-link {
+  color: #4f46e5;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 .verification-upload-section {
   padding: 24px;
   background: #f9f9f9;

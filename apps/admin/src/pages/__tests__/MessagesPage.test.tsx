@@ -1,8 +1,8 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { MessagesPage } from '../MessagesPage'
-import { renderWithProviders } from '../../test/render'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import * as adminService from '../../services/adminService'
+import { renderWithProviders } from '../../test/render'
+import { MessagesPage } from '../MessagesPage'
 
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({

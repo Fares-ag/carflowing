@@ -17,13 +17,16 @@ describe('http utils', () => {
 })
 
 describe('mail service', () => {
-  it('logs to console when RESEND_API_KEY is unset', async () => {
+  it('enqueues to outbox when RESEND_API_KEY is unset', async () => {
     vi.stubEnv('RESEND_API_KEY', '')
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     const { sendEmail } = await import('../../services/mail.js')
-    await sendEmail({ to: 'a@test.dev', subject: 'Hi', html: '<p>x</p>' })
-    expect(log).toHaveBeenCalled()
-    log.mockRestore()
+    const { db } = await import('../../db/index.js')
+    const { emailOutbox } = await import('../../db/schema.js')
+    const { eq } = await import('drizzle-orm')
+    const id = await sendEmail({ to: 'a@test.dev', subject: 'Hi', html: '<p>x</p>' })
+    const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, id))
+    expect(row.subject).toBe('Hi')
+    expect(row.status).toBe('sent')
   })
 })
 

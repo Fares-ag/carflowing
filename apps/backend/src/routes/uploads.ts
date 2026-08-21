@@ -1,17 +1,31 @@
+import fs from 'fs'
+import path from 'path'
+import { and, eq, or, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import multer from 'multer'
-import path from 'path'
-import fs from 'fs'
-import { eq } from 'drizzle-orm'
-import { requireAuth, requireRole, type AuthedRequest } from '../middleware/auth.js'
-import { storeFile, deleteStoredFile, resolveLocalPath, uploadRoot } from '../storage/index.js'
 import { db } from '../db/index.js'
-import { customerProfiles, dealers, profiles } from '../db/schema.js'
-import { asyncHandler } from '../utils/http.js'
+import { customerProfiles, dealers, profiles, vehicles } from '../db/schema.js'
+import { requireAuth, requireRole, type AuthedRequest } from '../middleware/auth.js'
 import {
   dealerCanAccessCustomerDocuments,
   userOwnsStoredPath,
 } from '../services/documentAccess.js'
+import {
+  storeFile,
+  deleteStoredFile,
+  getStoredFile,
+  resolveLocalPath,
+  storageKeyFromReference,
+  uploadRoot,
+} from '../storage/index.js'
+import { asyncHandler } from '../utils/http.js'
+import {
+  AVATAR_MIMES,
+  DOCUMENT_MIMES,
+  setAttachmentResponseHeaders,
+  validateUploadContent,
+  VEHICLE_IMAGE_MIMES,
+} from '../utils/uploadContent.js'
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -24,6 +38,75 @@ function sanitizeName(name: string) {
   return name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9-]/gi, '-').toLowerCase()
 }
 
+/** Whitelist vehicle-image prefix segments; reject traversal outside vehicle-images/. */
+function sanitizeVehicleImagePrefix(raw: string): string | null {
+  const prefix = String(raw || 'temp').trim()
+  if (!prefix || !/^[a-z0-9/_-]+$/i.test(prefix) || prefix.includes('..')) {
+    return null
+  }
+  const normalizedKey = path.posix.normalize(path.posix.join('vehicle-images', prefix))
+  if (!normalizedKey.startsWith('vehicle-images/') || normalizedKey.includes('..')) {
+    return null
+  }
+  return normalizedKey.slice('vehicle-images/'.length) || 'temp'
+}
+
+function storageKeyFromUrl(url: string): string | null {
+  return storageKeyFromReference(url)
+}
+
+async function dealerOwnsVehicleImage(dealerUserId: string, url: string): Promise<boolean> {
+  const key = storageKeyFromUrl(url)
+  if (!key?.startsWith('vehicle-images/')) return false
+  const [dealer] = await db
+    .select({ id: dealers.id })
+    .from(dealers)
+    .where(eq(dealers.ownerUserId, dealerUserId))
+    .limit(1)
+  if (!dealer) return false
+  const [vehicle] = await db
+    .select({ id: vehicles.id })
+    .from(vehicles)
+    .where(
+      and(
+        eq(vehicles.dealerId, dealer.id),
+        or(
+          eq(vehicles.imageUrl, url),
+          sql`${vehicles.imageUrl} LIKE ${'%' + key + '%'}`,
+          sql`${url} = ANY(${vehicles.imageUrls})`
+        )
+      )
+    )
+    .limit(1)
+  return !!vehicle
+}
+
+/** Public proxy for marketplace images stored in a private Vercel Blob store. */
+uploadsRouter.get(
+  '/media',
+  asyncHandler(async (req, res) => {
+    const docPath = String(req.query.path || '')
+    if (!docPath || docPath.includes('..')) {
+      res.status(400).json({ error: 'Invalid path' })
+      return
+    }
+    if (!docPath.startsWith('vehicle-images/') && !docPath.startsWith('user-avatars/')) {
+      res.status(403).json({ error: 'Forbidden' })
+      return
+    }
+    const file = await getStoredFile(docPath)
+    if (!file) {
+      res.status(404).json({ error: 'File not found' })
+      return
+    }
+    // Allow customer/dealer/admin frontends on other origins to render <img> tags.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable')
+    if (file.contentType) res.type(file.contentType)
+    res.send(file.buffer)
+  })
+)
+
 uploadsRouter.post(
   '/vehicle-image',
   requireAuth,
@@ -35,18 +118,22 @@ uploadsRouter.post(
       res.status(400).json({ error: 'file is required' })
       return
     }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
-      res.status(400).json({ error: 'Allowed formats: JPEG, PNG, WebP' })
-      return
-    }
     if (file.size > 5 * 1024 * 1024) {
       res.status(400).json({ error: 'Image must be under 5MB' })
       return
     }
-    const prefix = String(req.body.prefix || 'temp')
-    const ext = path.extname(file.originalname) || '.jpg'
-    const relative = `${prefix}/${sanitizeName(file.originalname)}-${Date.now()}${ext}`
-    const stored = await storeFile('vehicle-images', relative, file.buffer, file.mimetype)
+    const validated = validateUploadContent(file.buffer, file.mimetype, VEHICLE_IMAGE_MIMES)
+    if ('error' in validated) {
+      res.status(400).json({ error: validated.error })
+      return
+    }
+    const prefix = sanitizeVehicleImagePrefix(String(req.body.prefix || 'temp'))
+    if (!prefix) {
+      res.status(400).json({ error: 'Invalid upload prefix' })
+      return
+    }
+    const relative = `${prefix}/${sanitizeName(file.originalname)}-${Date.now()}${validated.ext}`
+    const stored = await storeFile('vehicle-images', relative, file.buffer, validated.mime)
     res.json({ url: stored.url, path: stored.path })
   })
 )
@@ -61,17 +148,17 @@ uploadsRouter.post(
       res.status(400).json({ error: 'file is required' })
       return
     }
-    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype)) {
-      res.status(400).json({ error: 'Allowed formats: JPEG, PNG, WebP, GIF' })
-      return
-    }
     if (file.size > 2 * 1024 * 1024) {
       res.status(400).json({ error: 'Avatar must be under 2MB' })
       return
     }
-    const ext = path.extname(file.originalname) || '.jpg'
-    const relative = `profiles/${req.user!.sub}/avatar-${Date.now()}${ext}`
-    const stored = await storeFile('user-avatars', relative, file.buffer, file.mimetype)
+    const validated = validateUploadContent(file.buffer, file.mimetype, AVATAR_MIMES)
+    if ('error' in validated) {
+      res.status(400).json({ error: validated.error })
+      return
+    }
+    const relative = `profiles/${req.user!.sub}/avatar-${Date.now()}${validated.ext}`
+    const stored = await storeFile('user-avatars', relative, file.buffer, validated.mime)
     await db.update(profiles).set({ avatarUrl: stored.url }).where(eq(profiles.id, req.user!.sub))
     res.json({ url: stored.url, path: stored.path })
   })
@@ -93,15 +180,13 @@ uploadsRouter.post(
       res.status(400).json({ error: 'type must be qid or drivers_license' })
       return
     }
-    if (
-      !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.mimetype)
-    ) {
-      res.status(400).json({ error: 'Allowed formats: JPEG, PNG, WebP, PDF' })
+    const validated = validateUploadContent(file.buffer, file.mimetype, DOCUMENT_MIMES)
+    if ('error' in validated) {
+      res.status(400).json({ error: validated.error })
       return
     }
-    const ext = path.extname(file.originalname)?.toLowerCase() || '.pdf'
-    const relative = `${req.user!.sub}/${type}-${Date.now()}${ext}`
-    const stored = await storeFile('documents', relative, file.buffer, file.mimetype)
+    const relative = `${req.user!.sub}/${type}-${Date.now()}${validated.ext}`
+    const stored = await storeFile('documents', relative, file.buffer, validated.mime)
 
     const [cp] = await db
       .select()
@@ -161,6 +246,7 @@ uploadsRouter.get(
         return
       }
     }
+    // Admin role bypasses ownership/relationship checks (full KYC review access).
 
     if (process.env.UPLOAD_DRIVER === 'blob') {
       // Private blob URLs from put() may already be accessible with token; return path-based API URL
@@ -218,17 +304,20 @@ uploadsRouter.get(
         return
       }
     }
+    // Admin role bypasses ownership/relationship checks (full KYC review access).
 
-    const candidates = [
-      resolveLocalPath(docPath),
-      resolveLocalPath(docPath.startsWith('documents/') ? docPath : `documents/${docPath}`),
-    ]
-    const filePath = candidates.find((p) => fs.existsSync(p))
-    if (!filePath) {
-      res.status(404).json({ error: 'Document not found' })
-      return
+    // Works for both drivers: local disk in dev, server-side blob proxy in
+    // production (blob URLs are never handed to clients for documents).
+    const keys = [docPath, docPath.startsWith('documents/') ? docPath : `documents/${docPath}`]
+    for (const key of keys) {
+      const file = await getStoredFile(key)
+      if (file) {
+        setAttachmentResponseHeaders(res, key, file.contentType)
+        res.send(file.buffer)
+        return
+      }
     }
-    res.sendFile(filePath)
+    res.status(404).json({ error: 'Document not found' })
   })
 )
 
@@ -243,8 +332,10 @@ uploadsRouter.delete(
     }
     if (req.user!.role !== 'admin') {
       const ownsPath = userOwnsStoredPath(req.user!.sub, url)
-      const dealerVehicleImage =
-        req.user!.role === 'dealer' && url.includes('vehicle-images/')
+      let dealerVehicleImage = false
+      if (req.user!.role === 'dealer' && url.includes('vehicle-images/')) {
+        dealerVehicleImage = await dealerOwnsVehicleImage(req.user!.sub, url)
+      }
       if (!ownsPath && !dealerVehicleImage) {
         res.status(403).json({ error: 'Forbidden' })
         return
@@ -256,6 +347,7 @@ uploadsRouter.delete(
 )
 
 export function ensureUploadDir() {
+  if (process.env.UPLOAD_DRIVER === 'blob') return
   const root = uploadRoot()
   fs.mkdirSync(root, { recursive: true })
 }

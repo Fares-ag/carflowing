@@ -6,7 +6,7 @@ test.describe('E2E-C05 my booking hub', () => {
 
   test('my booking page loads', async ({ page, loginAs }) => {
 
-    await loginAs(page, 'customer')
+    await loginAs('customer')
 
     await page.goto('/my-booking')
 
@@ -18,7 +18,7 @@ test.describe('E2E-C05 my booking hub', () => {
 
   test('legacy /requests redirects to my booking', async ({ page, loginAs }) => {
 
-    await loginAs(page, 'customer')
+    await loginAs('customer')
 
     await page.goto('/requests')
 

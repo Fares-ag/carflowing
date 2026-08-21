@@ -1,0 +1,47 @@
+.subscription-pricing {
+  margin: 16px 0;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.subscription-pricing__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.subscription-pricing__row + .subscription-pricing__row {
+  margin-top: 10px;
+}
+
+.subscription-pricing__row--primary span {
+  font-weight: 600;
+}
+
+.subscription-pricing__row--primary strong {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #4f46e5;
+}
+
+.subscription-pricing__row--muted {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.subscription-pricing__props {
+  margin: 14px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.subscription-pricing__props li + li {
+  margin-top: 6px;
+}

@@ -1,24 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { toast } from 'sonner'
-import {
-  archiveMessage,
-  createMessage,
-  getMessageFolderCounts,
-  listCustomers,
-  listMessages,
-  listMessagesActivitySample,
-  starMessage,
-  unarchiveMessage,
-  unstarMessage,
-  updateMessageRead,
-  type MessageWithSender,
-} from '../services/adminService'
-import { useAuth } from '../contexts/AuthContext'
-import { AdminLayout } from '../layout/AdminLayout'
 import {
   Archive,
   ArchiveRestore,
-  ChevronDown,
   Loader2,
   Mail,
   MailCheck,
@@ -32,6 +14,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Bar,
   CartesianGrid,
@@ -42,6 +25,22 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { toast } from 'sonner'
+import { useAuth } from '../contexts/AuthContext'
+import { AdminLayout } from '../layout/AdminLayout'
+import {
+  archiveMessage,
+  createMessage,
+  getMessageFolderCounts,
+  listCustomers,
+  listMessages,
+  listMessagesActivitySample,
+  starMessage,
+  unarchiveMessage,
+  unstarMessage,
+  updateMessageRead,
+  type MessageWithSender,
+} from '../services/adminService'
 import './MessagesPage.css'
 
 const PAGE_SIZE = 50
@@ -357,7 +356,6 @@ export function MessagesPage() {
                     <option value="dealer">Dealers</option>
                     <option value="customer">Customers</option>
                   </select>
-                  <ChevronDown size={14} />
                 </label>
               </div>
             </div>

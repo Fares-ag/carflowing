@@ -1,0 +1,177 @@
+.staffPage {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.staffForbidden {
+  padding: 2rem;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  border-radius: 12px;
+  color: #991b1b;
+}
+
+.staffInviteForm {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  padding: 20px;
+}
+
+.staffFormTitle {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.staffFormGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.staffField {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.staffField input,
+.staffField select {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.staffSubmitBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: #155dfc;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.staffSubmitBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.staffTableCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.staffTableWrap {
+  overflow-x: auto;
+}
+
+.staffTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.staffTable th,
+.staffTable td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.staffTable th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.staffRole {
+  text-transform: capitalize;
+}
+
+.staffStatus {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.staffStatus--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.staffStatus--accepted {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.staffSectionTitle {
+  margin: 0;
+  padding: 16px 16px 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.staffActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.staffActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.staffActionBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.staffActionBtn--danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.staffStatus--suspended {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.staffEmpty {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+@media (max-width: 900px) {
+  .staffFormGrid {
+    grid-template-columns: 1fr;
+  }
+}

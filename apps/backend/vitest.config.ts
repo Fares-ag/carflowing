@@ -12,6 +12,9 @@ export default defineConfig({
     // resetDb() truncates every table between tests, so route test files
     // must not execute concurrently against it.
     fileParallelism: false,
+    sequence: {
+      concurrent: false,
+    },
     include: ['src/**/*.test.ts'],
   },
 })

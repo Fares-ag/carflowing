@@ -1,14 +1,13 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Express } from 'express'
-import request from 'supertest'
 import crypto from 'crypto'
 import { eq } from 'drizzle-orm'
+import type { Express } from 'express'
+import request from 'supertest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
 import {
   bookingRequests,
   favorites,
   passwordResetTokens,
-  profiles,
   rentals,
   subscriptions,
 } from '../../db/schema.js'
@@ -139,16 +138,26 @@ describe('Business flow integration', () => {
   it('FLOW-08 (closes GAP-P1-012): approve honors the checkout cart duration/total instead of a fixed 3-day estimate', async () => {
     const fixtures = await seedFixtures()
     const { agent: customerAgent } = await loginAs(app, fixtures.customer.email, 'customer')
-    const note = JSON.stringify({ durationMonths: 3, startDate: '2030-01-15', total: 1234 })
+    // Start dates are server-clamped to [today, today+3 months]; use a valid one.
+    const start = new Date()
+    start.setUTCDate(start.getUTCDate() + 30)
+    const startDate = start.toISOString().slice(0, 10)
+    const note = JSON.stringify({ durationMonths: 3, startDate, total: 1234 })
     const br = await customerAgent
       .post('/api/customer/booking-requests')
       .send({ vehicleId: fixtures.vehicles[0].id, note })
     const { agent: dealerAgent } = await loginAs(app, fixtures.dealer.email, 'dealer')
     await dealerAgent.patch(`/api/dealer/booking-requests/${br.body.id}/status`).send({ status: 'approved' })
     const [rental] = await db.select().from(rentals)
-    expect(rental.startDate).toBe('2030-01-15')
-    expect(rental.endDate).toBe('2030-04-15')
+    expect(rental.startDate).toBe(startDate)
+    const expectedEnd = new Date(`${startDate}T00:00:00Z`)
+    expectedEnd.setUTCMonth(expectedEnd.getUTCMonth() + 3)
+    expect(rental.endDate).toBe(expectedEnd.toISOString().slice(0, 10))
     expect(Number(rental.totalAmount)).toBe(450 * 30 * 3)
+    // Subscription fields captured at approval (invygo-style monthly cycle):
+    expect(Number(rental.monthlyAmount)).toBe(450 * 30)
+    expect(rental.termMonths).toBe(3)
+    expect(rental.nextBillingDate).not.toBeNull()
   })
 
   it('RACE-01: two customers booking the same vehicle - only one pending request wins', async () => {

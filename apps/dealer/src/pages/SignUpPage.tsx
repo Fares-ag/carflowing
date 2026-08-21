@@ -1,6 +1,7 @@
-import { FormEvent, useState } from 'react'
+import { apiRequest, isTemporarilyUnavailable, MIN_PASSWORD_LENGTH, validatePassword } from '@carflow/shared'
+import type { FormEvent} from 'react';
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiRequest, MIN_PASSWORD_LENGTH, validatePassword } from '@carflow/shared'
 import './SignUpPage.css'
 
 export function SignUpPage() {
@@ -41,7 +42,13 @@ export function SignUpPage() {
       })
       setSubmitted(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to submit application')
+      setError(
+        isTemporarilyUnavailable(err)
+          ? 'Dealer applications are temporarily paused. Please try again later.'
+          : err instanceof Error
+            ? err.message
+            : 'Unable to submit application'
+      )
     } finally {
       setIsSubmitting(false)
     }

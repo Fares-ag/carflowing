@@ -1,0 +1,345 @@
+.customer-messages-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8f9fb;
+}
+
+.customer-messages-main {
+  flex: 1;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.customer-messages-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  text-decoration: none;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.customer-messages-back:hover {
+  color: #0f172a;
+}
+
+.customer-messages-header h1 {
+  margin: 0 0 4px;
+  font-size: 1.75rem;
+  color: #0f172a;
+}
+
+.customer-messages-header p {
+  margin: 0 0 24px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.customer-messages-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.customer-messages-folder {
+  padding: 8px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.customer-messages-folder:hover {
+  border-color: #94a3b8;
+}
+
+.customer-messages-folder.active {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.customer-messages-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.customer-messages-item {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.customer-messages-item--unread {
+  border-left: 3px solid #2563eb;
+}
+
+.customer-messages-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.customer-messages-item-top strong {
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.customer-messages-item-top time {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.customer-messages-from {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0 0 8px;
+}
+
+.customer-messages-body {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #334155;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.customer-messages-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customer-messages-action {
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.customer-messages-action:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.customer-messages-state,
+.customer-messages-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: #64748b;
+}
+
+.customer-messages-state--error {
+  color: #b91c1c;
+}
+
+.customer-messages-empty svg {
+  color: #cbd5e1;
+  margin-bottom: 12px;
+}
+
+.customer-messages-view-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.customer-messages-view-tabs button {
+  padding: 8px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.customer-messages-view-tabs button.active {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.customer-messages-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+  min-height: 420px;
+}
+
+.customer-messages-thread-list-panel,
+.customer-messages-thread-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.customer-messages-thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+}
+
+.customer-messages-thread-btn {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.customer-messages-thread-btn:hover,
+.customer-messages-thread-btn.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.customer-messages-thread-btn-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.customer-messages-unread {
+  background: #2563eb;
+  color: #fff;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.customer-messages-thread-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-messages-thread-header {
+  padding: 16px 18px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.customer-messages-thread-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.customer-messages-thread-header p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.customer-messages-thread-messages {
+  flex: 1;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.customer-messages-bubble {
+  max-width: 80%;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.customer-messages-bubble.is-sent {
+  align-self: flex-end;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.customer-messages-bubble.is-received {
+  align-self: flex-start;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.customer-messages-bubble-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.customer-messages-bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.customer-messages-compose {
+  border-top: 1px solid #e2e8f0;
+  padding: 14px 18px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.customer-messages-compose textarea {
+  flex: 1;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  resize: vertical;
+}
+
+.customer-messages-compose button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.customer-messages-compose button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.customer-messages-spinner {
+  animation: customer-messages-spin 1s linear infinite;
+}
+
+@keyframes customer-messages-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .customer-messages-layout {
+    grid-template-columns: 1fr;
+  }
+}

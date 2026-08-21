@@ -1,7 +1,8 @@
-import { FormEvent, useState } from 'react'
+import type { FormEvent} from 'react';
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
 import { requestPasswordReset } from '../services/authService'
 import './LoginPage.css'
 

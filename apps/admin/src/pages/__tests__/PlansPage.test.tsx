@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import { PlansPage } from '../PlansPage'
+import { describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '../../test/render'
+import { PlansPage } from '../PlansPage'
 
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({

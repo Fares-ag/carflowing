@@ -1,20 +1,24 @@
-import { Link, useLocation } from 'react-router-dom'
-import { useEffect, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import {
   computeRentalTotal,
   defaultRentalStartDate,
   formatCurrency,
   whatsAppLink,
 } from '@carflow/shared'
+import { useQuery } from '@tanstack/react-query'
+import { Check, Clock, MessageCircle, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import { SubscriptionPanel } from '../components/booking/SubscriptionPanel'
+import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
 import {
   listBookingRequestsWithVehicles,
   listRentalsWithDetails,
 } from '../services/customerService'
-import { Header } from '../components/shared/Header'
-import { Footer } from '../components/shared/Footer'
-import { Check, Clock, MessageCircle, RefreshCw } from 'lucide-react'
 import './MyBookingPage.css'
+
+/** Poll cadence while a request is pending or a rental is reserved. */
+const LIVE_STATUS_POLL_MS = 15_000
 
 type TimelineStep = 'sent' | 'approved' | 'active' | 'completed' | 'declined' | 'cancelled'
 
@@ -101,12 +105,12 @@ export function MyBookingPage() {
       if (br.status === 'declined') step = 'declined'
       else if (rental?.status === 'cancelled') step = 'cancelled'
       else if (rental?.status === 'completed') step = 'completed'
-      else if (rental?.status === 'active') step = 'active'
+      else if (rental?.status === 'active' || rental?.status === 'past_due') step = 'active'
       else if (br.status === 'approved' || rental?.status === 'reserved') step = 'approved'
       else step = 'sent'
 
       const rentalDetail = rental as (typeof rental & {
-        dealer?: { name?: string; contact_phone?: string }
+        dealer?: { name?: string; contactPhone?: string }
       }) | undefined
       const dealer = rentalDetail?.dealer
 
@@ -119,7 +123,7 @@ export function MyBookingPage() {
         durationMonths: months,
         total,
         dealerName: dealer?.name ?? 'Dealer',
-        dealerPhone: dealer?.contact_phone ?? null,
+        dealerPhone: dealer?.contactPhone ?? null,
         step,
         pickupLocation: note?.delivery?.location ?? rental?.pickupLocation,
       }
@@ -134,10 +138,39 @@ export function MyBookingPage() {
       j.step === 'completed' || j.step === 'declined' || j.step === 'cancelled'
   )
 
+  // The customer's current subscription: a live rental first, then the most
+  // recent finished one (for its invoice history).
+  const currentRental = useMemo(() => {
+    const rentals = rentalsData?.items ?? []
+    return (
+      rentals.find((r) => r.status === 'active' || r.status === 'past_due') ??
+      rentals.find((r) => r.status === 'reserved') ??
+      rentals.find((r) => r.status === 'completed')
+    )
+  }, [rentalsData])
+
   const refresh = () => {
     refetchRequests()
     refetchRentals()
   }
+
+  // Live status (gentle auto-refresh): while a booking request is still
+  // pending or a rental is reserved, re-poll both queries every 15s so the
+  // page follows the dealer's decision without manual refreshes.
+  const shouldPoll = useMemo(() => {
+    const hasPendingRequest = (requestsData?.items ?? []).some((br) => br.status === 'pending')
+    const hasReservedRental = (rentalsData?.items ?? []).some((r) => r.status === 'reserved')
+    return hasPendingRequest || hasReservedRental
+  }, [requestsData, rentalsData])
+
+  useEffect(() => {
+    if (!shouldPoll) return
+    const id = window.setInterval(() => {
+      refetchRequests()
+      refetchRentals()
+    }, LIVE_STATUS_POLL_MS)
+    return () => window.clearInterval(id)
+  }, [shouldPoll, refetchRequests, refetchRentals])
 
   const isLoading = loadingRequests || loadingRentals
 
@@ -165,7 +198,7 @@ export function MyBookingPage() {
 
         {isLoading ? (
           <p className="my-booking-empty">Loading your booking…</p>
-        ) : activeJourneys.length === 0 && pastJourneys.length === 0 ? (
+        ) : activeJourneys.length === 0 && pastJourneys.length === 0 && !currentRental ? (
           <div className="my-booking-empty-card">
             <p>No bookings yet.</p>
             <Link to="/browse" className="my-booking-cta">
@@ -182,6 +215,7 @@ export function MyBookingPage() {
                 ))}
               </section>
             )}
+            {currentRental && <SubscriptionPanel rentalId={currentRental.id} />}
           </>
         )}
 

@@ -1,6 +1,6 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Express } from 'express'
 import request from 'supertest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 /** Table-driven negative API matrix (Phase 8b expansion) */
@@ -141,7 +141,7 @@ describe('API negative matrix', () => {
 
   const adminNegatives: Array<[string, () => Promise<{ status: number }>]> = [
     [
-      'ADM-N20: invalid tax rate rejected or ignored',
+      'ADM-N20: unknown settings fields are ignored',
       async () => {
         const fixtures = await seedFixtures()
         const { agent } = await loginAs(app, fixtures.admin.email, 'admin')

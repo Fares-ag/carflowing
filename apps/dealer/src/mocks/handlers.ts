@@ -1,23 +1,114 @@
-import { http, HttpResponse } from 'msw'
 import type {
   BillingHistoryItem,
+  BookingRequest,
+  Invoice,
   KpiMetric,
   Lead,
   Notification,
-  Paginated,
-  PaymentMethod,
+  Payment,
+  PaymentMethodType,
+  Rental,
+  RentalEvent,
+  RentalStatus,
   Subscription,
+  SwapRequest,
   TimeSeriesPoint,
   Vehicle,
   VehicleStatus,
 } from '@carflow/shared'
 import { createId, getDb, paginate, updateDb, withLatency } from '@carflow/shared'
+import { http, HttpResponse } from 'msw'
 
 const parseListParams = (request: Request) => {
   const url = new URL(request.url)
   const page = Number(url.searchParams.get('page') ?? '1')
   const pageSize = Number(url.searchParams.get('pageSize') ?? '10')
   return { page, pageSize }
+}
+
+const OPEN_RENTAL_STATUSES: RentalStatus[] = ['reserved', 'active', 'past_due']
+
+function addMonthsISO(dateISO: string, months: number): string {
+  const [y, m, d] = dateISO.split('-').map((part) => parseInt(part, 10))
+  const targetMonth0 = m - 1 + months
+  const targetYear = y + Math.floor(targetMonth0 / 12)
+  const normalizedMonth0 = ((targetMonth0 % 12) + 12) % 12
+  const daysInMonth = new Date(Date.UTC(targetYear, normalizedMonth0 + 1, 0)).getUTCDate()
+  const day = Math.min(d, daysInMonth)
+  return new Date(Date.UTC(targetYear, normalizedMonth0, day)).toISOString().slice(0, 10)
+}
+
+/**
+ * Local fixtures for the subscription-lifecycle endpoints (rental events,
+ * per-rental invoices, swap requests). The shared MockDb has no collections
+ * for these, so they live at module scope — enough for unit tests and dev.
+ */
+const mockRentalEvents: RentalEvent[] = [
+  {
+    id: 'rev_1',
+    rentalId: 'rental_1',
+    type: 'pickup',
+    mileage: 8000,
+    fuelLevel: 'full',
+    conditionNotes: 'No visible damage at handover.',
+    photos: [],
+    createdAt: '2026-01-10',
+  },
+]
+
+const mockRentalInvoices: Invoice[] = [
+  {
+    id: 'rinv_1',
+    ownerId: 'user_customer_1',
+    ownerType: 'customer',
+    rentalId: 'rental_1',
+    amount: 745,
+    status: 'paid',
+    date: '2026-01-10',
+    periodStart: '2026-01-10',
+    periodEnd: '2026-02-09',
+    description: 'Monthly subscription — Tesla Model 3',
+  },
+  {
+    id: 'rinv_2',
+    ownerId: 'user_customer_1',
+    ownerType: 'customer',
+    rentalId: 'rental_1',
+    amount: 745,
+    status: 'due',
+    date: '2026-02-10',
+    dueDate: '2026-02-14',
+    periodStart: '2026-02-10',
+    periodEnd: '2026-03-09',
+    description: 'Monthly subscription — Tesla Model 3',
+  },
+]
+
+const mockSwapRequests: SwapRequest[] = [
+  {
+    id: 'swap_1',
+    rentalId: 'rental_1',
+    customerId: 'user_customer_1',
+    currentVehicleId: 'veh_1',
+    requestedVehicleId: 'veh_2',
+    status: 'pending',
+    note: 'Need more trunk space for the next month.',
+    createdAt: '2026-01-20',
+  },
+]
+
+const customerSummary = (customerId: string) => {
+  const user = getDb().users.find((u) => u.id === customerId)
+  return user ? { id: user.id, name: user.name, email: user.email } : undefined
+}
+
+const withRentalRelations = (rental: Rental) => {
+  const db = getDb()
+  return {
+    ...rental,
+    vehicle: db.vehicles.find((v) => v.id === rental.vehicleId),
+    customer: customerSummary(rental.customerId),
+  }
 }
 
 const buildDealerDashboard = () => {
@@ -35,7 +126,7 @@ const buildDealerDashboard = () => {
     value: p.amount,
   }))
 
-  const bookingTrend: TimeSeriesPoint[] = db.rentals.slice(0, 4).map((r, i) => ({
+  const bookingTrend: TimeSeriesPoint[] = db.rentals.slice(0, 4).map((_r, i) => ({
     date: `2025-${String(10 + i).padStart(2, '0')}`,
     value: 1,
   }))
@@ -156,6 +247,12 @@ export const handlers = [
   }),
   http.patch('/api/dealer/vehicles/:id', async ({ params, request }) => {
     const updates = (await request.json()) as Partial<Vehicle>
+    if ('status' in updates) {
+      return HttpResponse.json(
+        { error: 'Status cannot be changed here. Use the status endpoint.' },
+        { status: 400 }
+      )
+    }
     const id = String(params.id)
     let updated: Vehicle | null = null
     updateDb(db => {
@@ -174,6 +271,15 @@ export const handlers = [
   http.patch('/api/dealer/vehicles/:id/status', async ({ params, request }) => {
     const { status } = (await request.json()) as { status: VehicleStatus }
     const id = String(params.id)
+    const openRental = getDb().rentals.find(
+      (r) => r.vehicleId === id && OPEN_RENTAL_STATUSES.includes(r.status)
+    )
+    if (openRental) {
+      return HttpResponse.json(
+        { error: 'This vehicle has an open rental. Complete or return it first.' },
+        { status: 409 }
+      )
+    }
     let updated: Vehicle | null = null
     updateDb(db => {
       const vehicles = db.vehicles.map(vehicle => {
@@ -205,16 +311,16 @@ export const handlers = [
   }),
   http.patch('/api/dealer/booking-requests/:id/status', async ({ params, request }) => {
     const { status, declineReason } = (await request.json()) as {
-      status: string
+      status: BookingRequest['status']
       declineReason?: string
     }
     const id = String(params.id)
-    let updated: Record<string, unknown> | null = null
+    let updated: BookingRequest | null = null
     updateDb((db) => {
       const bookingRequests = db.bookingRequests.map((br) => {
         if (br.id !== id) return br
         updated = { ...br, status, declineReason }
-        return updated as typeof br
+        return updated
       })
       return { ...db, bookingRequests }
     })
@@ -223,28 +329,287 @@ export const handlers = [
     }
     return HttpResponse.json(await withLatency(updated))
   }),
+  // Amount is server-derived from the oldest unpaid invoice; no longer activates the rental.
   http.post('/api/dealer/payments/offline', async ({ request }) => {
-    const payload = (await request.json()) as { rentalId?: string; amount?: number; method?: string }
+    const payload = (await request.json()) as { rentalId?: string; method?: PaymentMethodType }
+    const rental = getDb().rentals.find((r) => r.id === payload.rentalId)
+    if (!rental) {
+      return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    }
+    if (rental.status === 'completed' || rental.status === 'cancelled') {
+      return HttpResponse.json(
+        { error: 'This rental is closed — no payments can be recorded.' },
+        { status: 409 }
+      )
+    }
+    const unpaid = mockRentalInvoices
+      .filter((inv) => inv.rentalId === rental.id && (inv.status === 'due' || inv.status === 'overdue'))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0]
+    const amount = unpaid?.amount ?? (rental.paymentStatus !== 'completed' ? rental.monthlyAmount : null)
+    if (amount === null) {
+      return HttpResponse.json({ error: 'Nothing is due for this rental.' }, { status: 409 })
+    }
+    if (unpaid) unpaid.status = 'paid'
+    const payment: Payment = {
+      id: createId('pay'),
+      rentalId: rental.id,
+      customerId: rental.customerId,
+      dealerId: rental.dealerId,
+      amount,
+      status: 'completed',
+      type: 'rental',
+      method: payload.method ?? 'bank',
+      provider: 'manual',
+      invoiceId: unpaid?.id,
+      createdAt: new Date().toISOString(),
+    }
     updateDb((db) => ({
       ...db,
-      payments: [
-        {
-          id: createId('pay'),
-          rentalId: payload.rentalId,
-          amount: payload.amount ?? 0,
-          status: 'completed',
-          type: 'rental',
-          method: (payload.method as 'card' | 'bank' | 'wallet') ?? 'bank',
-          provider: 'manual',
-          createdAt: new Date().toISOString(),
-        },
-        ...db.payments,
-      ],
+      payments: [payment, ...db.payments],
       rentals: db.rentals.map((r) =>
-        r.id === payload.rentalId ? { ...r, paymentStatus: 'completed' as const, status: 'active' as const } : r
+        r.id === rental.id ? { ...r, paymentStatus: 'completed' as const } : r
       ),
     }))
-    return HttpResponse.json(await withLatency({ ok: true }), { status: 201 })
+    return HttpResponse.json(await withLatency(payment), { status: 201 })
+  }),
+
+  http.get('/api/dealer/rentals', async ({ request }) => {
+    const { page, pageSize } = parseListParams(request)
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status') as RentalStatus | null
+    const items = getDb()
+      .rentals.filter((r) => (status ? r.status === status : true))
+      .map(withRentalRelations)
+    return HttpResponse.json(await withLatency(paginate(items, page, pageSize)))
+  }),
+  http.get('/api/dealer/rentals/:id', async ({ params }) => {
+    const id = String(params.id)
+    const rental = getDb().rentals.find((r) => r.id === id)
+    if (!rental) {
+      return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    }
+    return HttpResponse.json(
+      await withLatency({
+        ...withRentalRelations(rental),
+        events: mockRentalEvents.filter((event) => event.rentalId === id),
+        invoices: mockRentalInvoices.filter((invoice) => invoice.rentalId === id),
+      })
+    )
+  }),
+  http.post('/api/dealer/rentals/:id/handover', async ({ params, request }) => {
+    const id = String(params.id)
+    const body = (await request.json()) as {
+      mileage?: number
+      fuelLevel?: string
+      conditionNotes?: string
+      photos?: string[]
+    }
+    const rental = getDb().rentals.find((r) => r.id === id)
+    if (!rental) {
+      return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    }
+    if (rental.status !== 'reserved') {
+      return HttpResponse.json(
+        { error: 'Only reserved rentals can be handed over.' },
+        { status: 409 }
+      )
+    }
+    if (rental.paymentStatus !== 'completed') {
+      return HttpResponse.json(
+        { error: 'Record the first payment before handing the vehicle over.' },
+        { status: 409 }
+      )
+    }
+    let updated: Rental | null = null
+    updateDb((db) => ({
+      ...db,
+      rentals: db.rentals.map((r) => {
+        if (r.id !== id) return r
+        updated = { ...r, status: 'active' as const, activatedAt: new Date().toISOString() }
+        return updated
+      }),
+      vehicles: db.vehicles.map((v) =>
+        v.id === rental.vehicleId ? { ...v, status: 'rented' as const } : v
+      ),
+    }))
+    mockRentalEvents.push({
+      id: createId('rev'),
+      rentalId: id,
+      type: 'pickup',
+      mileage: body.mileage,
+      fuelLevel: body.fuelLevel,
+      conditionNotes: body.conditionNotes,
+      photos: body.photos ?? [],
+      createdAt: new Date().toISOString(),
+    })
+    return HttpResponse.json(await withLatency(updated))
+  }),
+  http.post('/api/dealer/rentals/:id/return', async ({ params, request }) => {
+    const id = String(params.id)
+    const body = (await request.json()) as {
+      mileage?: number
+      fuelLevel?: string
+      conditionNotes?: string
+      photos?: string[]
+      vehicleNextStatus?: 'available' | 'maintenance'
+    }
+    const rental = getDb().rentals.find((r) => r.id === id)
+    if (!rental) {
+      return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    }
+    if (rental.status !== 'active' && rental.status !== 'past_due') {
+      return HttpResponse.json(
+        { error: 'Only active or past-due rentals can be returned.' },
+        { status: 409 }
+      )
+    }
+    const vehicleNextStatus = body.vehicleNextStatus ?? 'available'
+    let updated: Rental | null = null
+    updateDb((db) => ({
+      ...db,
+      rentals: db.rentals.map((r) => {
+        if (r.id !== id) return r
+        updated = {
+          ...r,
+          status: 'completed' as const,
+          completedAt: new Date().toISOString(),
+          nextBillingDate: undefined,
+        }
+        return updated
+      }),
+      vehicles: db.vehicles.map((v) =>
+        v.id === rental.vehicleId ? { ...v, status: vehicleNextStatus } : v
+      ),
+    }))
+    mockRentalEvents.push({
+      id: createId('rev'),
+      rentalId: id,
+      type: 'return',
+      mileage: body.mileage,
+      fuelLevel: body.fuelLevel,
+      conditionNotes: body.conditionNotes,
+      photos: body.photos ?? [],
+      createdAt: new Date().toISOString(),
+    })
+    return HttpResponse.json(await withLatency(updated))
+  }),
+  http.post('/api/dealer/rentals/:id/extend', async ({ params, request }) => {
+    const id = String(params.id)
+    const body = (await request.json()) as { months?: number }
+    const months = Math.floor(Number(body.months ?? 0))
+    if (months < 1 || months > 12) {
+      return HttpResponse.json({ error: 'Extension must be between 1 and 12 months' }, { status: 400 })
+    }
+    const rental = getDb().rentals.find((r) => r.id === id)
+    if (!rental) {
+      return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    }
+    if (!OPEN_RENTAL_STATUSES.includes(rental.status)) {
+      return HttpResponse.json({ error: 'Only active subscriptions can be extended' }, { status: 409 })
+    }
+    if (rental.cancellationEffectiveDate) {
+      return HttpResponse.json(
+        { error: 'Cannot extend a subscription that is pending cancellation' },
+        { status: 409 }
+      )
+    }
+    const newEndDate = addMonthsISO(rental.endDate, months)
+    const addedAmount = Number(rental.monthlyAmount) * months
+    let updated: Rental | null = null
+    updateDb((db) => ({
+      ...db,
+      rentals: db.rentals.map((r) => {
+        if (r.id !== id) return r
+        updated = {
+          ...r,
+          endDate: newEndDate,
+          termMonths: r.termMonths + months,
+          totalAmount: Number(r.totalAmount) + addedAmount,
+          cancellationEffectiveDate: undefined,
+          cancelRequestedAt: undefined,
+          cancelReason: undefined,
+        }
+        return updated
+      }),
+    }))
+    mockRentalEvents.push({
+      id: createId('rev'),
+      rentalId: id,
+      type: 'note',
+      conditionNotes: `Dealer extended by ${months} month(s). New end date: ${newEndDate}.`,
+      createdAt: new Date().toISOString(),
+    })
+    return HttpResponse.json(await withLatency(updated))
+  }),
+  http.get('/api/dealer/swap-requests', async ({ request }) => {
+    const { page, pageSize } = parseListParams(request)
+    const db = getDb()
+    const items = mockSwapRequests.map((swap) => ({
+      ...swap,
+      currentVehicle: db.vehicles.find((v) => v.id === swap.currentVehicleId),
+      requestedVehicle: db.vehicles.find((v) => v.id === swap.requestedVehicleId),
+      customer: customerSummary(swap.customerId),
+    }))
+    return HttpResponse.json(await withLatency(paginate(items, page, pageSize)))
+  }),
+  http.patch('/api/dealer/swap-requests/:id/status', async ({ params, request }) => {
+    const id = String(params.id)
+    const body = (await request.json()) as {
+      status: 'approved' | 'declined'
+      declineReason?: string
+      mileageOut?: number
+      mileageIn?: number
+    }
+    const swap = mockSwapRequests.find((s) => s.id === id)
+    if (!swap) {
+      return HttpResponse.json({ error: 'Swap request not found' }, { status: 404 })
+    }
+    if (swap.status !== 'pending') {
+      return HttpResponse.json(
+        { error: 'This swap request has already been resolved.' },
+        { status: 409 }
+      )
+    }
+    swap.status = body.status
+    swap.resolvedAt = new Date().toISOString()
+    if (body.status === 'declined') {
+      swap.declineReason = body.declineReason
+    } else {
+      // Approving atomically moves the subscription to the requested vehicle.
+      updateDb((db) => ({
+        ...db,
+        rentals: db.rentals.map((r) =>
+          r.id === swap.rentalId ? { ...r, vehicleId: swap.requestedVehicleId } : r
+        ),
+        vehicles: db.vehicles.map((v) =>
+          v.id === swap.requestedVehicleId
+            ? { ...v, status: 'rented' as const }
+            : v.id === swap.currentVehicleId
+              ? { ...v, status: 'available' as const }
+              : v
+        ),
+      }))
+      const now = new Date().toISOString()
+      mockRentalEvents.push(
+        {
+          id: createId('rev'),
+          rentalId: swap.rentalId,
+          type: 'swap_out',
+          mileage: body.mileageOut,
+          photos: [],
+          createdAt: now,
+        },
+        {
+          id: createId('rev'),
+          rentalId: swap.rentalId,
+          type: 'swap_in',
+          mileage: body.mileageIn,
+          photos: [],
+          createdAt: now,
+        }
+      )
+    }
+    return HttpResponse.json(await withLatency({ ...swap }))
   }),
   http.get('/api/dealer/customer-documents/:customerId', async () =>
     HttpResponse.json(
@@ -259,6 +624,10 @@ export const handlers = [
         name: dealer?.name ?? 'Dealer',
         contactEmail: dealer?.contactEmail ?? 'dealer@carflow.dev',
         businessHours: [],
+        bankAccountName: dealer?.bankAccountName,
+        bankName: dealer?.bankName,
+        bankIban: dealer?.bankIban,
+        bankDetailsVerifiedAt: dealer?.bankDetailsVerifiedAt,
       })
     )
   }),
@@ -364,4 +733,25 @@ export const handlers = [
       }))
     return HttpResponse.json(await withLatency(history))
   }),
+  http.patch('/api/dealer/maintenance/:id/complete', async () =>
+    HttpResponse.json(await withLatency({ ok: true }))
+  ),
+  http.get('/api/dealer/payouts', async () => HttpResponse.json(await withLatency([]))),
+  http.get('/api/dealer/earnings', async () =>
+    HttpResponse.json(await withLatency({ total: 0, pending: 0, paid: 0 }))
+  ),
+  http.get('/api/dealer/maintenance', async () => HttpResponse.json(await withLatency([]))),
+  http.post('/api/dealer/maintenance', async () =>
+    HttpResponse.json(await withLatency({ id: createId('maint') }), { status: 201 })
+  ),
+  http.get('/api/dealer/analytics/insights', async () =>
+    HttpResponse.json(await withLatency({ insights: [] }))
+  ),
+  http.get('/api/dealer/plans', async () => HttpResponse.json(await withLatency(getDb().plans))),
+  http.patch('/api/dealer/subscription/plan', async () =>
+    HttpResponse.json(await withLatency({ ok: true }))
+  ),
+  http.post('/api/dealer/subscription/cancel', async () =>
+    HttpResponse.json(await withLatency({ ok: true }))
+  ),
 ]

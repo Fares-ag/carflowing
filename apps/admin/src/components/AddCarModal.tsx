@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Dealer } from '@carflow/shared'
+import { uploadVehicleImage } from '@carflow/shared'
 import {
   Car,
-  ChevronDown,
   FileText,
   Gauge,
   ImagePlus,
@@ -11,8 +11,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import type { Dealer } from '@carflow/shared'
-import { uploadVehicleImage } from '@carflow/shared'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './AddCarModal.css'
 
 const TYPE_TO_CATEGORY: Record<string, 'sedan' | 'suv' | 'truck' | 'luxury' | 'ev' | 'other'> = {
@@ -139,7 +138,6 @@ export function AddCarModal({ open, onClose, dealers, onSubmit }: AddCarModalPro
                   <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
               </select>
-              <ChevronDown size={14} />
             </label>
           </div>
 
@@ -163,7 +161,6 @@ export function AddCarModal({ open, onClose, dealers, onSubmit }: AddCarModalPro
                     <option value="Tesla">Tesla</option>
                     <option value="Toyota">Toyota</option>
                   </select>
-                  <ChevronDown size={14} />
                 </div>
               </label>
               <label>
@@ -195,7 +192,6 @@ export function AddCarModal({ open, onClose, dealers, onSubmit }: AddCarModalPro
                     <option value="Electric">Electric</option>
                     <option value="Truck">Truck</option>
                   </select>
-                  <ChevronDown size={14} />
                 </div>
               </label>
               <label>
@@ -208,7 +204,6 @@ export function AddCarModal({ open, onClose, dealers, onSubmit }: AddCarModalPro
                     <option value="Silver">Silver</option>
                     <option value="Blue">Blue</option>
                   </select>
-                  <ChevronDown size={14} />
                 </div>
               </label>
               <label>
@@ -243,7 +238,6 @@ export function AddCarModal({ open, onClose, dealers, onSubmit }: AddCarModalPro
                     <option value="Hybrid">Hybrid</option>
                     <option value="Electric">Electric</option>
                   </select>
-                  <ChevronDown size={14} />
                 </div>
               </label>
               <label>
@@ -255,7 +249,6 @@ export function AddCarModal({ open, onClose, dealers, onSubmit }: AddCarModalPro
                     <option value="Manual">Manual</option>
                     <option value="CVT">CVT</option>
                   </select>
-                  <ChevronDown size={14} />
                 </div>
               </label>
               <label>

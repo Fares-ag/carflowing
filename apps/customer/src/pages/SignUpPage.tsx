@@ -1,11 +1,11 @@
-import { FormEvent, useState } from 'react'
+import { getRedirectTarget, isTemporarilyUnavailable, MIN_PASSWORD_LENGTH, validatePassword, withRedirectParam } from '@carflow/shared'
+import type { FormEvent } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { MIN_PASSWORD_LENGTH, validatePassword } from '@carflow/shared'
-import { Header } from '../components/shared/Header'
 import { Footer } from '../components/shared/Footer'
-import { signUp } from '../services/authService'
+import { Header } from '../components/shared/Header'
 import { useAuth } from '../contexts/AuthContext'
-import { getRedirectTarget, withRedirectParam } from '../utils/authRedirect'
+import { signUp } from '../services/authService'
 import './SignUpPage.css'
 
 export function SignUpPage() {
@@ -38,9 +38,15 @@ export function SignUpPage() {
     try {
       await signUp({ email: email.trim(), password, name: name.trim() })
       await refetch()
-      navigate(getRedirectTarget(redirect))
+      navigate(getRedirectTarget(redirect, '/browse'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create account')
+      setError(
+        isTemporarilyUnavailable(err)
+          ? 'New signups are temporarily paused. Please try again later.'
+          : err instanceof Error
+            ? err.message
+            : 'Unable to create account'
+      )
     } finally {
       setIsSubmitting(false)
     }

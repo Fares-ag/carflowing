@@ -1,9 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { createLead, listLeads, listInventory, removeLead, updateLead } from '../services/dealerService'
-import { toast } from 'sonner'
-import { Sidebar } from '../components/Sidebar'
-import { Header } from '../components/Header'
+import { formatDateOrDash } from '@carflow/shared'
 import {
   Car,
   Check,
@@ -15,6 +10,12 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+import { Header } from '../components/Header'
+import { Sidebar } from '../components/Sidebar'
+import { createLead, listLeads, listInventory, removeLead, updateLead } from '../services/dealerService'
 import './Leads.css'
 
 interface LeadRow {
@@ -533,7 +534,7 @@ export function Leads() {
                     </div>
                     <div className="contact-item">
                       <Settings size={14} />
-                      <span>{selectedLead.createdAt ? new Date(selectedLead.createdAt).toLocaleDateString() : '—'}</span>
+                      <span>{formatDateOrDash(selectedLead.createdAt)}</span>
                     </div>
                   </div>
                 </div>

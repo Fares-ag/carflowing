@@ -1,0 +1,148 @@
+.auditFilters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.auditFilterField {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  border-radius: 6.8px;
+  border: 0.56px solid #e5e7eb;
+  background: rgba(229, 229, 229, 0.3);
+  padding: 0 12px;
+  color: #6a7282;
+}
+
+.auditFilterField input {
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: #0a0a0a;
+  width: 220px;
+}
+
+.auditFilterField input:focus {
+  outline: none;
+}
+
+.auditTable th,
+.auditTable td {
+  padding: 14px 16px;
+}
+
+.auditRow td {
+  vertical-align: top;
+}
+
+.auditExpandBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6.8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #4a5565;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auditExpandBtn:hover {
+  background: rgba(229, 231, 235, 0.5);
+}
+
+.auditWhen {
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.auditActor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auditActorName {
+  font-weight: 500;
+}
+
+.auditAction {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.auditEntityId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditNote {
+  max-width: 260px;
+}
+
+.auditEmpty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 32px 16px;
+}
+
+.auditDetailsRow td {
+  background: #f8fafc;
+  padding: 16px 24px 20px;
+}
+
+.auditDiff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.auditDiff span {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.auditDiff pre {
+  margin: 0;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  overflow: auto;
+  max-height: 260px;
+}
+
+.auditActorEmail {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+@media (max-width: 900px) {
+  .auditDiff {
+    grid-template-columns: 1fr;
+  }
+
+  .auditFilterField input {
+    width: 140px;
+  }
+}

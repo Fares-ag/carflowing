@@ -1,18 +1,17 @@
 import { createHmac } from 'node:crypto'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { eq } from 'drizzle-orm'
 import type { Express } from 'express'
 import supertest from 'supertest'
-import { eq } from 'drizzle-orm'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/index.js'
 import { bookingRequests, payments, vehicles } from '../../db/schema.js'
-import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
-import { SkipCashStatus } from '../../services/skipcash.js'
+import { SkipCashStatus , createSkipCashPayment } from '../../services/skipcash.js'
 
 vi.mock('../../services/skipcash.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/skipcash.js')>()
   return { ...actual, createSkipCashPayment: vi.fn() }
 })
-import { createSkipCashPayment } from '../../services/skipcash.js'
+import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 process.env.SKIPCASH_WEBHOOK_KEY = 'test-webhook-key'
 
@@ -96,10 +95,19 @@ describe('SkipCash payments API', () => {
     const [row] = await db.select().from(payments).where(eq(payments.id, res.body.paymentId))
     expect(row.status).toBe('pending')
     expect(row.provider).toBe('skipcash')
-    expect(Number(row.amount)).toBe(450 * 30 * 2)
+    // invygo/FINN model: the online charge is the FIRST MONTH, not the term.
+    expect(Number(row.amount)).toBe(450 * 30)
+    // The vehicle is held by a booking request the moment the intent starts.
+    expect(row.bookingRequestId).toBeTruthy()
+    const [hold] = await db
+      .select()
+      .from(bookingRequests)
+      .where(eq(bookingRequests.id, row.bookingRequestId!))
+    expect(hold.status).toBe('pending')
+    expect(hold.awaitingPayment).toBe(true)
     expect(createSkipCashPayment).toHaveBeenCalledWith(
       expect.objectContaining({
-        amount: 450 * 30 * 2,
+        amount: 450 * 30,
         returnUrl: expect.stringMatching(/\/skipcash-pay\/return\?paymentId=/),
         webhookUrl: expect.stringMatching(/\/skipcash-pay\/callback$/),
       })
@@ -250,8 +258,11 @@ describe('SkipCash payments API', () => {
 
     const [payment] = await db.select().from(payments).where(eq(payments.id, created.body.paymentId))
     expect(payment.status).toBe('failed')
+    // The hold created at intent time is released so the car is bookable again.
     const bookings = await db.select().from(bookingRequests)
-    expect(bookings.length).toBe(0)
+    expect(bookings.length).toBe(1)
+    expect(bookings[0].status).toBe('declined')
+    expect(bookings[0].awaitingPayment).toBe(false)
   })
 
   it('PAY-11: webhook rejects amount mismatch without creating booking', async () => {
@@ -275,7 +286,12 @@ describe('SkipCash payments API', () => {
     await postWebhook(app, payload, signWebhook(payload))
     const [payment] = await db.select().from(payments).where(eq(payments.id, created.body.paymentId))
     expect(payment.status).toBe('failed')
-    expect(await db.select().from(bookingRequests)).toHaveLength(0)
+    // Money WAS captured at the provider for the wrong amount: flag it.
+    expect(payment.needsRefund).toBe(true)
+    // The hold is released rather than leaving the car blocked.
+    const bookings = await db.select().from(bookingRequests)
+    expect(bookings).toHaveLength(1)
+    expect(bookings[0].status).toBe('declined')
   })
 
   it('PAY-12: portal callback path /skipcash-pay/callback accepts a valid webhook', async () => {
@@ -302,7 +318,7 @@ describe('SkipCash payments API', () => {
     const res = await supertest(app)
       .post('/skipcash-pay/callback')
       .set('Authorization', signWebhook(payload))
-      .send(payload)
+      .send(payload as object)
     expect(res.status).toBe(200)
 
     const [payment] = await db.select().from(payments).where(eq(payments.id, created.body.paymentId))
@@ -311,5 +327,5 @@ describe('SkipCash payments API', () => {
 })
 
 function postWebhook(app: Express, payload: unknown, signature: string) {
-  return supertest(app).post('/api/payments/skipcash/webhook').set('Authorization', signature).send(payload)
+  return supertest(app).post('/api/payments/skipcash/webhook').set('Authorization', signature).send(payload as object)
 }

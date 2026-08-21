@@ -93,6 +93,12 @@
   border-color: #f87171;
 }
 
+.checkout-field-error {
+  color: #dc2626;
+  font-size: 0.8125rem;
+  margin-top: 0.25rem;
+}
+
 .checkout-info-box {
   margin-top: 16px;
   padding: 14px 16px;
@@ -214,6 +220,47 @@
   font-size: 13px;
 }
 
+.checkout-promo {
+  margin-bottom: 16px;
+}
+
+.checkout-promo__row {
+  display: flex;
+  gap: 8px;
+}
+
+.checkout-promo__row input {
+  flex: 1;
+}
+
+.checkout-promo__apply {
+  padding: 10px 16px;
+  border: 1px solid #4f46e5;
+  border-radius: 8px;
+  background: #fff;
+  color: #4f46e5;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.checkout-promo__apply:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.checkout-promo__error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #b91c1c;
+}
+
+.checkout-promo__success {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #047857;
+}
+
 .checkout-payment {
   display: flex;
   gap: 10px;
@@ -232,6 +279,17 @@
   color: #6b7280;
   font-size: 12px;
   margin-top: 2px;
+}
+
+.checkout-delivery-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.checkout-delivery-modes {
+  margin-bottom: 12px;
 }
 
 .checkout-actions {
@@ -387,6 +445,66 @@
   background: #fef2f2;
   color: #b91c1c;
   border: 1px solid #fecaca;
+}
+
+.checkout-alert--verify {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.checkout-resend-btn {
+  border: none;
+  background: transparent;
+  color: #685ff7;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.checkout-resend-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.checkout-summary__renewal {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.checkout-summary__monthly {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f5f4ff;
+  border: 1px solid #e0defc;
+}
+
+.checkout-summary__due-now {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: #111827;
+}
+
+.checkout-summary__due-now strong {
+  color: #685ff7;
+  font-size: 18px;
+}
+
+.checkout-summary__monthly p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 @media (max-width: 960px) {

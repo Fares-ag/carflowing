@@ -1,11 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
 import type { Plan, PlanTier } from '@carflow/shared'
 import { formatCurrency } from '@carflow/shared'
-import { createPlan, deletePlan, getPlanStats, listPlans, updatePlan } from '../services/adminService'
-import { AdminLayout } from '../layout/AdminLayout'
-import { InfoModal } from '../components/InfoModal'
 import {
   Check,
   Download,
@@ -18,6 +12,12 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+import { InfoModal } from '../components/InfoModal'
+import { AdminLayout } from '../layout/AdminLayout'
+import { createPlan, deletePlan, getPlanStats, listPlans, updatePlan } from '../services/adminService'
 import './PlansPage.css'
 
 export function PlansPage() {
@@ -113,7 +113,7 @@ export function PlansPage() {
       yearly: card.yearly,
       subscribers: card.subscribers,
     }))
-    const headers = Object.keys(rows[0] ?? {})
+    const headers = Object.keys(rows[0] ?? {}) as Array<keyof (typeof rows)[number]>
     const csv = [
       headers.join(','),
       ...rows.map(row => headers.map(header => `"${row[header] ?? ''}"`).join(',')),

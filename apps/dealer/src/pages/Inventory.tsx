@@ -1,13 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { VehicleCategory } from '@carflow/shared'
-import { createVehicle, listInventory, updateVehicle } from '../services/dealerService'
-import { toast } from 'sonner'
-import { Sidebar } from '../components/Sidebar'
-import { Header } from '../components/Header'
-import { AddVehicleModal } from '../components/modals/AddVehicleModal'
-import { EditVehicleModal, type EditVehicleValues } from '../components/modals/EditVehicleModal'
-import { VehicleDetailsModal } from '../components/modals/VehicleDetailsModal'
+import { formatCurrency } from '@carflow/shared'
 import {
   BarChart3,
   Car,
@@ -23,6 +15,15 @@ import {
   Timer,
   Wrench,
 } from 'lucide-react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+import { Header } from '../components/Header'
+import { Sidebar } from '../components/Sidebar'
+import { AddVehicleModal } from '../components/modals/AddVehicleModal'
+import { EditVehicleModal, type EditVehicleValues } from '../components/modals/EditVehicleModal'
+import { VehicleDetailsModal } from '../components/modals/VehicleDetailsModal'
+import { createVehicle, listInventory, updateVehicle, updateVehicleStatus } from '../services/dealerService'
 import './Inventory.css'
 
 type VehicleStatus = 'Available' | 'Rented' | 'Maintenance'
@@ -41,10 +42,11 @@ interface InventoryVehicleRow {
   transmission: 'automatic' | 'manual'
   seats: number
   imageUrl?: string
-}
-
-function formatQar(value: number) {
-  return `QAR ${value.toLocaleString()}`
+  imageUrls?: string[]
+  description?: string
+  color?: string
+  mileageCapKm?: number
+  features?: string[]
 }
 
 function formatCategoryLabel(category: VehicleCategory): string {
@@ -91,6 +93,11 @@ export const Inventory = memo(function Inventory() {
           transmission: vehicle.transmission ?? 'automatic',
           seats: vehicle.seats ?? 5,
           imageUrl: vehicle.imageUrl,
+          imageUrls: vehicle.imageUrls,
+          description: vehicle.description,
+          color: vehicle.color,
+          mileageCapKm: vehicle.mileageCapKm,
+          features: vehicle.features,
         }))
         setVehicles(mapped)
       })
@@ -187,7 +194,7 @@ export const Inventory = memo(function Inventory() {
                   name: vehicle.name,
                   category: formatCategoryLabel(vehicle.category),
                   status: vehicle.status,
-                  rate: formatQar(vehicle.dailyRateQar),
+                  rate: formatCurrency(vehicle.dailyRateQar),
                 }))
                 type CsvRow = (typeof rows)[number]
                 const headers: (keyof CsvRow)[] = ['id', 'name', 'category', 'status', 'rate']
@@ -300,7 +307,6 @@ export const Inventory = memo(function Inventory() {
                   <option value="Rented">Rented</option>
                   <option value="Maintenance">Maintenance</option>
                 </select>
-                <span className="inv-selectChevron">▾</span>
               </label>
               <label className="inv-selectBtn">
                 <select
@@ -316,7 +322,6 @@ export const Inventory = memo(function Inventory() {
                   <option value="ev">EV</option>
                   <option value="other">Other</option>
                 </select>
-                <span className="inv-selectChevron">▾</span>
               </label>
               <label className="inv-selectBtn">
                 <select
@@ -327,7 +332,6 @@ export const Inventory = memo(function Inventory() {
                   <option value="name">Name</option>
                   <option value="rate">Daily Rate</option>
                 </select>
-                <span className="inv-selectChevron">▾</span>
               </label>
 
               <div className="inv-viewToggle" role="group" aria-label="View toggle">
@@ -408,7 +412,7 @@ export const Inventory = memo(function Inventory() {
                       <div className="inv-metricLabel">
                         Daily Rate <span className="inv-metricHint"><Info size={12} /></span>
                       </div>
-                      <div className="inv-metricValue">{formatQar(vehicle.dailyRateQar)}</div>
+                      <div className="inv-metricValue">{formatCurrency(vehicle.dailyRateQar)}</div>
                     </div>
                   </div>
 
@@ -463,7 +467,7 @@ export const Inventory = memo(function Inventory() {
                   <div className="inv-listMetrics">
                     <div className="inv-listMetric">
                       <div className="inv-listMetricLabel">Daily Rate</div>
-                      <div className="inv-listMetricValue">{formatQar(vehicle.dailyRateQar)}</div>
+                      <div className="inv-listMetricValue">{formatCurrency(vehicle.dailyRateQar)}</div>
                     </div>
                   </div>
 
@@ -518,6 +522,13 @@ export const Inventory = memo(function Inventory() {
               fuelType: values.fuelType ?? 'gas',
               seats: values.seats ?? 5,
               imageUrl: values.imageUrl,
+              imageUrls: values.imageUrls,
+              description: values.description,
+              color: values.color,
+              locationCity: values.locationCity,
+              locationArea: values.locationArea,
+              mileageCapKm: values.mileageCapKm,
+              features: values.features,
             })
             await refreshInventory()
           } catch (err) {
@@ -565,6 +576,14 @@ export const Inventory = memo(function Inventory() {
         onClose={() => setEditingId(null)}
         onSave={(values) => {
           if (!editingId) return
+          // The general PATCH rejects `status` (400) — status changes go through the /status endpoint.
+          const nextStatus =
+            values.status === 'Available'
+              ? ('available' as const)
+              : values.status === 'Rented'
+                ? ('rented' as const)
+                : ('maintenance' as const)
+          const statusChanged = editingVehicle ? editingVehicle.status !== values.status : false
           updateVehicle(editingId, {
             name: values.vehicleName,
             make: values.make,
@@ -576,18 +595,15 @@ export const Inventory = memo(function Inventory() {
             transmission: values.transmission,
             fuelType: values.fuelType,
             seats: Number(values.seatingCapacity) || 5,
-            status:
-              values.status === 'Available'
-                ? 'available'
-                : values.status === 'Rented'
-                  ? 'rented'
-                  : 'maintenance',
             imageUrl: values.imageUrl,
-          }).then(() => {
-            refreshInventory()
-          }).catch((err) => {
-            toast.error(err instanceof Error ? err.message : 'Failed to update vehicle')
           })
+            .then(() => (statusChanged ? updateVehicleStatus(editingId, nextStatus) : null))
+            .then(() => refreshInventory())
+            .catch((err) => {
+              // 409 (open rental) and 400 errors carry the server explanation in the message.
+              toast.error(err instanceof Error ? err.message : 'Failed to update vehicle')
+              void refreshInventory()
+            })
         }}
       />
     </div>

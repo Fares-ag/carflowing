@@ -44,41 +44,81 @@
 }
 
 .date-filter {
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 12px;
-  background: white;
-  border: 1px solid #e5e5e5;
-  border-radius: 4px;
+  padding: 0 32px 0 12px;
+  height: 36px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   font-size: 14px;
-  color: #333;
+  font-weight: 500;
+  color: #374151;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.date-filter::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid #6b7280;
+  border-bottom: 1.5px solid #6b7280;
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+.date-filter select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: 0 !important;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+}
+
+.date-filter select::-ms-expand {
+  display: none;
 }
 
 .date-filter:hover {
-  border-color: #6366f1;
-  color: #6366f1;
+  background: #f9fafb;
+  border-color: #d1d5db;
+  color: #111827;
 }
 
 .export-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  background: white;
-  border: 1px solid #e5e5e5;
-  border-radius: 4px;
+  padding: 0 12px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
   font-size: 14px;
-  color: #333;
+  font-weight: 500;
+  color: #4b5563;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .export-btn:hover {
-  border-color: #6366f1;
-  color: #6366f1;
+  background: #f3f4f6;
+  color: #111827;
 }
 
 .tabs-wrapper {

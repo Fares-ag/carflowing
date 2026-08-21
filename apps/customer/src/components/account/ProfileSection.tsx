@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Image, Pencil } from 'lucide-react'
 import { apiRequest, uploadAvatar } from '@carflow/shared'
-import { getProfileAvatar, getUserId, updateProfileAvatar } from '../../services/authService'
 import { useAuth } from '../../contexts/AuthContext'
+import { getProfileAvatar, getUserId, updateProfileAvatar } from '../../services/authService'
 import './ProfileSection.css'
 
 export default function ProfileSection() {

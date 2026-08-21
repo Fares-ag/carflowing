@@ -1,10 +1,8 @@
 import { Router, type Request, type Response } from 'express'
-import { eq } from 'drizzle-orm'
-import { db } from '../db/index.js'
-import { payments } from '../db/schema.js'
+import { applySkipCashOutcome } from '../services/paymentSettlement.js'
+import { verifySkipCashWebhookSignature, type SkipCashWebhookPayload } from '../services/skipcash.js'
 import { asyncHandler } from '../utils/http.js'
-import { createBookingRequestForVehicle } from '../services/booking.js'
-import { SkipCashStatus, verifySkipCashWebhookSignature, type SkipCashWebhookPayload } from '../services/skipcash.js'
+import { logStructured } from '../utils/requestContext.js'
 
 export const skipcashWebhookRouter = Router()
 
@@ -14,14 +12,19 @@ function customerAppUrl(): string {
 
 /**
  * SkipCash calls this for every transaction status change (and retries up to
- * 3 times over a day if we don't return 200). The booking request is only
- * created here, on confirmed payment, so a customer can never leave an unpaid
- * request for a dealer to see.
+ * 3 times over a day if we don't return 200). All state changes go through
+ * applySkipCashOutcome, which row-locks the payment so duplicate or
+ * concurrent deliveries can never double-process (audit BUG-11), and which is
+ * shared with the reconciliation job so a lost webhook heals automatically.
  */
 export async function handleSkipCashWebhook(req: Request, res: Response): Promise<void> {
   const payload = req.body as SkipCashWebhookPayload
   const signature = req.header('authorization') ?? undefined
   if (!verifySkipCashWebhookSignature(payload, signature)) {
+    logStructured('warn', 'skipcash.webhook.signature_failed', {
+      requestId: req.requestId,
+      paymentId: payload.TransactionId,
+    })
     res.status(401).json({ error: 'Invalid signature' })
     return
   }
@@ -32,68 +35,25 @@ export async function handleSkipCashWebhook(req: Request, res: Response): Promis
     return
   }
 
-  const [payment] = await db.select().from(payments).where(eq(payments.id, transactionId)).limit(1)
-  if (!payment) {
+  const result = await applySkipCashOutcome({
+    paymentId: transactionId,
+    statusId: payload.StatusId,
+    reportedAmount: payload.Amount ?? null,
+  })
+  logStructured('info', 'skipcash.webhook.settled', {
+    requestId: req.requestId,
+    paymentId: transactionId,
+    action: result.action,
+    statusId: payload.StatusId,
+  })
+  if (!result.handled) {
     // Nothing we can reconcile this against; acknowledge so SkipCash stops retrying.
-    res.status(200).json({ ok: true })
-    return
-  }
-  if (payment.status !== 'pending') {
-    // Already processed by an earlier webhook call for this same payment.
-    res.status(200).json({ ok: true })
-    return
-  }
-
-  const expectedAmount = Number(payment.amount)
-  const receivedAmount = Number(payload.Amount)
-  if (
-    !Number.isFinite(receivedAmount) ||
-    Math.abs(expectedAmount - receivedAmount) > 0.01
-  ) {
-    console.error(
-      `SkipCash amount mismatch for payment ${payment.id}: expected ${expectedAmount}, received ${payload.Amount}`
-    )
-    await db.update(payments).set({ status: 'failed' }).where(eq(payments.id, payment.id))
-    res.status(200).json({ ok: true })
-    return
-  }
-
-  if (payload.StatusId === SkipCashStatus.PAID) {
-    const result = await createBookingRequestForVehicle({
-      customerId: payment.customerId!,
-      vehicleId: payment.vehicleId!,
-      note: payment.note,
+    logStructured('warn', 'skipcash.webhook.unknown_payment', {
+      requestId: req.requestId,
+      paymentId: transactionId,
+      action: result.action,
     })
-    if (result.status === 201) {
-      await db
-        .update(payments)
-        .set({ status: 'completed', bookingRequestId: (result.body as { id: string }).id })
-        .where(eq(payments.id, payment.id))
-    } else {
-      // Vehicle became unavailable between intent creation and payment confirmation.
-      // The customer already paid, so this needs manual admin follow-up/refund.
-      console.error(
-        `SkipCash payment ${payment.id} succeeded but booking could not be created: ${JSON.stringify(result.body)}`
-      )
-      await db
-        .update(payments)
-        .set({ status: 'failed', needsRefund: true })
-        .where(eq(payments.id, payment.id))
-    }
-  } else if (
-    payload.StatusId === SkipCashStatus.CANCELED ||
-    payload.StatusId === SkipCashStatus.FAILED ||
-    payload.StatusId === SkipCashStatus.REJECTED
-  ) {
-    await db.update(payments).set({ status: 'failed' }).where(eq(payments.id, payment.id))
-  } else if (
-    payload.StatusId === SkipCashStatus.REFUNDED ||
-    payload.StatusId === SkipCashStatus.PENDING_REFUND ||
-    payload.StatusId === SkipCashStatus.REFUND_FAILED
-  ) {
-    await db.update(payments).set({ status: 'refunded' }).where(eq(payments.id, payment.id))
   }
-  // NEW / PENDING: transaction hasn't finished yet, leave the payment pending.
 
   res.status(200).json({ ok: true })
 }

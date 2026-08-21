@@ -1,5 +1,3 @@
-import { useState, useEffect } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   BadgeCheck,
@@ -8,20 +6,24 @@ import {
   Heart,
   Lock,
   LogOut,
+  MessageSquare,
   Shield,
   SlidersHorizontal,
   User,
 } from 'lucide-react'
-import { Header } from '../components/shared/Header'
-import { Footer } from '../components/shared/Footer'
-import ProfileSection from '../components/account/ProfileSection'
-import SecuritySection from '../components/account/SecuritySection'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import BillingSection from '../components/account/BillingSection'
 import NotificationsSection from '../components/account/NotificationsSection'
 import PreferencesSection from '../components/account/PreferencesSection'
-import VerificationSection from '../components/account/VerificationSection'
 import PrivacySection from '../components/account/PrivacySection'
+import ProfileSection from '../components/account/ProfileSection'
 import SavedCarsSection from '../components/account/SavedCarsSection'
-import BillingSection from '../components/account/BillingSection'
+import SecuritySection from '../components/account/SecuritySection'
+import SupportSection from '../components/account/SupportSection'
+import VerificationSection from '../components/account/VerificationSection'
+import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
 import { useAuth } from '../contexts/AuthContext'
 import './AccountSettings.css'
 
@@ -34,6 +36,7 @@ type SettingsSection =
   | 'privacy'
   | 'saved'
   | 'billing'
+  | 'support'
 
 const VALID_SECTIONS: SettingsSection[] = [
   'profile',
@@ -44,6 +47,7 @@ const VALID_SECTIONS: SettingsSection[] = [
   'privacy',
   'saved',
   'billing',
+  'support',
 ]
 
 function parseSection(value: string | null): SettingsSection {
@@ -78,6 +82,7 @@ export function AccountSettings() {
     { id: 'notifications' as SettingsSection, label: 'Notifications', icon: <Bell size={16} /> },
     { id: 'preferences' as SettingsSection, label: 'Preferences', icon: <SlidersHorizontal size={16} /> },
     { id: 'billing' as SettingsSection, label: 'Billing', icon: <CreditCard size={16} /> },
+    { id: 'support' as SettingsSection, label: 'Support', icon: <MessageSquare size={16} /> },
     { id: 'privacy' as SettingsSection, label: 'Privacy', icon: <Shield size={16} /> },
   ]
 
@@ -89,6 +94,8 @@ export function AccountSettings() {
         return <SavedCarsSection />
       case 'billing':
         return <BillingSection />
+      case 'support':
+        return <SupportSection />
       case 'security':
         return <SecuritySection />
       case 'notifications':

@@ -1,6 +1,5 @@
-# CarFlow API — deploy from monorepo root context
-# fly deploy --config apps/backend/fly.toml (from repo root)
-# or: cd apps/backend && fly deploy
+# DEPRECATED — use Railway (railway.toml at repo root) for production API deploy.
+# Kept for reference only; not used by CI.
 
 app = 'carflow-api'
 primary_region = 'iad'

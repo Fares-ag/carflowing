@@ -2,12 +2,14 @@
 
 CarFlow platform: **Admin**, **Customer**, and **Dealer** Vite apps plus an Express API (`apps/backend`).
 
+**Product model:** CarFlow runs **monthly car subscriptions** (book → approve → handover → recurring invoices via SkipCash) alongside normal **rental ops** (returns, maintenance, dealer inventory). Admin “Plans” are dealer SaaS tiers, not customer car subscriptions — see `docs/SUBSCRIPTION_MODEL.md`.
+
 ## Stack
 
 | Layer | Tech |
 |-------|------|
 | Database | PostgreSQL (Docker locally, Neon in production) via Drizzle |
-| Auth | JWT in httpOnly cookies + RBAC (`admin` / `dealer` / `customer`) |
+| Auth | JWT in httpOnly cookies + RBAC (`admin` / `finance` / `ops` / `support` / `dealer` / `customer`) |
 | Uploads | Local disk in dev, Vercel Blob in production |
 | Frontends | React 18 + TypeScript + Vite |
 
@@ -66,11 +68,12 @@ See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) for the full la
 - Set `DATABASE_URL` to your Neon connection string
 - Set strong `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET`
 - Set `COOKIE_SECURE=true` behind HTTPS
+- Set `COOKIE_DOMAIN=.yourdomain.tld` so auth cookies are first-party across `api.*` and app subdomains (`SameSite=Lax`)
 - Set `UPLOAD_DRIVER=blob` and `BLOB_READ_WRITE_TOKEN`
 - Set `CORS_ORIGINS` to your three Vercel frontend origins
-- Set `PUBLIC_API_URL`, `CUSTOMER_APP_URL`, and SkipCash / Resend keys on Fly.io
+- Set `PUBLIC_API_URL`, `CUSTOMER_APP_URL`, and SkipCash / Resend keys on **Railway** (service variables)
 - Per Vercel project: `VITE_API_URL=https://api.yourdomain.com/api`, `VITE_USE_MOCK_API=false`
-- Deploy API: `cd apps/backend && fly deploy` (see `fly.toml` + `Dockerfile`)
+- Deploy API: `railway up --detach` from repo root (see `railway.toml` + `apps/backend/Dockerfile`)
 - Run migrations: `npm run db:migrate` (uses `apps/backend/drizzle/`)
 - Tag release `v*` to trigger `.github/workflows/deploy.yml`
 
@@ -103,6 +106,8 @@ npm run typecheck         # TypeScript build across workspaces
 - E2E: `e2e/<app>/<feature>.spec.ts`
 - Gap registry: `tests/gap-registry.json` (tag failing assertions with `@gap` until fixed)
 
-## Legacy
+## Documentation
 
-The `supabase/` folder is archived reference SQL/edge functions from the previous backend. The runtime no longer depends on Supabase.
+- [Customer flow & verification](docs/FLOW_AND_VERIFICATION.md)
+- [Business use case audit](docs/BUSINESS_USE_CASE_AUDIT.md)
+- [Production readiness](docs/PRODUCTION_READINESS.md)

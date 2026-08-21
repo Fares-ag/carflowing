@@ -15,6 +15,7 @@ import type {
   User,
   Vehicle,
 } from './types'
+import { parseVehicleFeatures, vehicleGalleryUrls } from './vehicleFeatures'
 
 export function mapProfileToUser(row: any): User {
   return {
@@ -49,6 +50,11 @@ export function mapDealer(row: any): Dealer {
 }
 
 export function mapVehicle(row: any): Vehicle {
+  const gallery = vehicleGalleryUrls({
+    imageUrl: row.image_url ?? row.imageUrl,
+    imageUrls: row.image_urls ?? row.imageUrls,
+  })
+  const features = parseVehicleFeatures(row.features)
   return {
     id: row.id,
     dealerId: row.dealer_id,
@@ -63,7 +69,17 @@ export function mapVehicle(row: any): Vehicle {
     transmission: row.transmission,
     fuelType: row.fuel_type,
     seats: row.seats,
-    imageUrl: row.image_url ?? undefined,
+    imageUrl: gallery[0] ?? undefined,
+    imageUrls: gallery.length ? gallery : undefined,
+    description: row.description ?? undefined,
+    color: row.color ?? undefined,
+    mileageCapKm: row.mileage_cap_km ?? row.mileageCapKm ?? undefined,
+    features: features.length ? features : undefined,
+    licensePlate: row.license_plate ?? undefined,
+    locationCity: row.location_city ?? row.locationCity ?? undefined,
+    locationArea: row.location_area ?? row.locationArea ?? undefined,
+    latitude: row.latitude ?? undefined,
+    longitude: row.longitude ?? undefined,
   }
 }
 
@@ -79,6 +95,9 @@ export function mapRental(row: any): Rental {
     totalAmount: row.total_amount,
     paymentStatus: row.payment_status,
     createdAt: row.created_at,
+    monthlyAmount: row.monthly_amount ?? row.total_amount ?? 0,
+    termMonths: row.term_months ?? 1,
+    nextBillingDate: row.next_billing_date ?? undefined,
   }
 }
 

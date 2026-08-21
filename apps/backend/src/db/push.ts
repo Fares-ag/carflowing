@@ -1,8 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import postgres from 'postgres'
 import dotenv from 'dotenv'
+import postgres from 'postgres'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') })

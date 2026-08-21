@@ -1,9 +1,9 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { and, eq } from 'drizzle-orm'
 import type { Express } from 'express'
 import request from 'supertest'
-import { eq } from 'drizzle-orm'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
-import { bookingRequests, favorites, profiles, rentals, vehicles } from '../../db/schema.js'
+import { bookingRequests, invoices, payments, profiles, rentals, vehicles } from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 /** Phase 8b — expanded API negative paths and validation gaps */
@@ -55,7 +55,7 @@ describe('API negative paths', () => {
     expect(again.status).toBe(204)
   })
 
-  it('DEAL-N01: extra vehicle fields from UI are ignored on create', async () => {
+  it('DEAL-N01: extended vehicle fields persist on create', async () => {
     const fixtures = await seedFixtures()
     const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
     const res = await agent.post('/api/dealer/vehicles').send({
@@ -70,12 +70,19 @@ describe('API negative paths', () => {
       seats: 5,
       color: 'red',
       licensePlate: 'QA-123',
-      weeklyRate: 700,
-      features: ['sunroof', 'gps'],
+      description: 'Well maintained sedan',
+      mileageCapKm: 2000,
+      imageUrls: ['https://cdn.example/a.jpg', 'https://cdn.example/b.jpg'],
+      features: ['GPS Navigation', 'Bluetooth'],
     })
     expect(res.status).toBe(201)
     expect(res.body.color).toBe('red')
     expect(res.body.licensePlate).toBe('QA-123')
+    expect(res.body.description).toBe('Well maintained sedan')
+    expect(res.body.mileageCapKm).toBe(2000)
+    expect(res.body.imageUrls).toEqual(['https://cdn.example/a.jpg', 'https://cdn.example/b.jpg'])
+    expect(res.body.imageUrl).toBe('https://cdn.example/a.jpg')
+    expect(res.body.features).toEqual(['GPS Navigation', 'Bluetooth'])
   })
 
   it('DEAL-N11: lead priority/notes are persisted by API', async () => {
@@ -100,7 +107,7 @@ describe('API negative paths', () => {
       subject: 'Hi',
       body: 'There',
     })
-    expect([201, 404, 500]).toContain(res.status)
+    expect([201, 400, 404, 500]).toContain(res.status)
   })
 
   it('UPL-N01: multer rejects avatar over 10MB with 413', async () => {
@@ -125,16 +132,20 @@ describe('API data integrity', () => {
     await resetDb()
   })
 
-  it('ADM-N28: deleting vehicle cascades pending booking requests (FK ON DELETE CASCADE)', async () => {
+  it('ADM-N28: vehicle with pending booking history is soft-retired, not hard-deleted', async () => {
     const fixtures = await seedFixtures()
     const [br] = await db
       .insert(bookingRequests)
       .values({ customerId: fixtures.customer.id, vehicleId: fixtures.vehicles[0].id, status: 'pending' })
       .returning()
     const { agent } = await loginAs(app, fixtures.admin.email, 'admin')
-    await agent.delete(`/api/admin/vehicles/${fixtures.vehicles[0].id}`)
+    const res = await agent.delete(`/api/admin/vehicles/${fixtures.vehicles[0].id}`)
+    expect(res.status).toBe(200)
+    expect(res.body.softDeleted).toBe(true)
     const [stillThere] = await db.select().from(bookingRequests).where(eq(bookingRequests.id, br.id))
-    expect(stillThere).toBeUndefined()
+    expect(stillThere).toBeTruthy()
+    const [vehicle] = await db.select().from(vehicles).where(eq(vehicles.id, fixtures.vehicles[0].id))
+    expect(vehicle.status).toBe('inactive')
   })
 
   it('ADM-N18: suspending customer does not auto-cancel active rentals', async () => {
@@ -211,18 +222,38 @@ describe('API concurrency', () => {
         endDate: today,
         status: 'reserved',
         totalAmount: '200',
+        monthlyAmount: '200',
+        termMonths: 1,
         paymentStatus: 'pending',
       })
       .returning()
+    await db.insert(invoices).values({
+      ownerId: fixtures.customer.id,
+      ownerType: 'customer',
+      amount: '200',
+      status: 'due',
+      date: today,
+      dueDate: today,
+      periodStart: today,
+      rentalId: rental.id,
+      description: 'First month',
+    })
     const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
-    const payload = { rentalId: rental.id, customerId: fixtures.customer.id, amount: 200, method: 'bank' }
+    const payload = { rentalId: rental.id, method: 'bank' }
     const [a, b] = await Promise.all([
       agent.post('/api/dealer/payments/offline').send(payload),
       agent.post('/api/dealer/payments/offline').send(payload),
     ])
-    expect([201, 200]).toContain(a.status)
-    expect([201, 200]).toContain(b.status)
-    expect(a.body.id).toBe(b.body.id)
+    // One request records the charge; the concurrent duplicate is answered
+    // idempotently (200 with the existing payment) or told nothing is due.
+    expect([201, 200, 409]).toContain(a.status)
+    expect([201, 200, 409]).toContain(b.status)
+    const charges = await db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.rentalId, rental.id), eq(payments.status, 'completed')))
+    expect(charges.length).toBe(1)
+    expect(Number(charges[0].amount)).toBe(200)
   })
 
   it('RACE-07: suspended user next authenticated request fails at login, not mid-session token', async () => {

@@ -1,5 +1,4 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { whatsAppLink } from '@carflow/shared'
 import {
   Car,
   CheckCircle2,
@@ -17,9 +16,10 @@ import {
   Shield,
   Truck,
 } from 'lucide-react'
-import { whatsAppLink } from '@carflow/shared'
-import { Header } from '../components/shared/Header'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Footer } from '../components/shared/Footer'
+import { Header } from '../components/shared/Header'
 import {
   SUPPORT_EMAIL,
   SUPPORT_PHONE_DISPLAY,
@@ -102,7 +102,7 @@ const FAQ_ITEMS: FaqItem[] = [
     id: 'pricing-shown',
     category: 'pricing',
     q: 'How is the price calculated?',
-    a: 'Totals are based on the vehicle’s monthly rate and the duration you select. Checkout shows subtotal, tax, and the amount due so you can confirm before submitting.',
+    a: 'Pricing is all-inclusive — one monthly fee with no separate tax line. Checkout shows your monthly rate, first month due, and minimum term total before you submit.',
   },
   {
     id: 'cancel',

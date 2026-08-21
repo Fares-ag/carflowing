@@ -6,6 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react'
+import { UNAUTHORIZED_EVENT } from '@carflow/shared'
 import type { AuthSession } from '../services/authService'
 import { getSession, logout as authLogout } from '../services/authService'
 
@@ -41,6 +42,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refetch()
   }, [refetch])
+
+  useEffect(() => {
+    const handleUnauthorized = () => setSession(null)
+    window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized)
+  }, [])
 
   return (
     <AuthContext.Provider value={{ session, isLoading, refetch, logout }}>

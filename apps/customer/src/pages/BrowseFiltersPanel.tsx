@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import {
   BROWSE_FILTER_SECTIONS,
   type BrowseFilterState,
@@ -107,6 +107,34 @@ export function BrowseFiltersPanel({ state, onChange, onClear }: BrowseFiltersPa
                         ))}
                       </select>
                     </div>
+                  )}
+
+                  {section.type === 'select' && (
+                    <div className="filter-select-wrap">
+                      <select
+                        id={`browse-${section.id}`}
+                        className="filter-select"
+                        value={state.location}
+                        onChange={(event) => patch({ location: event.target.value })}
+                      >
+                        {section.options.map((option) => (
+                          <option key={option.value || 'all'} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {section.type === 'date' && (
+                    <input
+                      id="browse-start-date"
+                      type="date"
+                      className="filter-date"
+                      value={state.startDate}
+                      min={new Date().toISOString().slice(0, 10)}
+                      onChange={(event) => patch({ startDate: event.target.value })}
+                    />
                   )}
 
                   {section.type === 'dualRange' && (

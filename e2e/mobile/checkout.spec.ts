@@ -10,7 +10,7 @@ test.describe('E2E-M01 mobile book flow usability', () => {
 
   test('browse and car detail usable on mobile', async ({ page, loginAs }) => {
 
-    await loginAs(page, 'customer')
+    await loginAs('customer')
 
     await page.goto('/browse')
 

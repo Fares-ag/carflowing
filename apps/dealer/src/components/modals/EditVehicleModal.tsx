@@ -1,7 +1,7 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { ImagePlus } from 'lucide-react'
 import type { VehicleCategory } from '@carflow/shared'
 import { uploadVehicleImage } from '@carflow/shared'
+import { ImagePlus } from 'lucide-react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Modal } from './Modal'
 import './EditVehicleModal.css'
 

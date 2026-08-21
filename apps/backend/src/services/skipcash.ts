@@ -1,4 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+import { fetchWithTimeout } from '../utils/http.js'
 
 const SANDBOX_BASE_URL = 'https://skipcashtest.azurewebsites.net/api/v1'
 const PRODUCTION_BASE_URL = 'https://api.skipcash.app/api/v1'
@@ -85,7 +86,7 @@ export async function createSkipCashPayment(
   }
   const authorization = signFields(body, PAYMENT_SIGNATURE_FIELDS, keySecret)
 
-  const res = await fetch(`${baseUrl()}/payments`, {
+  const res = await fetchWithTimeout(`${baseUrl()}/payments`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -155,6 +156,47 @@ export function verifySkipCashWebhookSignature(
   return expectedBuf.length === actualBuf.length && timingSafeEqual(expectedBuf, actualBuf)
 }
 
+export interface SkipCashPaymentLookup {
+  statusId: number
+  amount?: string
+}
+
+/**
+ * Queries a payment's current status at SkipCash (GET /payments/{id}) — used
+ * by the reconciliation job when a webhook never arrived. Returns null when
+ * the lookup cannot be performed (missing config / provider error) so callers
+ * fail safe and retry on the next sweep.
+ */
+export async function getSkipCashPayment(externalId: string): Promise<SkipCashPaymentLookup | null> {
+  try {
+    const { keyId, keySecret, clientId } = requireConfig()
+    const authorization = signFields({ PaymentId: externalId }, ['PaymentId'], keySecret)
+    const res = await fetchWithTimeout(`${baseUrl()}/payments/${encodeURIComponent(externalId)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: authorization,
+        KeyId: keyId,
+        ...(clientId ? { 'x-client-id': clientId } : {}),
+      },
+    })
+    if (!res.ok) {
+      console.error(`SkipCash payment lookup failed (HTTP ${res.status}) for ${externalId}`)
+      return null
+    }
+    const json = (await res.json().catch(() => ({}))) as {
+      resultObj?: { statusId?: number; status?: number; amount?: string }
+      hasError?: boolean
+    }
+    if (json.hasError || !json.resultObj) return null
+    const statusId = json.resultObj.statusId ?? json.resultObj.status
+    if (typeof statusId !== 'number') return null
+    return { statusId, amount: json.resultObj.amount }
+  } catch (err) {
+    console.error('SkipCash payment lookup error', err)
+    return null
+  }
+}
+
 export interface SkipCashRefundResult {
   refunded: boolean
   manual: boolean
@@ -180,7 +222,7 @@ export async function requestSkipCashRefund(params: {
       Amount: params.amount.toFixed(2),
     }
     const authorization = signFields(body, ['PaymentId', 'Amount'], keySecret)
-    const res = await fetch(`${baseUrl()}/payments/refund`, {
+    const res = await fetchWithTimeout(`${baseUrl()}/payments/refund`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

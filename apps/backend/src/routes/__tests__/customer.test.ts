@@ -1,10 +1,17 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
 import type { Express } from 'express'
 import request from 'supertest'
-import { eq } from 'drizzle-orm'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/index.js'
-import { bookingRequests, favorites, notifications, paymentMethods, rentals, vehicles } from '../../db/schema.js'
+import { bookingRequests, customerProfiles, maintenanceRecords, notifications, paymentMethods, profiles, rentals, vehicles } from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
+
+const deleteStoredFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+
+vi.mock('../../storage/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../storage/index.js')>()
+  return { ...actual, deleteStoredFile: deleteStoredFileMock }
+})
 
 /** ID: CUST-01..CUST-28 — customer route integration tests */
 describe('Customer API', () => {
@@ -15,6 +22,7 @@ describe('Customer API', () => {
   })
 
   afterEach(async () => {
+    deleteStoredFileMock.mockClear()
     await resetDb()
   })
 
@@ -68,6 +76,43 @@ describe('Customer API', () => {
     const ownerDetail = await agent.get(`/api/customer/vehicles/${vehicleId}`)
     expect(ownerDetail.status).toBe(200)
     expect(ownerDetail.body.id).toBe(vehicleId)
+  })
+
+  it('CUST-CAT-01: category filter returns server total and pages beyond the first 20', async () => {
+    const fixtures = await seedFixtures()
+    await db.insert(vehicles).values(
+      Array.from({ length: 24 }, (_, index) => ({
+        dealerId: fixtures.dealer.dealerId,
+        name: `Catalog Sedan ${index + 1}`,
+        make: 'Toyota',
+        model: `Corolla ${index + 1}`,
+        year: 2022,
+        category: 'sedan' as const,
+        status: 'available' as const,
+        pricePerDay: '150',
+        transmission: 'automatic' as const,
+        fuelType: 'gas' as const,
+        seats: 5,
+      }))
+    )
+
+    const page1 = await request(app).get('/api/customer/vehicles').query({
+      page: 1,
+      pageSize: 20,
+      category: 'sedan',
+    })
+    expect(page1.status).toBe(200)
+    expect(page1.body.total).toBe(25)
+    expect(page1.body.items).toHaveLength(20)
+
+    const page2 = await request(app).get('/api/customer/vehicles').query({
+      page: 2,
+      pageSize: 20,
+      category: 'sedan',
+    })
+    expect(page2.status).toBe(200)
+    expect(page2.body.total).toBe(25)
+    expect(page2.body.items).toHaveLength(5)
   })
 
   it('CUST-05..CUST-08: favorites add/list/delete/clear', async () => {
@@ -151,15 +196,23 @@ describe('Customer API', () => {
     const profile = await agent.get('/api/customer/profile')
     expect(profile.status).toBe(200)
 
-    await agent.patch('/api/customer/profile').send({ name: 'Renamed Customer', phone: '+9745000' })
+    const renamed = await agent
+      .patch('/api/customer/profile')
+      .send({ name: 'Renamed Customer', phone: '+97455551234' })
+    expect(renamed.status).toBe(200)
     const full = await agent.get('/api/customer/profile/full')
     expect(full.body.profile.name).toBe('Renamed Customer')
 
     await agent
       .patch('/api/customer/profile/documents')
-      .send({ qidDocumentPath: 'documents/qid.pdf', driversLicensePath: 'documents/license.pdf' })
+      .send({
+        qidDocumentPath: `documents/${fixtures.customer.id}/qid.pdf`,
+        driversLicensePath: `documents/${fixtures.customer.id}/license.pdf`,
+        qidNumber: '28412345678',
+        driversLicenseNumber: '12345678',
+      })
     const docs = await agent.get('/api/customer/profile')
-    expect(docs.body.qidDocumentPath).toBe('documents/qid.pdf')
+    expect(docs.body.qidDocumentPath).toBe(`documents/${fixtures.customer.id}/qid.pdf`)
 
     const avatar = await agent.patch('/api/customer/profile/avatar').send({ avatarUrl: '/uploads/x.png' })
     expect(avatar.body.ok).toBe(true)
@@ -290,6 +343,30 @@ describe('Customer API', () => {
     expect(res.body.status).toBe('open')
   })
 
+  it('CUST-31: customer can list complaints with reply thread', async () => {
+    const fixtures = await seedFixtures()
+    const { agent: customerAgent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const created = await customerAgent.post('/api/customer/complaints').send({
+      category: 'billing',
+      subject: 'Invoice question',
+      description: 'I need help with my last invoice.',
+    })
+    expect(created.status).toBe(201)
+
+    const { agent: adminAgent } = await loginAs(app, fixtures.admin.email, 'admin')
+    await adminAgent.post(`/api/admin/complaints/${created.body.id}/replies`).send({
+      body: 'We are reviewing your invoice now.',
+    })
+
+    const list = await customerAgent.get('/api/customer/complaints')
+    expect(list.status).toBe(200)
+    expect(list.body.items.length).toBeGreaterThanOrEqual(1)
+    const row = list.body.items.find((c: { id: string }) => c.id === created.body.id)
+    expect(row.replies.length).toBe(1)
+    expect(row.replies[0].fromSupport).toBe(true)
+    expect(row.replies[0].body).toContain('reviewing')
+  })
+
   it('CUST-30: approved booking persists delivery fields on rental', async () => {
     const fixtures = await seedFixtures()
     const { agent: customerAgent } = await loginAs(app, fixtures.customer.email, 'customer')
@@ -312,5 +389,145 @@ describe('Customer API', () => {
     expect(rental.pickupLocation).toBe('Doha Mall')
     expect(String(rental.pickupDate)).toContain('2026-05-02')
     expect(rental.pickupTime).toBe('10:00')
+  })
+
+  it('CUST-33: cancel with collection persists return slot on rental', async () => {
+    const fixtures = await seedFixtures()
+    const [rental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[0].id,
+        startDate: '2026-01-01',
+        endDate: '2026-04-01',
+        status: 'active',
+        totalAmount: '9000',
+        monthlyAmount: '3000',
+        termMonths: 3,
+        paymentStatus: 'completed',
+        nextBillingDate: '2026-02-01',
+      })
+      .returning()
+
+    const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const res = await agent.post(`/api/customer/rentals/${rental.id}/cancel`).send({
+      reason: 'Relocating',
+      collection: {
+        mode: 'collection',
+        location: 'Pearl Qatar',
+        date: '2026-03-15',
+        time: '15:00–18:00',
+      },
+    })
+    expect(res.status).toBe(200)
+    expect(res.body.returnLocation).toBe('Pearl Qatar')
+    expect(String(res.body.returnDate)).toContain('2026-03-15')
+    expect(res.body.returnTime).toBe('15:00–18:00')
+  })
+
+  it('CUST-32: hard delete removes stored QID and license files', async () => {
+    const fixtures = await seedFixtures()
+    await db
+      .update(customerProfiles)
+      .set({
+        qidDocumentPath: 'documents/customer-qid.pdf',
+        driversLicensePath: 'documents/customer-license.pdf',
+      })
+      .where(eq(customerProfiles.userId, fixtures.customer.id))
+
+    const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const res = await agent.delete('/api/customer/account')
+    expect(res.status).toBe(204)
+
+    expect(deleteStoredFileMock).toHaveBeenCalledWith('documents/customer-qid.pdf')
+    expect(deleteStoredFileMock).toHaveBeenCalledWith('documents/customer-license.pdf')
+
+    const remaining = await db.select().from(profiles).where(eq(profiles.id, fixtures.customer.id))
+    expect(remaining).toHaveLength(0)
+  })
+
+  it('CUST-34: customer can request maintenance on own active rental but not another customer rental', async () => {
+    const fixtures = await seedFixtures()
+    const [ownRental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[0].id,
+        startDate: '2026-01-01',
+        endDate: '2026-04-01',
+        status: 'active',
+        totalAmount: '9000',
+        monthlyAmount: '3000',
+        termMonths: 3,
+      })
+      .returning()
+    const [otherRental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer2.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[1]?.id ?? fixtures.vehicles[0].id,
+        startDate: '2026-01-01',
+        endDate: '2026-04-01',
+        status: 'active',
+        totalAmount: '9000',
+        monthlyAmount: '3000',
+        termMonths: 3,
+      })
+      .returning()
+
+    const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const created = await agent.post(`/api/customer/rentals/${ownRental.id}/maintenance-requests`).send({
+      description: 'Brake noise when stopping',
+      photos: ['/uploads/maintenance/sample.jpg'],
+    })
+    expect(created.status).toBe(201)
+    expect(created.body.status).toBe('requested')
+    expect(created.body.source).toBe('customer')
+    expect(created.body.description).toBe('Brake noise when stopping')
+
+    const list = await agent.get(`/api/customer/rentals/${ownRental.id}/maintenance-requests`)
+    expect(list.status).toBe(200)
+    expect(list.body.items).toHaveLength(1)
+
+    const blocked = await agent.post(`/api/customer/rentals/${otherRental.id}/maintenance-requests`).send({
+      description: 'Should fail',
+    })
+    expect(blocked.status).toBe(404)
+
+    const rows = await db.select().from(maintenanceRecords).where(eq(maintenanceRecords.rentalId, ownRental.id))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].reportedBy).toBe(fixtures.customer.id)
+
+    const dealerNotifs = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, fixtures.dealer.id))
+    expect(dealerNotifs.some((n) => n.title === 'New service request')).toBe(true)
+  })
+
+  it('CUST-35: security status exposes SMS capability and verification round-trip', async () => {
+    const fixtures = await seedFixtures()
+    const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+
+    const status = await agent.get('/api/customer/security')
+    expect(status.status).toBe(200)
+    expect(status.body).toMatchObject({
+      smsVerified: false,
+      smsVerificationAvailable: true,
+    })
+    expect(typeof status.body.smsProviderConfigured).toBe('boolean')
+    expect(typeof status.body.smsDevFallback).toBe('boolean')
+
+    const sent = await agent.post('/api/customer/security/sms/send').send({ phone: '+97450001234' })
+    expect(sent.status).toBe(200)
+
+    const badCode = await agent.post('/api/customer/security/sms/verify').send({ code: '000000' })
+    expect(badCode.status).toBe(400)
+
+    const after = await agent.get('/api/customer/security')
+    expect(after.body.smsVerified).toBe(false)
   })
 })
