@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { Express } from 'express'
 import request from 'supertest'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,9 @@ import {
   auditLogs,
   bookingRequests,
   commissionLedger,
+  dealerInvoices,
+  dealerPlans,
+  dealerSubscriptions,
   invoices,
   invoiceReminderSends,
   payments,
@@ -17,10 +20,17 @@ import {
   vehicles,
 } from '../../db/schema.js'
 import { generateDueInvoices, markOverdueInvoices } from '../../services/billing.js'
+import { computeMonthlyAmount } from '../../services/booking.js'
+import {
+  generateDueDealerInvoices,
+  markPastDueDealerInvoices,
+  runDealerBillingSweep,
+  settleDealerInvoice,
+} from '../../services/dealerBilling.js'
 import { sendInvoicePaymentReminders } from '../../services/invoiceReminders.js'
 import { createSkipCashPayment } from '../../services/skipcash.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
-import { addDays, todayISO } from '../../utils/dates.js'
+import { addDays, dateInBillingTz, todayISO } from '../../utils/dates.js'
 
 vi.mock('../../services/skipcash.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/skipcash.js')>()
@@ -43,10 +53,13 @@ function signWebhook(payload: {
   return createHmac('sha256', 'test-webhook-key').update(combined).digest('base64')
 }
 
+/**
+ * Billing-timezone relative date. The services compute "today" in the billing
+ * timezone (utils/dates todayISO), so a UTC-based helper disagrees with them
+ * between 21:00 and 24:00 UTC and shifts every derived date by a day.
+ */
 function daysAgo(n: number): string {
-  const d = new Date()
-  d.setUTCDate(d.getUTCDate() - n)
-  return d.toISOString().slice(0, 10)
+  return addDays(todayISO(), -n)
 }
 
 /** Books vehicle[0] pay-at-shop and approves it; returns the rental row. */
@@ -82,14 +95,17 @@ describe('Subscription lifecycle', () => {
   it('SUB-01: approval creates the first due invoice and a monthly billing anchor', async () => {
     const fixtures = await seedFixtures()
     const rental = await bookAndApprove(app, fixtures)
-    expect(Number(rental.monthlyAmount)).toBe(450 * 30)
+    // bookAndApprove books a 3-month term, which now carries the multi-month
+    // discount (services/booking.ts TERM_DISCOUNTS) — assert against the
+    // server-authoritative helper rather than a hard-coded list price.
+    expect(Number(rental.monthlyAmount)).toBe(computeMonthlyAmount(450, 3))
     expect(rental.termMonths).toBe(3)
     expect(rental.nextBillingDate).not.toBeNull()
 
     const invoiceRows = await db.select().from(invoices).where(eq(invoices.rentalId, rental.id))
     expect(invoiceRows).toHaveLength(1)
     expect(invoiceRows[0].status).toBe('due')
-    expect(Number(invoiceRows[0].amount)).toBe(450 * 30)
+    expect(Number(invoiceRows[0].amount)).toBe(computeMonthlyAmount(450, 3))
   })
 
   it('SUB-02 (BUG-01 regression): online-paid booking approves into a PAID rental, no double charge', async () => {
@@ -387,7 +403,7 @@ describe('Subscription lifecycle', () => {
     // Completing the refund flips the original to refunded.
     const rest = await adminAgent
       .post(`/api/admin/payments/${payment.id}/refund`)
-      .send({ amount: 450 * 30 - 5000, manualConfirmed: true })
+      .send({ amount: computeMonthlyAmount(450, 3) - 5000, manualConfirmed: true })
     expect(rest.status).toBe(200)
     const [final] = await db.select().from(payments).where(eq(payments.id, payment.id))
     expect(final.status).toBe('refunded')
@@ -522,5 +538,190 @@ describe('Subscription lifecycle', () => {
       .where(eq(auditLogs.entityId, rental.id))
     expect(logs.some((l) => l.action === 'rental.pause')).toBe(true)
     expect(logs.some((l) => l.action === 'rental.resume')).toBe(true)
+  })
+})
+
+/** Same upsert-by-code helper as dealer.test.ts: dealer_plans survives resetDb(). */
+async function seedDealerPlans() {
+  const rows = await db
+    .insert(dealerPlans)
+    .values([
+      { code: 'free', name: 'Free', priceQar: '0', vehicleLimit: 1, features: [] },
+      { code: 'starter', name: 'Starter', priceQar: '99', vehicleLimit: 10, features: [] },
+      { code: 'professional', name: 'Professional', priceQar: '299', vehicleLimit: 25, features: [] },
+    ])
+    .onConflictDoUpdate({
+      target: dealerPlans.code,
+      set: {
+        name: sql`excluded.name`,
+        priceQar: sql`excluded.price_qar`,
+        vehicleLimit: sql`excluded.vehicle_limit`,
+        active: sql`excluded.active`,
+      },
+    })
+    .returning()
+  return Object.fromEntries(rows.map((r) => [r.code, r])) as Record<
+    'free' | 'starter' | 'professional',
+    typeof dealerPlans.$inferSelect
+  >
+}
+
+/** Default BILLING_GRACE_DAYS (appSettings.ts). */
+const DEALER_GRACE_DAYS = 3
+
+/** ID: DSUB-01..DSUB-04 — dealer subscription billing lifecycle */
+describe('Dealer subscription billing lifecycle', () => {
+  let app: Express
+
+  beforeAll(() => {
+    app = buildTestApp()
+  })
+
+  afterEach(async () => {
+    await resetDb()
+  })
+
+  it('DSUB-01: an unpaid plan invoice drives the subscription past_due, then down to the free tier', async () => {
+    const fixtures = await seedFixtures()
+    const plans = await seedDealerPlans()
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+
+    const change = await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'professional' })
+    expect(change.status).toBe(200)
+    expect(change.body.invoice.amount).toBe(299)
+
+    // Inside the grace window nothing moves.
+    expect(await runDealerBillingSweep(todayISO())).toMatchObject({ pastDue: 0, downgraded: 0 })
+
+    // Grace expires: invoice and subscription both go past_due.
+    const afterGrace = addDays(todayISO(), DEALER_GRACE_DAYS + 1)
+    expect(await runDealerBillingSweep(afterGrace)).toMatchObject({ pastDue: 1, downgraded: 0 })
+    let [subscription] = await db.select().from(dealerSubscriptions)
+    expect(subscription.status).toBe('past_due')
+    let [invoice] = await db.select().from(dealerInvoices)
+    expect(invoice.status).toBe('past_due')
+
+    // Still unpaid a grace window later: drop to the free tier.
+    const afterDunning = addDays(todayISO(), DEALER_GRACE_DAYS * 2 + 2)
+    expect(await runDealerBillingSweep(afterDunning)).toMatchObject({ downgraded: 1 })
+    ;[subscription] = await db.select().from(dealerSubscriptions)
+    expect(subscription.planId).toBe(plans.free.id)
+    expect(subscription.status).toBe('active')
+
+    // The debt is not forgiven and the fleet is not deleted — the surplus
+    // listing over the free cap is simply deactivated.
+    ;[invoice] = await db.select().from(dealerInvoices)
+    expect(invoice.status).toBe('past_due')
+    const fleet = await db.select().from(vehicles).where(eq(vehicles.dealerId, fixtures.dealer.dealerId))
+    expect(fleet).toHaveLength(2)
+    expect(fleet.filter((v) => v.status === 'inactive')).toHaveLength(1)
+
+    // Re-running the sweep is idempotent.
+    expect(await runDealerBillingSweep(afterDunning)).toMatchObject({ pastDue: 0, downgraded: 0 })
+
+    // And the dealer cannot re-subscribe around the invoice they never paid.
+    const retry = await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'professional' })
+    expect(retry.status).toBe(402)
+  })
+
+  it('DSUB-02: the monthly sweep bills each period exactly once and settling restores the plan', async () => {
+    const fixtures = await seedFixtures()
+    await seedDealerPlans()
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'starter' })
+
+    const [initial] = await db.select().from(dealerSubscriptions)
+    const periodEnd = dateInBillingTz(initial.currentPeriodEnd)
+
+    expect(await generateDueDealerInvoices(periodEnd)).toBe(1)
+    expect(await generateDueDealerInvoices(periodEnd)).toBe(0)
+
+    const invoiceRows = await db.select().from(dealerInvoices).orderBy(dealerInvoices.periodStart)
+    expect(invoiceRows).toHaveLength(2)
+    expect(Number(invoiceRows[1].amount)).toBe(99)
+    expect(dateInBillingTz(invoiceRows[1].periodStart)).toBe(periodEnd)
+
+    // Missing both payments flips the subscription; paying everything restores it.
+    await markPastDueDealerInvoices(addDays(periodEnd, DEALER_GRACE_DAYS + 1))
+    let [subscription] = await db.select().from(dealerSubscriptions)
+    expect(subscription.status).toBe('past_due')
+
+    await db.transaction(async (tx) => {
+      for (const invoice of invoiceRows) {
+        expect(await settleDealerInvoice(tx, { invoiceId: invoice.id })).toBe('settled')
+      }
+    })
+    ;[subscription] = await db.select().from(dealerSubscriptions)
+    expect(subscription.status).toBe('active')
+    const settled = await db.select().from(dealerInvoices)
+    expect(settled.every((i) => i.status === 'paid' && i.paidAt !== null)).toBe(true)
+
+    // Settling twice is not an error and does not double-count.
+    await db.transaction(async (tx) => {
+      expect(await settleDealerInvoice(tx, { invoiceId: invoiceRows[0].id })).toBe('already-paid')
+    })
+
+    const history = await agent.get('/api/dealer/billing/invoices')
+    expect(history.body).toHaveLength(2)
+    expect(history.body[0].periodStart >= history.body[1].periodStart).toBe(true)
+  })
+
+  it('DSUB-03: cancellation is scheduled at a billing boundary and ends the plan there', async () => {
+    const fixtures = await seedFixtures()
+    const plans = await seedDealerPlans()
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'professional' })
+
+    const cancel = await agent.post('/api/dealer/subscription/cancel')
+    expect(cancel.status).toBe(200)
+    const effective: string = cancel.body.effectiveDate
+    const [scheduled] = await db.select().from(dealerSubscriptions)
+    expect(effective > todayISO()).toBe(true)
+    expect(effective >= dateInBillingTz(scheduled.currentPeriodEnd)).toBe(true)
+    expect(scheduled.status).toBe('active')
+
+    expect((await agent.post('/api/dealer/subscription/cancel')).status).toBe(409)
+
+    const sweep = await runDealerBillingSweep(effective)
+    expect(sweep.cancellations).toBe(1)
+    expect(sweep.invoices).toBe(0)
+
+    const [ended] = await db.select().from(dealerSubscriptions)
+    expect(ended.planId).toBe(plans.free.id)
+    expect(ended.cancelAt).toBeNull()
+    expect(await db.select().from(dealerInvoices)).toHaveLength(1)
+
+    const logs = await db.select().from(auditLogs).where(eq(auditLogs.entityId, scheduled.id))
+    expect(logs.some((l) => l.action === 'dealer.billing.cancel_scheduled')).toBe(true)
+    expect(logs.some((l) => l.action === 'dealer.billing.downgraded.cancelled')).toBe(true)
+  })
+
+  it('DSUB-04: mid-period upgrades are pro-rated and a past_due dealer cannot upgrade', async () => {
+    const fixtures = await seedFixtures()
+    await seedDealerPlans()
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'starter' })
+
+    const upgrade = await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'professional' })
+    expect(upgrade.status).toBe(200)
+    expect(upgrade.body.change).toBe('upgraded')
+    // Same-day upgrade: the whole period is still ahead, so the dealer pays the
+    // full difference and never twice for the same days.
+    expect(upgrade.body.invoice.amount).toBe(299 - 99)
+    const invoiceRows = await db.select().from(dealerInvoices)
+    expect(invoiceRows).toHaveLength(2)
+    expect(invoiceRows.reduce((sum, i) => sum + Number(i.amount), 0)).toBe(299)
+
+    // Re-selecting the same plan is not a second charge.
+    const again = await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'professional' })
+    expect(again.body.change).toBe('unchanged')
+    expect(again.body.invoice).toBeNull()
+    expect(await db.select().from(dealerInvoices)).toHaveLength(2)
+
+    // A dealer who has not paid cannot buy their way further up.
+    await markPastDueDealerInvoices(addDays(todayISO(), DEALER_GRACE_DAYS + 1))
+    await db.update(dealerPlans).set({ priceQar: '999' }).where(eq(dealerPlans.code, 'free'))
+    const blocked = await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'free' })
+    expect(blocked.status).toBe(402)
   })
 })

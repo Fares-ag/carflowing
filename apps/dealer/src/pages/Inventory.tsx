@@ -23,7 +23,14 @@ import { Sidebar } from '../components/Sidebar'
 import { AddVehicleModal } from '../components/modals/AddVehicleModal'
 import { EditVehicleModal, type EditVehicleValues } from '../components/modals/EditVehicleModal'
 import { VehicleDetailsModal } from '../components/modals/VehicleDetailsModal'
-import { createVehicle, listInventory, updateVehicle, updateVehicleStatus } from '../services/dealerService'
+import {
+  createVehicle,
+  getDealerBillingState,
+  listInventory,
+  updateVehicle,
+  updateVehicleStatus,
+  type DealerVehicleQuota,
+} from '../services/dealerService'
 import './Inventory.css'
 
 type VehicleStatus = 'Available' | 'Rented' | 'Maintenance'
@@ -68,6 +75,22 @@ export const Inventory = memo(function Inventory() {
   const [sortBy, setSortBy] = useState('name')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [quota, setQuota] = useState<DealerVehicleQuota | null>(null)
+
+  /**
+   * Plan cap. The backend refuses a create with 402 once `used >= limit`
+   * (services/dealerBilling.ts checkDealerVehicleQuota), so the cap has to be
+   * visible here rather than only as a rejected form submission.
+   */
+  const refreshQuota = useCallback(() => {
+    return getDealerBillingState()
+      .then((state) => setQuota(state.quota))
+      .catch(() => {
+        // Never block inventory on the billing lookup — the server still
+        // enforces the cap on create.
+        setQuota(null)
+      })
+  }, [])
 
   const refreshInventory = useCallback((showLoading = false) => {
     if (showLoading) setLoading(true)
@@ -111,7 +134,10 @@ export const Inventory = memo(function Inventory() {
 
   useEffect(() => {
     void refreshInventory(true)
-  }, [refreshInventory])
+    void refreshQuota()
+  }, [refreshInventory, refreshQuota])
+
+  const atCap = quota != null && quota.limit !== null && quota.used >= quota.limit
 
   const stats = useMemo(() => {
     const total = vehicles.length
@@ -177,7 +203,7 @@ export const Inventory = memo(function Inventory() {
       <Sidebar />
       <Header />
 
-      <div className="inventory-content">
+      <div className="inventory-content" role="main">
         <div className="inventory-header">
           <div className="inventory-titleBlock">
             <h1 className="inventory-title">Vehicle Inventory</h1>
@@ -228,7 +254,17 @@ export const Inventory = memo(function Inventory() {
               </span>
               Analytics
             </button>
-            <button className="inv-btn inv-btn--primary" type="button" onClick={() => setIsAddOpen(true)}>
+            <button
+              className="inv-btn inv-btn--primary"
+              type="button"
+              disabled={atCap}
+              title={
+                atCap
+                  ? `Your ${quota?.planName ?? 'plan'} allows ${quota?.limit} listed vehicle(s).`
+                  : undefined
+              }
+              onClick={() => setIsAddOpen(true)}
+            >
               <span className="inv-btn__icon" aria-hidden="true">
                 <Car size={16} />
               </span>
@@ -237,12 +273,39 @@ export const Inventory = memo(function Inventory() {
           </div>
         </div>
 
+        {quota && quota.limit !== null ? (
+          <div
+            className={`inv-quotaBanner${quota.overLimit ? ' inv-quotaBanner--over' : atCap ? ' inv-quotaBanner--atCap' : ''}`}
+            role={atCap || quota.overLimit ? 'alert' : undefined}
+          >
+            <strong>
+              {quota.used} of {quota.limit} listings used
+              {quota.planName ? ` on ${quota.planName}` : ''}
+            </strong>
+            <span>
+              {quota.overLimit
+                ? `You are ${quota.used - quota.limit} over your plan cap. Deactivate listings or upgrade — surplus listings are deactivated on the next plan change.`
+                : atCap
+                  ? 'You are at your plan cap. Upgrade your plan or deactivate a listing before adding another vehicle.'
+                  : `${quota.remaining} listing${quota.remaining === 1 ? '' : 's'} remaining.`}
+            </span>
+            {atCap || quota.overLimit ? (
+              <button
+                className="inv-btn inv-btn--ghost"
+                type="button"
+                onClick={() => navigate('/subscription')}
+              >
+                Manage plan
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="inv-stats">
           <div className="inv-statCard">
             <div className="inv-statText">
               <div className="inv-statLabel">Total Vehicles</div>
               <div className="inv-statValue">{stats.total}</div>
-              <div className="inv-statMeta"></div>
             </div>
             <div className="inv-statIcon inv-statIcon--blue" aria-hidden="true">
               <Car size={18} />
@@ -252,7 +315,6 @@ export const Inventory = memo(function Inventory() {
             <div className="inv-statText">
               <div className="inv-statLabel">Available</div>
               <div className="inv-statValue">{stats.available}</div>
-              <div className="inv-statMeta"></div>
             </div>
             <div className="inv-statIcon inv-statIcon--green" aria-hidden="true">
               <CheckCircle2 size={18} />
@@ -262,7 +324,6 @@ export const Inventory = memo(function Inventory() {
             <div className="inv-statText">
               <div className="inv-statLabel">Currently Rented</div>
               <div className="inv-statValue">{stats.rented}</div>
-              <div className="inv-statMeta"></div>
             </div>
             <div className="inv-statIcon inv-statIcon--purple" aria-hidden="true">
               <Timer size={18} />
@@ -272,7 +333,6 @@ export const Inventory = memo(function Inventory() {
             <div className="inv-statText">
               <div className="inv-statLabel">Under Maintenance</div>
               <div className="inv-statValue">{stats.maintenance}</div>
-              <div className="inv-statMeta"></div>
             </div>
             <div className="inv-statIcon inv-statIcon--red" aria-hidden="true">
               <Wrench size={18} />
@@ -531,9 +591,13 @@ export const Inventory = memo(function Inventory() {
               features: values.features,
             })
             await refreshInventory()
+            await refreshQuota()
           } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to add vehicle'
             toast.error(message)
+            // A 402 means the plan cap bit — re-read the quota so the banner
+            // and the disabled Add button reflect it immediately.
+            void refreshQuota()
             throw err instanceof Error ? err : new Error(message)
           }
         }}

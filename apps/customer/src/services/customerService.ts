@@ -1,6 +1,7 @@
 import type {
   BookingRequest,
   BookingRequestStatus,
+  BillingCapabilities,
   Complaint,
   ComplaintPriority,
   Favorite,
@@ -165,6 +166,10 @@ export async function listInvoices(): Promise<Invoice[]> {
 
 export async function listPaymentMethods(): Promise<PaymentMethod[]> {
   return apiRequest('/customer/payment-methods')
+}
+
+export async function getBillingCapabilities(): Promise<BillingCapabilities> {
+  return apiRequest('/customer/billing-capabilities')
 }
 
 export async function addFavorite(vehicleId: string): Promise<Favorite> {
@@ -510,10 +515,30 @@ export async function sendMessage(input: SendCustomerMessageInput): Promise<Cust
   return apiRequest('/customer/messages', { method: 'POST', body: input })
 }
 
+export interface ReferralSummary {
+  code: string
+  shareUrl: string
+  creditBalance: number
+  pendingReferrals: number
+  creditedReferrals: number
+  referrals: Array<{
+    id: string
+    status: 'pending' | 'credited'
+    referredName: string
+    createdAt: string
+    creditedAt: string | null
+  }>
+}
+
+export async function getReferralSummary(): Promise<ReferralSummary> {
+  return apiRequest('/customer/referrals')
+}
+
 export interface UserPreferences {
   emailNotifications: boolean
   pushNotifications: boolean
   smsNotifications: boolean
+  whatsappNotifications: boolean
   marketingEmails: boolean
   locale: string
   theme: string

@@ -143,7 +143,9 @@ export function MyBookingPage() {
   const currentRental = useMemo(() => {
     const rentals = rentalsData?.items ?? []
     return (
-      rentals.find((r) => r.status === 'active' || r.status === 'past_due') ??
+      rentals.find(
+        (r) => r.status === 'active' || r.status === 'past_due' || r.status === 'paused'
+      ) ??
       rentals.find((r) => r.status === 'reserved') ??
       rentals.find((r) => r.status === 'completed')
     )

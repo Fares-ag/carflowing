@@ -14,7 +14,6 @@ import {
   Shield,
   Wrench,
 } from 'lucide-react'
-import type { FormEvent} from 'react';
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CarCard } from '../components/shared/CarCard'
@@ -117,11 +116,6 @@ export function HomePage() {
   const navigate = useNavigate()
   const { session } = useAuth()
   const [selectedCategory, setSelectedCategory] = useState<(typeof CATEGORIES)[number]>('All')
-  const [offerFirstName, setOfferFirstName] = useState('')
-  const [offerLastName, setOfferLastName] = useState('')
-  const [offerEmail, setOfferEmail] = useState('')
-  const [offerConsent, setOfferConsent] = useState(false)
-  const [offerSubmitting, setOfferSubmitting] = useState(false)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['catalog', 'home', 12],
@@ -162,22 +156,8 @@ export function HomePage() {
       .catch(() => toast.error('Failed to save car.'))
   }
 
-  const handleOffersSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!offerConsent) {
-      toast.error('Please agree to receive the newsletter.')
-      return
-    }
-    setOfferSubmitting(true)
-    window.setTimeout(() => {
-      toast.success('You’re on the list — we’ll send offers to your inbox.')
-      setOfferFirstName('')
-      setOfferLastName('')
-      setOfferEmail('')
-      setOfferConsent(false)
-      setOfferSubmitting(false)
-    }, 400)
-  }
+  // Live catalogue size — the only headline number we can actually stand behind.
+  const availableCars = data?.total ?? 0
 
   return (
     <div className="home-page">
@@ -222,20 +202,18 @@ export function HomePage() {
               <ArrowRight size={16} />
             </Link>
 
-            <div className="banner-stats">
-              <div className="stat-item">
-                <div className="stat-number">1000+</div>
-                <div className="stat-label">Happy customers</div>
+            {/* Only counts we can prove. The previous "1000+ happy customers /
+                500+ car models / 98% satisfaction" figures were invented. */}
+            {availableCars > 0 && (
+              <div className="banner-stats">
+                <div className="stat-item">
+                  <div className="stat-number">{availableCars}</div>
+                  <div className="stat-label">
+                    {availableCars === 1 ? 'Car available now' : 'Cars available now'}
+                  </div>
+                </div>
               </div>
-              <div className="stat-item">
-                <div className="stat-number">500+</div>
-                <div className="stat-label">Car models</div>
-              </div>
-              <div className="stat-item">
-                <div className="stat-number">98%</div>
-                <div className="stat-label">Satisfaction rate</div>
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="banner-image">
@@ -401,62 +379,30 @@ export function HomePage() {
               Don&apos;t miss any car subscription offers anymore!
             </h2>
             <p className="offers-description">
-              Get exclusive Carflow offers before everyone else – directly in your mailbox.
+              Marketing emails are opt-in and managed from your account, so you always control what
+              we send and can turn it off in one click.
             </p>
           </div>
 
-          <form className="offers-form" onSubmit={handleOffersSubmit}>
-            <div className="form-row">
-              <input
-                className="form-input"
-                type="text"
-                name="firstName"
-                autoComplete="given-name"
-                placeholder="First Name"
-                value={offerFirstName}
-                onChange={(e) => setOfferFirstName(e.target.value)}
-                required
-              />
-              <input
-                className="form-input"
-                type="text"
-                name="lastName"
-                autoComplete="family-name"
-                placeholder="Last Name"
-                value={offerLastName}
-                onChange={(e) => setOfferLastName(e.target.value)}
-                required
-              />
-            </div>
-            <input
-              className="form-input form-input--full"
-              type="email"
-              name="email"
-              autoComplete="email"
-              placeholder="Email"
-              value={offerEmail}
-              onChange={(e) => setOfferEmail(e.target.value)}
-              required
-            />
-            <label className="form-checkbox">
-              <input
-                type="checkbox"
-                checked={offerConsent}
-                onChange={(e) => setOfferConsent(e.target.checked)}
-              />
-              <span>
-                Yes, I would like to receive the Carflow newsletter regularly about news, inspiration
-                and exclusive offers via email. I can revoke my consent to receiving the newsletter at
-                any time via unsubscribing in each newsletter email.
-                <Link to="/faqs" className="more-info">
-                  More Information
-                </Link>
-              </span>
-            </label>
-            <button className="submit-button" type="submit" disabled={offerSubmitting}>
-              {offerSubmitting ? 'Submitting…' : 'Get Offers Now'}
-            </button>
-          </form>
+          {/* The old sign-up form was a setTimeout stub: it discarded the email
+              and the marketing consent while telling the customer they were
+              subscribed. Until a real subscribe endpoint exists, point at the
+              opt-in that genuinely works (user_preferences.marketingEmails). */}
+          <div className="offers-actions">
+            {session ? (
+              <Link to="/settings?section=notifications" className="submit-button">
+                Manage email preferences
+              </Link>
+            ) : (
+              <Link to="/signup" className="submit-button">
+                Create an account
+              </Link>
+            )}
+            <Link to="/browse" className="offers-secondary">
+              Browse cars instead
+              <ArrowRight size={14} />
+            </Link>
+          </div>
         </div>
       </section>
 

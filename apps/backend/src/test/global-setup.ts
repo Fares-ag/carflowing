@@ -1,20 +1,28 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const backendRoot = path.resolve(__dirname, '../..')
 const dataDir = path.resolve(backendRoot, '.pgdata-test')
-const bootstrapSql = path.resolve(backendRoot, 'src/db/bootstrap.sql')
+const migrationsFolder = path.resolve(backendRoot, 'drizzle')
 const envTestPath = path.resolve(backendRoot, '.env.test')
-const PORT = 5435
+/** Avoid 5435 — Docker/WSL often bind that port on Windows and steal connections. */
+const PORT = 55435
 
 /**
  * Vitest globalSetup: boots a throwaway embedded Postgres instance once for
  * the whole test run, applies the schema, and writes .env.test so that
  * db/index.ts (loaded lazily by every test file) connects to it instead of
  * a developer's real database.
+ *
+ * The schema comes from the drizzle migration chain, not bootstrap.sql, so the
+ * suite exercises exactly the schema production is provisioned with. Applying
+ * bootstrap.sql here used to hide tables that no migration created (see
+ * db/__tests__/migrations.test.ts, which keeps the two sources in lockstep).
  */
 export default async function globalSetup() {
   // Always start from a clean schema so tests never see stale migrations.
@@ -38,8 +46,11 @@ export default async function globalSetup() {
 
   const connectionString = `postgresql://carflow_test:carflow_test@127.0.0.1:${PORT}/carflow_test`
   const sql = postgres(connectionString, { max: 1 })
-  const sqlText = fs.readFileSync(bootstrapSql, 'utf8')
-  await sql.unsafe(sqlText)
+  // Deliberately a role that does not exist in this throwaway cluster: 0013 would
+  // otherwise revoke UPDATE/DELETE on audit_logs from the very role the tests
+  // connect as. That revoke is asserted directly in db/__tests__/migrations.test.ts.
+  await sql`SELECT set_config('carflow.app_role', 'carflow_app', false)`
+  await migrate(drizzle(sql), { migrationsFolder })
   await sql.end()
 
   fs.writeFileSync(

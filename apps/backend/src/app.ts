@@ -3,7 +3,6 @@ import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import { sql } from 'drizzle-orm'
 import express from 'express'
-import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import { db } from './db/index.js'
 import { adminRouter } from './routes/admin.js'
@@ -18,8 +17,14 @@ import { getJobsHealthMetrics } from './services/healthMetrics.js'
 import { helmetContentSecurityPolicyOptions } from './utils/contentSecurityPolicy.js'
 import { restrictiveContentTypeForPath, setAttachmentResponseHeaders } from './utils/uploadContent.js'
 import { captureException, setupSentryExpressErrorHandler } from './utils/observability.js'
-import { logStructured, requestContextMiddleware } from './utils/requestContext.js'
-import { skipRateLimitForPreflight, skipRateLimitInTests } from './utils/rateLimit.js'
+import { accessLogMiddleware, logStructured, requestContextMiddleware } from './utils/requestContext.js'
+import {
+  createRateLimiter,
+  resolveTrustProxyHops,
+  skipRateLimitForPreflight,
+  skipRateLimitInTests,
+} from './utils/rateLimit.js'
+import { bootState } from './utils/bootState.js'
 
 const defaultOrigins = [
   'http://localhost:5173',
@@ -42,8 +47,9 @@ export function resolveCorsOrigins(): string[] {
 export function createApp() {
   const app = express()
 
-  app.set('trust proxy', 1)
+  app.set('trust proxy', resolveTrustProxyHops())
   app.use(requestContextMiddleware)
+  app.use(accessLogMiddleware)
   app.use(
     cors({
       origin: resolveCorsOrigins(),
@@ -64,11 +70,9 @@ export function createApp() {
   const skipRateLimit = (req: import('express').Request) =>
     skipRateLimitInTests() || skipRateLimitForPreflight(req)
 
-  const authRateLimit = rateLimit({
+  const authRateLimit = createRateLimiter({
     windowMs: 15 * 60 * 1000,
     max: 20,
-    standardHeaders: true,
-    legacyHeaders: false,
     skip: skipRateLimit,
   })
   app.use('/api/auth/login', authRateLimit)
@@ -77,31 +81,28 @@ export function createApp() {
   app.use('/api/auth/resend-verification', authRateLimit)
   app.use('/api/auth/2fa/verify-login', authRateLimit)
 
-  const paymentRateLimit = rateLimit({
+  const paymentRateLimit = createRateLimiter({
     windowMs: 15 * 60 * 1000,
     max: 30,
-    standardHeaders: true,
-    legacyHeaders: false,
     skip: skipRateLimit,
   })
   app.use('/api/payments/skipcash/create-intent', paymentRateLimit)
   app.use('/api/payments/skipcash/invoice-intent', paymentRateLimit)
 
-  const uploadRateLimit = rateLimit({
+  const uploadRateLimit = createRateLimiter({
     windowMs: 15 * 60 * 1000,
     max: 40,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: skipRateLimit,
+    skip: (req: import('express').Request) =>
+      skipRateLimit(req) ||
+      ((req.method === 'GET' || req.method === 'HEAD') && req.path.startsWith('/media')),
   })
   app.use('/api/uploads', uploadRateLimit)
 
-  const mutationRateLimit = rateLimit({
+  const mutationRateLimit = createRateLimiter({
     windowMs: 15 * 60 * 1000,
     max: 60,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: skipRateLimit,
+    skip: (req: import('express').Request) =>
+      skipRateLimit(req) || req.method === 'GET' || req.method === 'HEAD',
   })
   app.use('/api/admin/payments/:id/refund', mutationRateLimit)
   app.use('/api/customer/booking-requests', mutationRateLimit)
@@ -124,6 +125,18 @@ export function createApp() {
   })
 
   app.get('/health', async (_req, res) => {
+    // Railway's healthcheckPath. Reports 503 until migrations, the critical
+    // index assertion and the scheduler have all completed (see src/index.ts),
+    // so a booting instance is never routed traffic against a half-migrated DB.
+    const boot = bootState()
+    if (boot.phase !== 'ready') {
+      res.status(503).json({
+        status: boot.phase === 'failed' ? 'error' : 'starting',
+        message: 'CarFlow Backend API',
+        boot: boot.phase,
+      })
+      return
+    }
     try {
       await db.execute(sql`SELECT 1`)
       const { lastJobsSweepAt, stuckPendingCount } = await getJobsHealthMetrics()
@@ -154,6 +167,17 @@ export function createApp() {
       throw new Error('observability test error')
     })
   }
+
+  // Unmatched routes must not fall through to Express's default HTML error
+  // page: every client of this API parses JSON `{ error }`.
+  app.use((req, res) => {
+    logStructured('warn', 'http.not_found', {
+      requestId: req.requestId,
+      method: req.method,
+      path: req.path,
+    })
+    res.status(404).json({ error: 'Not found' })
+  })
 
   setupSentryExpressErrorHandler(app)
 

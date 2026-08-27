@@ -28,6 +28,7 @@
     "typecheck": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:api": "npm run test --workspace=apps/backend",
+    "test:scripts": "node --test scripts/__tests__/*.test.cjs",
     "test:conventions": "vitest run --config vitest.conventions.config.ts",
     "test:gaps": "vitest run --config vitest.conventions.config.ts tests/gaps",
     "test:e2e": "playwright test",

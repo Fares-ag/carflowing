@@ -15,7 +15,6 @@ import type {
   User,
   Vehicle,
 } from './types'
-import { parseVehicleFeatures, vehicleGalleryUrls } from './vehicleFeatures'
 
 export function mapProfileToUser(row: any): User {
   return {
@@ -48,6 +47,8 @@ export function mapDealer(row: any): Dealer {
     createdAt: row.created_at,
   }
 }
+
+import { parseVehicleFeatures, vehicleGalleryUrls } from './vehicleFeatures'
 
 export function mapVehicle(row: any): Vehicle {
   const gallery = vehicleGalleryUrls({

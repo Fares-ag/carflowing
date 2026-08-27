@@ -3,6 +3,7 @@ import {
   BadgeCheck,
   Bell,
   CreditCard,
+  Gift,
   Heart,
   Lock,
   LogOut,
@@ -18,6 +19,7 @@ import NotificationsSection from '../components/account/NotificationsSection'
 import PreferencesSection from '../components/account/PreferencesSection'
 import PrivacySection from '../components/account/PrivacySection'
 import ProfileSection from '../components/account/ProfileSection'
+import ReferralsSection from '../components/account/ReferralsSection'
 import SavedCarsSection from '../components/account/SavedCarsSection'
 import SecuritySection from '../components/account/SecuritySection'
 import SupportSection from '../components/account/SupportSection'
@@ -25,6 +27,7 @@ import VerificationSection from '../components/account/VerificationSection'
 import { Footer } from '../components/shared/Footer'
 import { Header } from '../components/shared/Header'
 import { useAuth } from '../contexts/AuthContext'
+import { toast } from '../hooks/useToast'
 import './AccountSettings.css'
 
 type SettingsSection =
@@ -36,6 +39,7 @@ type SettingsSection =
   | 'privacy'
   | 'saved'
   | 'billing'
+  | 'referrals'
   | 'support'
 
 const VALID_SECTIONS: SettingsSection[] = [
@@ -47,6 +51,7 @@ const VALID_SECTIONS: SettingsSection[] = [
   'privacy',
   'saved',
   'billing',
+  'referrals',
   'support',
 ]
 
@@ -82,6 +87,7 @@ export function AccountSettings() {
     { id: 'notifications' as SettingsSection, label: 'Notifications', icon: <Bell size={16} /> },
     { id: 'preferences' as SettingsSection, label: 'Preferences', icon: <SlidersHorizontal size={16} /> },
     { id: 'billing' as SettingsSection, label: 'Billing', icon: <CreditCard size={16} /> },
+    { id: 'referrals' as SettingsSection, label: 'Refer a friend', icon: <Gift size={16} /> },
     { id: 'support' as SettingsSection, label: 'Support', icon: <MessageSquare size={16} /> },
     { id: 'privacy' as SettingsSection, label: 'Privacy', icon: <Shield size={16} /> },
   ]
@@ -94,6 +100,8 @@ export function AccountSettings() {
         return <SavedCarsSection />
       case 'billing':
         return <BillingSection />
+      case 'referrals':
+        return <ReferralsSection />
       case 'support':
         return <SupportSection />
       case 'security':
@@ -112,7 +120,18 @@ export function AccountSettings() {
   }
 
   const handleSignOut = async () => {
-    await logout()
+    try {
+      await logout()
+    } catch (err) {
+      // `logout` clears the local session either way, so the customer is signed
+      // out on this device — but the server session may still be live and they
+      // need to know that rather than assume they are fully signed out.
+      toast.error(
+        err instanceof Error && err.message
+          ? `Signed out on this device, but we could not end the session on our servers: ${err.message}`
+          : 'Signed out on this device, but we could not end the session on our servers. Please try again from a trusted device.'
+      )
+    }
     navigate('/browse')
   }
 
@@ -120,7 +139,7 @@ export function AccountSettings() {
     <div className="account-settings-page">
       <Header />
 
-      <div className="account-settings-container">
+      <div className="account-settings-container" role="main">
         <div className="account-settings-header">
           <Link to="/my-booking" className="back-button">
             <ArrowLeft size={14} />
@@ -145,7 +164,7 @@ export function AccountSettings() {
 
           <div className="settings-layout">
             <div className="settings-sidebar">
-              <nav className="settings-nav">
+              <nav className="settings-nav" aria-label="Account sections">
                 {sections.map((section) => (
                   <button
                     key={section.id}

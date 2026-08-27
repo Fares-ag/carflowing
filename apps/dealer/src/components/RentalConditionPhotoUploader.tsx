@@ -87,7 +87,7 @@ export function RentalConditionPhotoUploader({
         <ul className="rnPhotoGrid" aria-label="Selected condition photos">
           {photos.map((url, index) => (
             <li key={url} className="rnPhotoThumb">
-              <img src={url} alt={`Condition photo ${index + 1}`} />
+              <img src={url} alt={`Vehicle condition ${index + 1}`} />
               <button
                 type="button"
                 className="rnPhotoRemove"
@@ -151,7 +151,7 @@ export function RentalEventPhotoGrid({ photos, className = 'rnEventPhotos' }: Re
           className="rnEventPhotoLink"
           aria-label={`Open condition photo ${index + 1}`}
         >
-          <img src={url} alt={`Condition photo ${index + 1}`} loading="lazy" />
+          <img src={url} alt={`Vehicle condition ${index + 1}`} loading="lazy" />
         </a>
       ))}
     </div>

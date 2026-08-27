@@ -7,6 +7,8 @@ import { useState, useRef, useEffect } from 'react'
 
 import { Link, useNavigate } from 'react-router-dom'
 
+import { LANGUAGE_TOGGLE_ENABLED } from '../../constants/featureFlags'
+
 import { useAuth } from '../../contexts/AuthContext'
 
 import { getUnreadMessageCount, getUnreadNotificationCount, listInvoices } from '../../services/customerService'
@@ -289,23 +291,33 @@ export function Header() {
 
           <div className="header-actions">
 
-            <button
+            {/* Hidden until the whole funnel — signup, checkout, contracts and
 
-              type="button"
+                invoices — is translated and RTL styles exist. Flip
 
-              className="header-locale"
+                VITE_ENABLE_LANGUAGE_TOGGLE to switch it back on. */}
 
-              aria-label={t('nav.language')}
+            {LANGUAGE_TOGGLE_ENABLED && (
 
-              title={t('nav.language')}
+              <button
 
-              onClick={toggleLocale}
+                type="button"
 
-            >
+                className="header-locale"
 
-              {locale === 'en' ? 'ع' : 'EN'}
+                aria-label={t('nav.language')}
 
-            </button>
+                title={t('nav.language')}
+
+                onClick={toggleLocale}
+
+              >
+
+                {locale === 'en' ? 'ع' : 'EN'}
+
+              </button>
+
+            )}
 
             <button
 

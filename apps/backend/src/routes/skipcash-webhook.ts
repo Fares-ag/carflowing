@@ -1,6 +1,14 @@
+import { eq } from 'drizzle-orm'
 import { Router, type Request, type Response } from 'express'
+import { db } from '../db/index.js'
+import { payments } from '../db/schema.js'
 import { applySkipCashOutcome } from '../services/paymentSettlement.js'
-import { verifySkipCashWebhookSignature, type SkipCashWebhookPayload } from '../services/skipcash.js'
+import { persistSkipCashTokenForCustomer } from '../services/savedCardPayments.js'
+import {
+  SkipCashStatus,
+  verifySkipCashWebhookSignature,
+  type SkipCashWebhookPayload,
+} from '../services/skipcash.js'
 import { asyncHandler } from '../utils/http.js'
 import { logStructured } from '../utils/requestContext.js'
 
@@ -46,6 +54,32 @@ export async function handleSkipCashWebhook(req: Request, res: Response): Promis
     action: result.action,
     statusId: payload.StatusId,
   })
+
+  const tokenId = payload.TokenId?.trim()
+  if (
+    tokenId &&
+    payload.StatusId === SkipCashStatus.PAID &&
+    (result.action === 'invoice-paid' || result.action === 'booking-paid')
+  ) {
+    const [payment] = await db
+      .select({ customerId: payments.customerId })
+      .from(payments)
+      .where(eq(payments.id, transactionId))
+      .limit(1)
+    if (payment?.customerId) {
+      await persistSkipCashTokenForCustomer({
+        userId: payment.customerId,
+        tokenId,
+        paymentId: transactionId,
+      }).catch((err) => {
+        logStructured('warn', 'skipcash.webhook.token_persist_failed', {
+          requestId: req.requestId,
+          paymentId: transactionId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+  }
   if (!result.handled) {
     // Nothing we can reconcile this against; acknowledge so SkipCash stops retrying.
     logStructured('warn', 'skipcash.webhook.unknown_payment', {

@@ -1,4 +1,5 @@
 import { uploadCustomerDocument, type CustomerDocumentType } from '@carflow/shared'
+import { qatarDriversLicenseSchema, qidSchema } from '@carflow/shared/validation'
 import { AlertTriangle, Car, Check, FileText, Mail, Phone, Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -28,6 +29,8 @@ export default function VerificationSection() {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [uploadingDoc, setUploadingDoc] = useState<'qid' | 'drivers_license' | null>(null)
   const [documentError, setDocumentError] = useState('')
+  const [qidNumber, setQidNumber] = useState('')
+  const [licenseNumber, setLicenseNumber] = useState('')
 
   const qidInputRef = useRef<HTMLInputElement>(null)
   const licenseInputRef = useRef<HTMLInputElement>(null)
@@ -80,13 +83,31 @@ export default function VerificationSection() {
       toast.error(msg)
       return
     }
+    // The API rejects a document path that arrives without its number, which
+    // is why this upload used to fail with 400 every time.
+    const rawNumber = (type === 'qid' ? qidNumber : licenseNumber).trim()
+    const numberCheck = (type === 'qid' ? qidSchema : qatarDriversLicenseSchema).safeParse(
+      rawNumber
+    )
+    if (!numberCheck.success) {
+      const msg =
+        numberCheck.error.issues[0]?.message ??
+        (type === 'qid'
+          ? 'Enter your QID number before uploading'
+          : "Enter your driver's license number before uploading")
+      setDocumentError(msg)
+      toast.error(msg)
+      return
+    }
     setUploadingDoc(type === 'qid' ? 'qid' : 'drivers_license')
     try {
       const userId = session?.userId
       if (!userId) throw new Error('Not authenticated')
       const path = await uploadCustomerDocument(file, userId, type)
       const updated = await updateCustomerDocuments(
-        type === 'qid' ? { qid_document_path: path } : { drivers_license_path: path }
+        type === 'qid'
+          ? { qid_document_path: path, qid_number: rawNumber }
+          : { drivers_license_path: path, drivers_license_number: rawNumber }
       )
       setProfile(updated)
       toast.success(type === 'qid' ? 'QID document uploaded' : "Driver's license uploaded")
@@ -193,6 +214,20 @@ export default function VerificationSection() {
                 </div>
                 <h4 className="upload-title">Upload Your Qatar ID</h4>
                 <p className="upload-hint">JPG, PNG or PDF (max. 10MB)</p>
+                <label className="verification-number-label" htmlFor="verification-qid-number">
+                  QID number
+                </label>
+                <input
+                  id="verification-qid-number"
+                  className="verification-number-input"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="11-digit QID"
+                  value={qidNumber}
+                  disabled={!!uploadingDoc}
+                  onChange={(e) => setQidNumber(e.target.value)}
+                />
                 <input
                   ref={qidInputRef}
                   type="file"
@@ -245,6 +280,20 @@ export default function VerificationSection() {
                 </div>
                 <h4 className="upload-title">Upload Your Driving License</h4>
                 <p className="upload-hint">JPG, PNG or PDF (max. 10MB)</p>
+                <label className="verification-number-label" htmlFor="verification-license-number">
+                  Licence number
+                </label>
+                <input
+                  id="verification-license-number"
+                  className="verification-number-input"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="8-digit licence number"
+                  value={licenseNumber}
+                  disabled={!!uploadingDoc}
+                  onChange={(e) => setLicenseNumber(e.target.value)}
+                />
                 <input
                   ref={licenseInputRef}
                   type="file"
@@ -280,4 +329,4 @@ export default function VerificationSection() {
     </div>
   )
 }
-
+

@@ -39,6 +39,15 @@ describe('Header notifications', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
   })
 
+  it('UI-C-HDR-03: hides the Arabic language toggle while the feature flag is off', async () => {
+    renderWithProviders(<Header />)
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Notifications/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: /language/i })).not.toBeInTheDocument()
+    expect(document.documentElement.dir).not.toBe('rtl')
+  })
+
   it('UI-C-HDR-02: shows overdue banner and account badge when invoices are overdue', async () => {
     vi.mocked(customerService.listInvoices).mockResolvedValue([
       {

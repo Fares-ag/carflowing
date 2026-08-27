@@ -8,12 +8,18 @@ vi.mock('../../auth/tokens.js', () => ({
   verifyAccessToken: vi.fn(),
 }))
 
+vi.mock('../../auth/sessions.js', () => ({
+  // Only the session the tests hand out as `sid` is live; anything else
+  // (missing sid, revoked session) is treated as revoked.
+  isSessionActiveByHash: vi.fn(async (_userId: string, sid?: string) => sid === 'live-session'),
+}))
+
 vi.mock('../../db/index.js', () => ({
   db: {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({
-          limit: vi.fn(async () => [{ status: 'active' }]),
+          limit: vi.fn(async () => [{ status: 'active', role: 'customer' }]),
         })),
       })),
     })),
@@ -36,7 +42,12 @@ describe('auth middleware', () => {
   })
 
   it('requireAuth attaches user on valid token', async () => {
-    vi.mocked(verifyAccessToken).mockResolvedValue({ sub: 'u1', role: 'customer', email: 'c@test.dev' })
+    vi.mocked(verifyAccessToken).mockResolvedValue({
+      sub: 'u1',
+      role: 'customer',
+      email: 'c@test.dev',
+      sid: 'live-session',
+    })
     const req = { cookies: { cf_access: 'token' } } as unknown as Request
     const next = vi.fn()
     await requireAuth(req as any, {} as Response, next)
@@ -51,5 +62,50 @@ describe('auth middleware', () => {
     const status = vi.fn(() => ({ json }))
     middleware(req as any, { status } as unknown as Response, vi.fn())
     expect(status).toHaveBeenCalledWith(403)
+  })
+
+  it('requireAuth overwrites JWT role with the database role', async () => {
+    vi.mocked(verifyAccessToken).mockResolvedValue({
+      sub: 'u1',
+      role: 'admin',
+      email: 'c@test.dev',
+      sid: 'live-session',
+    })
+    const req = { cookies: { cf_access: 'token' } } as unknown as Request
+    const next = vi.fn()
+    await requireAuth(req as any, {} as Response, next)
+    expect(next).toHaveBeenCalled()
+    expect((req as any).user.role).toBe('customer')
+  })
+
+  it('requireAuth rejects an access token whose refresh session was revoked', async () => {
+    vi.mocked(verifyAccessToken).mockResolvedValue({
+      sub: 'u1',
+      role: 'customer',
+      email: 'c@test.dev',
+      sid: 'revoked-session',
+    })
+    const req = { cookies: { cf_access: 'token' } } as unknown as Request
+    const json = vi.fn()
+    const status = vi.fn(() => ({ json }))
+    const next = vi.fn()
+    await requireAuth(req as any, { status } as unknown as Response, next)
+    expect(next).not.toHaveBeenCalled()
+    expect(status).toHaveBeenCalledWith(401)
+  })
+
+  it('requireAuth rejects a legacy access token that carries no session binding', async () => {
+    vi.mocked(verifyAccessToken).mockResolvedValue({
+      sub: 'u1',
+      role: 'customer',
+      email: 'c@test.dev',
+    })
+    const req = { cookies: { cf_access: 'token' } } as unknown as Request
+    const json = vi.fn()
+    const status = vi.fn(() => ({ json }))
+    const next = vi.fn()
+    await requireAuth(req as any, { status } as unknown as Response, next)
+    expect(next).not.toHaveBeenCalled()
+    expect(status).toHaveBeenCalledWith(401)
   })
 })

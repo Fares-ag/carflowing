@@ -17,8 +17,17 @@ import {
 } from '../utils/paymentRetry'
 import './PaymentStatusPage.css'
 
-const POLL_INTERVAL_MS = 2000
-const MAX_ATTEMPTS = 15
+const FAST_POLL_INTERVAL_MS = 2000
+const SLOW_POLL_INTERVAL_MS = 5000
+/** Poll quickly while the customer is likely still watching this tab. */
+const FAST_POLL_WINDOW_MS = 60 * 1000
+/**
+ * A 3DS/OTP round-trip on a Qatari card routinely runs into minutes, and the
+ * SkipCash webhook lands after that. The old 30-second budget declared a
+ * timeout mid-flow and then offered "Try again" — a second real charge for
+ * money that was about to be captured.
+ */
+const POLL_BUDGET_MS = 6 * 60 * 1000
 
 export function PaymentStatusPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -31,13 +40,14 @@ export function PaymentStatusPage() {
   const [error, setError] = useState('')
   const [retrying, setRetrying] = useState(false)
   const [retryError, setRetryError] = useState('')
-  const attempts = useRef(0)
+  const pollingStartedAt = useRef(Date.now())
   const cartCleared = useRef(false)
   const cartRestored = useRef(false)
 
   useEffect(() => {
     if (!paymentId) return
     let cancelled = false
+    pollingStartedAt.current = Date.now()
 
     const poll = async () => {
       try {
@@ -45,12 +55,15 @@ export function PaymentStatusPage() {
         if (cancelled) return
         setPayment(result)
         if (result.status === 'pending') {
-          attempts.current += 1
-          if (attempts.current >= MAX_ATTEMPTS) {
+          const elapsed = Date.now() - pollingStartedAt.current
+          if (elapsed >= POLL_BUDGET_MS) {
             setTimedOut(true)
             return
           }
-          setTimeout(poll, POLL_INTERVAL_MS)
+          setTimeout(
+            poll,
+            elapsed < FAST_POLL_WINDOW_MS ? FAST_POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS
+          )
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to check payment status')
@@ -70,13 +83,16 @@ export function PaymentStatusPage() {
     clearInvoicePaymentAttempt()
   }, [payment?.status, clearCart])
 
+  // Only on a definite failure. Rehydrating the cart after a *timeout* would
+  // put the car back in checkout while the original payment may still be
+  // completing, inviting a duplicate booking and a duplicate charge.
   useEffect(() => {
     if (!payment || cartRestored.current) return
-    if (payment.status !== 'failed' && !timedOut) return
+    if (payment.status !== 'failed') return
     if (!isRentalPayment(payment) || !payment.vehicleId) return
     cartRestored.current = true
     void restoreCheckoutCartFromNote(payment.note, payment.vehicleId, setVehicle, setCart)
-  }, [payment, timedOut, setCart, setVehicle])
+  }, [payment, setCart, setVehicle])
 
   const handleRetry = useCallback(async () => {
     if (!paymentId || retrying) return
@@ -87,7 +103,7 @@ export function PaymentStatusPage() {
       setSearchParams({ paymentId: intent.paymentId }, { replace: true })
       setPayment(null)
       setTimedOut(false)
-      attempts.current = 0
+      pollingStartedAt.current = Date.now()
       window.location.href = intent.payUrl
     } catch (err) {
       setRetryError(err instanceof Error ? err.message : 'Unable to restart payment')
@@ -156,7 +172,9 @@ export function PaymentStatusPage() {
     )
   }
 
-  const showRetry = payment.canRetry !== false && (payment.status === 'failed' || timedOut)
+  // Retry is only ever offered on a *confirmed* failure. While a payment is
+  // unresolved, restarting it can charge the card a second time.
+  const showRetry = payment.canRetry !== false && payment.status === 'failed'
 
   if (payment.status === 'failed') {
     return (
@@ -202,32 +220,17 @@ export function PaymentStatusPage() {
       <div className="payment-status-icon payment-status-icon--pending">
         <Clock size={40} strokeWidth={2.5} />
       </div>
-      <h2>Still processing</h2>
+      <h2>We are still confirming your payment</h2>
       <p>
-        Your payment is taking longer than usual. You can wait a little longer or try the payment
-        again — we&apos;ll reuse your saved booking details.
+        Your bank has not confirmed this payment yet. Please don&apos;t pay again — if the charge
+        went through, your booking appears in My booking shortly and we email you either way.
       </p>
-      {retryError && <p className="payment-status-error">{retryError}</p>}
       <div className="payment-status-actions">
-        {showRetry && (
-          <button
-            type="button"
-            className="btn-primary payment-status-retry"
-            disabled={retrying}
-            onClick={() => void handleRetry()}
-          >
-            {retrying ? (
-              <>
-                <Loader2 size={16} className="payment-status-spinner" aria-hidden />
-                Restarting…
-              </>
-            ) : (
-              'Try again'
-            )}
-          </button>
-        )}
-        <Link className="btn-secondary" to="/my-booking">
+        <Link className="btn-primary" to="/my-booking">
           My booking
+        </Link>
+        <Link className="btn-secondary" to="/contact">
+          Contact support
         </Link>
       </div>
     </PaymentStatusLayout>

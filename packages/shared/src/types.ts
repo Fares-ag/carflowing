@@ -332,6 +332,8 @@ export interface Subscription {
   }
 }
 
+export type PaymentMethodProvider = 'reference' | 'skipcash'
+
 export interface PaymentMethod {
   id: string
   brand: string
@@ -340,6 +342,17 @@ export interface PaymentMethod {
   expiryYear: number
   isDefault: boolean
   methodType: PaymentMethodType
+  /** Where this method came from — reference cards are display-only. */
+  provider?: PaymentMethodProvider
+  /** True when a SkipCash provider token is stored (token itself is never exposed). */
+  hasProviderToken?: boolean
+}
+
+export interface BillingCapabilities {
+  skipcashSavedCardsEnabled: boolean
+  /** False until SkipCash token charge is wired in skipcash.ts. */
+  skipcashSavedCardsChargeReady: boolean
+  capabilityRequired: string
 }
 
 export type InvoiceStatus = 'paid' | 'due' | 'overdue' | 'refunded' | 'void'
@@ -357,6 +370,8 @@ export interface Invoice {
   dueDate?: string
   periodStart?: string
   periodEnd?: string
+  /** Store credit applied from referral rewards, etc. */
+  creditApplied?: number
 }
 
 export type RentalEventType = 'pickup' | 'return' | 'swap_out' | 'swap_in' | 'inspection' | 'note'

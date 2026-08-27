@@ -84,7 +84,7 @@ describe('appSettings accessor', () => {
               paymentHoldTtlMinutes: 45,
               cancelNoticeDays: 30,
               swapEligibleDays: 30,
-              maxPauseDays: 90,
+              maxPauseDays: null,
               subscriptionDepositAmount: null,
               signupsEnabled: true,
               dealerSignupsEnabled: true,

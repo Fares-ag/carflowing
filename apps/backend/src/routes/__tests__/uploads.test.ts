@@ -1,9 +1,11 @@
+import fs from 'fs'
 import { eq } from 'drizzle-orm'
 import type { Express } from 'express'
 import request from 'supertest'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
 import { vehicles } from '../../db/schema.js'
+import { resolveLocalPath } from '../../storage/index.js'
 import {
   evilHtmlBuffer,
   fakePngBuffer,
@@ -118,7 +120,7 @@ describe('Uploads API', () => {
       expect(res.status).toBe(400)
     })
 
-    it('UPL-N04: SVG avatar upload with embedded <script> is accepted today (@gap: XSS-serving risk)', async () => {
+    it('UPL-N04: SVG avatar upload with embedded <script> is rejected', async () => {
       await seedFixtures()
       const { agent } = await loginAs(app, 'customer@test.dev', 'customer')
       const res = await agent
@@ -178,22 +180,50 @@ describe('Uploads API', () => {
       expect(res.status).toBe(403)
     })
 
-    it('UPL-N06: re-uploading the same document type overwrites the DB path but the old file stays on disk (@gap: orphaned file)', async () => {
+    it('UPL-N06: re-uploading the same document type deletes the superseded scan', async () => {
       await seedFixtures()
       const { agent } = await loginAs(app, 'customer@test.dev', 'customer')
       const first = await agent
         .post('/api/uploads/document')
         .field('type', 'qid')
         .attach('file', tinyPdfBuffer, { filename: 'qid1.pdf', contentType: 'application/pdf' })
+      expect(first.status).toBe(200)
+      expect(fs.existsSync(resolveLocalPath(first.body.path))).toBe(true)
+
       const second = await agent
         .post('/api/uploads/document')
         .field('type', 'qid')
         .attach('file', tinyPdfBuffer, { filename: 'qid2.pdf', contentType: 'application/pdf' })
-      expect(first.status).toBe(200)
       expect(second.status).toBe(200)
       expect(second.body.path).not.toBe(first.body.path)
-      // No cleanup call is made for first.body.path — the route only ever
-      // writes new files, it never calls deleteStoredFile on replace.
+      // The replaced scan is gone: keeping it contradicts the retention copy
+      // the app shows customers.
+      expect(fs.existsSync(resolveLocalPath(first.body.path))).toBe(false)
+      expect(fs.existsSync(resolveLocalPath(second.body.path))).toBe(true)
+
+      // Replacing the other document type leaves this one alone.
+      const licence = await agent
+        .post('/api/uploads/document')
+        .field('type', 'drivers_license')
+        .attach('file', tinyPdfBuffer, { filename: 'dl.pdf', contentType: 'application/pdf' })
+      expect(licence.status).toBe(200)
+      expect(fs.existsSync(resolveLocalPath(second.body.path))).toBe(true)
+    })
+
+    it('UPL-AVATAR-01: uploading a new avatar deletes the one it replaces', async () => {
+      await seedFixtures()
+      const { agent } = await loginAs(app, 'customer@test.dev', 'customer')
+      const first = await agent
+        .post('/api/uploads/avatar')
+        .attach('file', tinyPngBuffer, { filename: 'me1.png', contentType: 'image/png' })
+      expect(first.status).toBe(200)
+      const second = await agent
+        .post('/api/uploads/avatar')
+        .attach('file', tinyPngBuffer, { filename: 'me2.png', contentType: 'image/png' })
+      expect(second.status).toBe(200)
+      expect(second.body.path).not.toBe(first.body.path)
+      expect(fs.existsSync(resolveLocalPath(first.body.path))).toBe(false)
+      expect(fs.existsSync(resolveLocalPath(second.body.path))).toBe(true)
     })
   })
 
@@ -251,30 +281,6 @@ describe('Uploads API', () => {
     })
   })
 
-  describe('GET /api/uploads/media', () => {
-    it('UPL-07: serves uploaded vehicle images with cross-origin CORP for frontend img tags', async () => {
-      await seedFixtures()
-      const { agent } = await loginAs(app, 'dealer@test.dev', 'dealer')
-      const uploaded = await agent
-        .post('/api/uploads/vehicle-image')
-        .attach('file', tinyPngBuffer, { filename: 'car.png', contentType: 'image/png' })
-      expect(uploaded.status).toBe(200)
-
-      const mediaPath = uploaded.body.path as string
-      expect(mediaPath).toMatch(/^vehicle-images\//)
-
-      const mediaRes = await request(app).get('/api/uploads/media').query({ path: mediaPath })
-      expect(mediaRes.status).toBe(200)
-      expect(mediaRes.headers['cross-origin-resource-policy']).toBe('cross-origin')
-      expect(mediaRes.headers['content-type']).toMatch(/^image\/png/)
-    })
-
-    it('UPL-N18: rejects non-public media paths', async () => {
-      const res = await request(app).get('/api/uploads/media').query({ path: 'documents/user/qid.pdf' })
-      expect(res.status).toBe(403)
-    })
-  })
-
   describe('DELETE /api/uploads/by-url', () => {
     it('UPL-06: removes a previously uploaded file', async () => {
       const fixtures = await seedFixtures()
@@ -305,6 +311,75 @@ describe('Uploads API', () => {
       const { agent: dealer2Agent } = await loginAs(app, fixtures.dealer2.email, 'dealer')
       const res = await dealer2Agent.delete('/api/uploads/by-url').send({ url: uploaded.body.url })
       expect(res.status).toBe(403)
+    })
+
+    it('UPL-N18: owners can delete blob-style URLs (media/document proxy shapes)', async () => {
+      const fixtures = await seedFixtures()
+      const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+
+      const avatar = await agent
+        .post('/api/uploads/avatar')
+        .attach('file', tinyPngBuffer, { filename: 'me.png', contentType: 'image/png' })
+      expect(avatar.status).toBe(200)
+      const document = await agent
+        .post('/api/uploads/document')
+        .field('type', 'qid')
+        .attach('file', tinyPdfBuffer, { filename: 'qid.pdf', contentType: 'application/pdf' })
+      expect(document.status).toBe(200)
+
+      // Exactly what storeFile hands back under UPLOAD_DRIVER=blob: the key
+      // only appears percent-encoded in a query string, never as a prefix.
+      const avatarBlobUrl = `http://localhost:3001/api/uploads/media?path=${encodeURIComponent(avatar.body.path)}`
+      const documentBlobUrl = `/api/uploads/documents/file?path=${encodeURIComponent(document.body.path)}`
+
+      const deletedAvatar = await agent.delete('/api/uploads/by-url').send({ url: avatarBlobUrl })
+      expect(deletedAvatar.status).toBe(204)
+      expect(fs.existsSync(resolveLocalPath(avatar.body.path))).toBe(false)
+
+      const deletedDocument = await agent
+        .delete('/api/uploads/by-url')
+        .send({ url: documentBlobUrl })
+      expect(deletedDocument.status).toBe(204)
+      expect(fs.existsSync(resolveLocalPath(document.body.path))).toBe(false)
+    })
+
+    it('UPL-N19: another customer cannot delete a blob-style URL they do not own', async () => {
+      const fixtures = await seedFixtures()
+      const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+      const document = await agent
+        .post('/api/uploads/document')
+        .field('type', 'qid')
+        .attach('file', tinyPdfBuffer, { filename: 'qid.pdf', contentType: 'application/pdf' })
+      expect(document.status).toBe(200)
+
+      const { agent: otherAgent } = await loginAs(app, fixtures.customer2.email, 'customer')
+      const res = await otherAgent
+        .delete('/api/uploads/by-url')
+        .send({ url: `/api/uploads/documents/file?path=${encodeURIComponent(document.body.path)}` })
+      expect(res.status).toBe(403)
+      expect(fs.existsSync(resolveLocalPath(document.body.path))).toBe(true)
+    })
+
+    it('UPL-N20: dealer can delete a blob-style vehicle image URL of their own car', async () => {
+      const fixtures = await seedFixtures()
+      const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+      const uploaded = await agent
+        .post('/api/uploads/vehicle-image')
+        .attach('file', tinyPngBuffer, { filename: 'car.png', contentType: 'image/png' })
+      expect(uploaded.status).toBe(200)
+      const blobUrl = `http://localhost:3001/api/uploads/media?path=${encodeURIComponent(uploaded.body.path)}`
+      await db
+        .update(vehicles)
+        .set({ imageUrl: blobUrl })
+        .where(eq(vehicles.id, fixtures.vehicles[0].id))
+
+      const { agent: rivalAgent } = await loginAs(app, fixtures.dealer2.email, 'dealer')
+      const forbidden = await rivalAgent.delete('/api/uploads/by-url').send({ url: blobUrl })
+      expect(forbidden.status).toBe(403)
+
+      const res = await agent.delete('/api/uploads/by-url').send({ url: blobUrl })
+      expect(res.status).toBe(204)
+      expect(fs.existsSync(resolveLocalPath(uploaded.body.path))).toBe(false)
     })
 
     it('UPL-N12/N14: requires authentication', async () => {
@@ -366,6 +441,34 @@ describe('Uploads API', () => {
         if (previous === undefined) delete process.env.CSP_ENFORCE
         else process.env.CSP_ENFORCE = previous
       }
+    })
+  })
+
+  describe('GET /api/uploads/media', () => {
+    it('UPL-MEDIA-01: serves a stored vehicle image by path', async () => {
+      await seedFixtures()
+      const { agent } = await loginAs(app, 'dealer@test.dev', 'dealer')
+      const uploaded = await agent
+        .post('/api/uploads/vehicle-image')
+        .attach('file', tinyPngBuffer, { filename: 'car.png', contentType: 'image/png' })
+      expect(uploaded.status).toBe(200)
+      const media = await request(app)
+        .get('/api/uploads/media')
+        .query({ path: uploaded.body.path })
+      expect(media.status).toBe(200)
+      expect(media.headers['content-type']).toMatch(/image\/png/)
+    })
+
+    it('UPL-MEDIA-02: rejects document paths and traversal', async () => {
+      await seedFixtures()
+      const docs = await request(app)
+        .get('/api/uploads/media')
+        .query({ path: 'documents/someone/qid.png' })
+      expect(docs.status).toBe(400)
+      const traversal = await request(app)
+        .get('/api/uploads/media')
+        .query({ path: '../package.json' })
+      expect(traversal.status).toBe(400)
     })
   })
 })

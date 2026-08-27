@@ -1,4 +1,4 @@
-import type { Invoice, PaymentMethod } from '@carflow/shared'
+import type { BillingCapabilities, Invoice, PaymentMethod } from '@carflow/shared'
 import { apiRequest, formatCurrency, formatDateOrDash } from '@carflow/shared'
 import { CreditCard } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -7,12 +7,14 @@ import { t } from '../../i18n'
 import {
   addPaymentMethod,
   downloadInvoicePdf,
+  getBillingCapabilities,
   listInvoices,
   listPaymentMethods,
   listRentalsWithDetails,
   removePaymentMethod,
   setDefaultPaymentMethod,
 } from '../../services/customerService'
+import { createSkipCashInvoiceIntentWithSavedCard } from '../../services/paymentService'
 import { InfoModal } from '../shared/InfoModal'
 import '../../pages/SubscriptionBilling.css'
 
@@ -27,6 +29,8 @@ export default function BillingSection() {
   const [showAddCard, setShowAddCard] = useState(false)
   const [addingCard, setAddingCard] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null)
+  const [billingCapabilities, setBillingCapabilities] = useState<BillingCapabilities | null>(null)
   const [newCard, setNewCard] = useState({
     brand: 'Visa',
     last4: '',
@@ -39,17 +43,19 @@ export default function BillingSection() {
     ;(async () => {
       try {
         setLoadError(null)
-        const [inv, pm, rentalsRes, full] = await Promise.all([
+        const [inv, pm, rentalsRes, full, capabilities] = await Promise.all([
           listInvoices(),
           listPaymentMethods(),
           listRentalsWithDetails({ pageSize: 200 }),
           apiRequest<{ profile: { createdAt?: string; created_at?: string } | null }>(
             '/customer/profile/full'
           ),
+          getBillingCapabilities(),
         ])
         if (cancelled) return
         setInvoices(inv)
         setPaymentMethods(pm)
+        setBillingCapabilities(capabilities)
         const active = rentalsRes.items.filter(
           (r) => r.status === 'active' || r.status === 'reserved'
         ).length
@@ -122,6 +128,29 @@ export default function BillingSection() {
       toast.error(err instanceof Error ? err.message : 'Failed to add payment method')
     } finally {
       setAddingCard(false)
+    }
+  }
+
+  const savedCardsEnabled = billingCapabilities?.skipcashSavedCardsEnabled ?? false
+  const tokenizedDefaultMethod = useMemo(
+    () =>
+      paymentMethods.find((m) => m.hasProviderToken && m.isDefault) ??
+      paymentMethods.find((m) => m.hasProviderToken),
+    [paymentMethods]
+  )
+
+  const handlePayInvoiceWithSavedCard = async (invoice: Invoice) => {
+    if (!tokenizedDefaultMethod) return
+    setPayingInvoiceId(invoice.id)
+    try {
+      const intent = await createSkipCashInvoiceIntentWithSavedCard(invoice.id, tokenizedDefaultMethod.id)
+      if (intent.message && !intent.savedCardUsed) {
+        toast.info(intent.message)
+      }
+      window.location.href = intent.payUrl
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to start payment')
+      setPayingInvoiceId(null)
     }
   }
 
@@ -255,6 +284,19 @@ export default function BillingSection() {
                             </td>
                             <td>
                               <div className="action-buttons">
+                                {(invoice.status === 'due' || invoice.status === 'overdue') &&
+                                  savedCardsEnabled &&
+                                  tokenizedDefaultMethod && (
+                                    <button
+                                      type="button"
+                                      className="action-icon"
+                                      title="Pay with saved card"
+                                      disabled={payingInvoiceId === invoice.id}
+                                      onClick={() => void handlePayInvoiceWithSavedCard(invoice)}
+                                    >
+                                      {payingInvoiceId === invoice.id ? '…' : 'Pay saved card'}
+                                    </button>
+                                  )}
                                 <button
                                   type="button"
                                   className="action-icon"
@@ -293,12 +335,27 @@ export default function BillingSection() {
                     type="button"
                     className="billing-link-btn"
                     onClick={() => setShowAddCard((v) => !v)}
+                    disabled={savedCardsEnabled}
+                    title={
+                      savedCardsEnabled
+                        ? 'Cards are saved automatically when you check Save Card on SkipCash checkout'
+                        : undefined
+                    }
                   >
                     {showAddCard ? 'Cancel' : t('billing.addCard')}
                   </button>
                 </div>
 
-                {showAddCard && (
+                {savedCardsEnabled && (
+                  <p className="billing-empty-hint billing-saved-cards-notice">
+                    Saved-card renewals are in preview. Cards tokenize when you check &quot;Save Card&quot; on
+                    SkipCash checkout; one-tap invoice pay uses the provider token only (never your full card
+                    number). Until token charging is wired, invoice pay still redirects to SkipCash hosted
+                    checkout for OTP.
+                  </p>
+                )}
+
+                {showAddCard && !savedCardsEnabled && (
                   <div className="billing-add-card-form">
                     <label>
                       Brand
@@ -368,6 +425,7 @@ export default function BillingSection() {
                         <div className="payment-details">
                           <div className="payment-type">
                             {method.brand} **** {method.last4}
+                            {method.hasProviderToken ? ' · SkipCash saved' : ''}
                           </div>
                           <div className="payment-expiry">
                             Expires {String(method.expiryMonth).padStart(2, '0')}/
@@ -418,8 +476,9 @@ export default function BillingSection() {
                   ))
                 )}
                 <p className="billing-empty-hint billing-payment-unavailable" style={{ marginTop: '1rem' }}>
-                  Card details are stored for reference only. Pay monthly invoices from My booking via SkipCash, or
-                  pay at your dealer.
+                  {savedCardsEnabled
+                    ? 'Reference cards (last 4 digits only) are optional labels. Real saved cards come from SkipCash after you opt in on checkout.'
+                    : 'Card details are stored for reference only. Pay monthly invoices from My booking via SkipCash, or pay at your dealer.'}
                 </p>
               </div>
             </div>

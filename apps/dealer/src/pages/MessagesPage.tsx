@@ -143,8 +143,8 @@ export function MessagesPage() {
     <div className="dealer-layout">
       <Sidebar />
       <div className="main-content">
-        <Header />
-        <div className="dealer-messages-page">
+        <Header title="Messages" subtitle="In-app conversations with your customers" />
+        <div className="dealer-messages-page" role="main">
           <aside className="dealer-messages-sidebar">
             <div className="dealer-messages-sidebar-header">
               <MessageSquare size={18} />

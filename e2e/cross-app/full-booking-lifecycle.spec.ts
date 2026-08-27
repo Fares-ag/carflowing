@@ -34,11 +34,17 @@ test.describe('E2E-X01 full booking lifecycle', () => {
     await page.getByRole('textbox', { name: 'Last Name *' }).fill('Tester')
     await page.getByRole('textbox', { name: 'Phone Number *' }).fill('+97455512345')
     await page.getByLabel(/date of birth/i).fill('1990-01-15')
-    await page.getByLabel(/license number/i).fill('DL-123456')
+    await page.getByLabel(/qatar id|qid/i).fill('28412345678')
+    await page.getByLabel(/license number/i).fill('12345678')
     await page.getByLabel(/license expiry|expiry date/i).fill('2030-01-15')
     await page.getByLabel(/street/i).fill('12 Corniche St')
     await page.getByLabel(/^city/i).fill('Doha')
+    // Billing country and delivery mode are both required by checkout validate().
+    await page.getByLabel(/^country/i).selectOption('Qatar')
+    await page.getByRole('radio', { name: /collect from dealer/i }).check()
 
+    // Checkout now blocks on the Subscription Agreement / Terms consent box.
+    await page.getByRole('checkbox', { name: /accept the/i }).check()
     await page.getByRole('button', { name: /^continue$/i }).click()
 
     await expect(page).toHaveURL(/\/my-booking/, { timeout: 15000 })

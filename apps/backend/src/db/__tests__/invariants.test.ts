@@ -31,6 +31,7 @@ describe('assertCriticalDbIndexes', () => {
     expect(CRITICAL_UNIQUE_INDEXES.map((idx) => idx.name)).toEqual([
       'invoices_rental_period_idx',
       'rentals_vehicle_open_idx',
+      'booking_requests_pending_vehicle_idx',
       'payments_pending_booking_idx',
       'payments_pending_invoice_idx',
       'payments_external_txn_idx',

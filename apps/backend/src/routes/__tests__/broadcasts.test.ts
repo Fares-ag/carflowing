@@ -1,8 +1,8 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import type { Express } from 'express'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
-import { broadcasts, notifications, profiles } from '../../db/schema.js'
+import { broadcasts, notifications } from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 describe('Admin broadcasts', () => {

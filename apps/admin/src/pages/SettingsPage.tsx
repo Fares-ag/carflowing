@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { SecuritySection } from '../components/SecuritySection'
+
+import { useAuth } from '../contexts/AuthContext'
+
 import { AdminLayout } from '../layout/AdminLayout'
 
 import {
@@ -31,6 +35,7 @@ const FLAGS_DEFAULTS: Omit<AdminFeatureFlags, 'updatedAt'> = {
 }
 
 export function SettingsPage() {
+  const { session } = useAuth()
   const [settingsId, setSettingsId] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('')
   const [supportEmail, setSupportEmail] = useState('')
@@ -220,6 +225,9 @@ export function SettingsPage() {
       <div className="adminSettings">
         {isLoading ? <div className="adminSettingsLoading">Loading settings...</div> : null}
         {error ? <div className="adminSettingsError">{error}</div> : null}
+        {/* Personal 2FA enrolment: independent of the platform settings below,
+            and must render even while those are still loading or failed. */}
+        <SecuritySection email={session?.email} />
         {!isLoading ? (
           <>
             <div className="adminSettingsCard">

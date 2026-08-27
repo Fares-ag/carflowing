@@ -17,6 +17,13 @@ export interface AccessTokenPayload {
   sub: string
   role: UserRole
   email: string
+  /**
+   * Refresh-session fingerprint (`hashJti()` of the refresh jti issued in the
+   * same breath). Binding the access token to its session lets `requireAuth`
+   * reject tokens minted before a logout-all / password change / account
+   * deletion instead of honouring them for the rest of their 15 minutes.
+   */
+  sid?: string
 }
 
 export interface TwoFaChallengePayload {
@@ -96,7 +103,12 @@ export function buildAuthCookieOptions(): AuthCookieOptions {
 }
 
 export async function signAccessToken(payload: AccessTokenPayload): Promise<string> {
-  return new SignJWT({ purpose: ACCESS_PURPOSE, role: payload.role, email: payload.email })
+  return new SignJWT({
+    purpose: ACCESS_PURPOSE,
+    role: payload.role,
+    email: payload.email,
+    ...(payload.sid ? { sid: payload.sid } : {}),
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(payload.sub)
     .setIssuedAt()
@@ -128,6 +140,7 @@ export async function verifyAccessToken(token: string): Promise<AccessTokenPaylo
     sub: String(payload.sub),
     role: payload.role as UserRole,
     email: String(payload.email),
+    sid: payload.sid ? String(payload.sid) : undefined,
   }
 }
 

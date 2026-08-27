@@ -256,7 +256,7 @@ export function Leads() {
       <Sidebar />
       <Header />
       
-      <div className="leads-content">
+      <div className="leads-content" role="main">
         <div className="page-header">
           <div className="page-title-section">
             <h1 className="page-title">Leads Management</h1>

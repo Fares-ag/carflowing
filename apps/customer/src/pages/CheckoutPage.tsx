@@ -31,8 +31,10 @@ import { SubscriptionPricingSummary } from '../components/booking/SubscriptionPr
 import { Footer } from '../components/shared/Footer'
 import { Header } from '../components/shared/Header'
 import { ProcessingOverlay } from '../components/shared/ProcessingOverlay'
+import { CHECKOUT_CONSENT_KINDS, LEGAL_ROUTES } from '../constants/legal'
 import {
   SUPPORT_EMAIL,
+  SUPPORT_PHONE_CONFIGURED,
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_TEL,
 } from '../constants/support'
@@ -41,6 +43,7 @@ import { toast } from '../hooks/useToast'
 import { t } from '../i18n'
 import { ApiError, isTemporarilyUnavailable } from '@carflow/shared'
 import { resendVerificationEmail } from '../services/authService'
+import { recordConsentsSafely } from '../services/consentService'
 import {
   createBookingRequest,
   getBillingAddress,
@@ -112,6 +115,7 @@ export function CheckoutPage() {
     phone: '',
   })
   const [paymentMethod, setPaymentMethod] = useState<'pay_at_shop' | 'skipcash_online'>('pay_at_shop')
+  const [acceptedLegal, setAcceptedLegal] = useState(false)
   const [promoCode, setPromoCode] = useState('')
   const [promoResult, setPromoResult] = useState<PromoValidationResult | null>(null)
   const [promoError, setPromoError] = useState('')
@@ -205,22 +209,26 @@ export function CheckoutPage() {
 
   const minimumTermTotal = cart.total
 
+  // Same shape that is submitted as the booking note, so client validation
+  // mirrors the server’s checkoutNoteSchema check exactly.
+  const deliveryPayload = () =>
+    delivery.mode === 'delivery'
+      ? delivery
+      : { mode: 'dealer_pickup', date: delivery.date, time: delivery.time }
+
   const validate = (): boolean => {
-    const parsed = checkoutNoteSchema.safeParse({ contact, license })
+    const parsed = checkoutNoteSchema.safeParse({
+      contact,
+      license,
+      delivery: deliveryPayload(),
+    })
     const errs: Record<string, string> = parsed.success ? {} : checkoutFieldErrors(parsed.error)
     if (!hasQid) errs.qidDoc = 'Upload required'
     if (!hasDriversLicense) errs.licenseDoc = 'Upload required'
     if (!address.street.trim()) errs.street = 'Required'
     if (!address.city.trim()) errs.city = 'Required'
     if (!address.country.trim()) errs.country = 'Required'
-    const deliveryParsed = checkoutDeliverySchema.safeParse(
-      delivery.mode === 'delivery'
-        ? delivery
-        : { mode: 'dealer_pickup', date: delivery.date, time: delivery.time }
-    )
-    if (!deliveryParsed.success) {
-      Object.assign(errs, checkoutFieldErrors(deliveryParsed.error))
-    }
+    if (!acceptedLegal) errs.legalConsent = 'Accept the agreement to continue'
     setFieldErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -311,11 +319,7 @@ export function CheckoutPage() {
     setIsProcessing(true)
     const parsedContact = checkoutNoteSchema.shape.contact.parse(contact)
     const parsedLicense = checkoutNoteSchema.shape.license.parse(license)
-    const parsedDelivery = checkoutDeliverySchema.parse(
-      delivery.mode === 'delivery'
-        ? delivery
-        : { mode: 'dealer_pickup', date: delivery.date, time: delivery.time }
-    )
+    const parsedDelivery = checkoutDeliverySchema.parse(deliveryPayload())
     const note = JSON.stringify({
       duration: cart.durationLabel,
       durationMonths: cart.durationMonths,
@@ -338,6 +342,9 @@ export function CheckoutPage() {
         : undefined,
     })
     try {
+      // Filed before the gateway hand-off — the online path never comes back to
+      // this component, so recording it after payment would lose the evidence.
+      await recordConsentsSafely(CHECKOUT_CONSENT_KINDS)
       await updateBillingAddress({
         line1: address.street.trim(),
         line2: address.state.trim() || undefined,
@@ -876,11 +883,59 @@ export function CheckoutPage() {
               </label>
             </section>
 
+            <section className="checkout-card checkout-consent">
+              <label className="checkout-consent__row">
+                <input
+                  type="checkbox"
+                  checked={acceptedLegal}
+                  onChange={(e) => {
+                    setAcceptedLegal(e.target.checked)
+                    if (e.target.checked) {
+                      setFieldErrors((prev) => {
+                        if (!prev.legalConsent) return prev
+                        const next = { ...prev }
+                        delete next.legalConsent
+                        return next
+                      })
+                    }
+                  }}
+                  required
+                />
+                <span>
+                  I accept the{' '}
+                  <Link to={LEGAL_ROUTES.rental_agreement} target="_blank" rel="noreferrer">
+                    Subscription Agreement
+                  </Link>
+                  , the{' '}
+                  <Link to={LEGAL_ROUTES.terms} target="_blank" rel="noreferrer">
+                    Terms of Service
+                  </Link>
+                  , the{' '}
+                  <Link to={LEGAL_ROUTES.refund_policy} target="_blank" rel="noreferrer">
+                    Cancellation &amp; Refund Policy
+                  </Link>{' '}
+                  and the{' '}
+                  <Link to={LEGAL_ROUTES.privacy} target="_blank" rel="noreferrer">
+                    Privacy Notice
+                  </Link>
+                  . I authorise the first-month charge and the recurring monthly subscription charge
+                  described in the order summary.
+                </span>
+              </label>
+              {fieldErrors.legalConsent && (
+                <p className="checkout-consent__error">{fieldErrors.legalConsent}</p>
+              )}
+            </section>
+
             <div className="checkout-actions">
               <Link to={`/car/${cart.vehicleId}`} className="checkout-back-link">
                 ← Back to car
               </Link>
-              <button type="submit" className="checkout-continue" disabled={isProcessing}>
+              <button
+                type="submit"
+                className="checkout-continue"
+                disabled={isProcessing || !acceptedLegal}
+              >
                 Continue
               </button>
             </div>
@@ -926,10 +981,12 @@ export function CheckoutPage() {
             <section className="checkout-card checkout-help">
               <h3>Need Help?</h3>
               <p>Our customer support team is here to assist you</p>
-              <a className="checkout-help-btn" href={`tel:${SUPPORT_PHONE_TEL}`}>
-                <Phone size={16} />
-                Call {SUPPORT_PHONE_DISPLAY}
-              </a>
+              {SUPPORT_PHONE_CONFIGURED && (
+                <a className="checkout-help-btn" href={`tel:${SUPPORT_PHONE_TEL}`}>
+                  <Phone size={16} />
+                  Call {SUPPORT_PHONE_DISPLAY}
+                </a>
+              )}
               <a className="checkout-help-btn" href={`mailto:${SUPPORT_EMAIL}`}>
                 <Mail size={16} />
                 Email Us

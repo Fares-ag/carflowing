@@ -11,8 +11,13 @@ import {
   reverseCustomerPayment,
   reverseDealerPayment,
 } from './counters.js'
-import { sendEmail } from './mail.js'
+import { dispatchCustomerTransactionalChannelsSafe } from './customerNotifications.js'
 import { notifyUser } from './notify.js'
+import {
+  applyStoreCreditToInvoice,
+  maybeGrantReferralCreditsOnFirstPayment,
+  restoreStoreCreditForVoidedInvoice,
+} from './referrals.js'
 
 function defaultDepositAmount(): Promise<number> {
   return getSubscriptionDepositAmount()
@@ -77,8 +82,12 @@ export async function createFirstInvoice(
   const paid = !!params.paidByPaymentId
   const deposit = await defaultDepositAmount()
   const billed = params.chargeAmount ?? params.monthlyAmount
-  const subtotal = billed + deposit
-  const tax = computeInvoiceTax(subtotal)
+  // The online capture is the FIRST MONTH only (computeFirstPaymentAmount), so
+  // rolling the refundable deposit into an invoice we mark `paid` would book
+  // revenue, dealer counters and platform commission on money nobody
+  // collected. The deposit is therefore always its own unpaid invoice — the
+  // same shape whether the customer paid online or pays at the dealer.
+  const tax = computeInvoiceTax(billed)
   if (deposit > 0) {
     await tx
       .update(rentals)
@@ -95,7 +104,7 @@ export async function createFirstInvoice(
       subtotal: String(tax.subtotal),
       taxRate: String(tax.taxRate),
       taxAmount: String(tax.taxAmount),
-      depositAmount: String(deposit),
+      depositAmount: '0',
       status: paid ? 'paid' : 'due',
       date: params.periodStart,
       dueDate: paid ? params.periodStart : addDays(params.periodStart, grace),
@@ -105,6 +114,31 @@ export async function createFirstInvoice(
       description: `Monthly subscription ${params.periodStart} -> ${periodEnd}`,
     })
     .returning({ id: invoices.id })
+  if (deposit > 0) {
+    // periodStart/periodEnd stay NULL so this row sits outside the
+    // (rental_id, period_start) unique index that guards monthly billing.
+    await tx.insert(invoices).values({
+      ownerId: params.customerId,
+      ownerType: 'customer',
+      amount: String(deposit),
+      subtotal: String(deposit),
+      taxRate: '0',
+      taxAmount: '0',
+      depositAmount: String(deposit),
+      status: 'due',
+      date: params.periodStart,
+      dueDate: addDays(params.periodStart, grace),
+      rentalId: params.rentalId,
+      description: `Refundable security deposit for subscription starting ${params.periodStart}`,
+    })
+  }
+  if (!paid) {
+    await applyStoreCreditToInvoice(tx, {
+      customerId: params.customerId,
+      invoiceId: invoice.id,
+      subtotal: tax.total,
+    })
+  }
   await trackAnalyticsEvent(tx, {
     eventType: 'invoice_generated',
     userId: params.customerId,
@@ -128,7 +162,9 @@ export async function createFirstInvoice(
       .from(rentals)
       .where(eq(rentals.id, params.rentalId))
       .limit(1)
-    const settledAmount = tax.total
+    // Revenue counters and platform commission may never exceed what was
+    // actually captured, whatever the invoice ends up saying.
+    const settledAmount = payment ? Math.min(tax.total, Number(payment.amount)) : 0
     if (payment && rental && settledAmount > 0) {
       await recordCustomerPayment(tx, params.customerId, settledAmount)
       await recordDealerPayment(tx, rental.dealerId, settledAmount)
@@ -137,6 +173,10 @@ export async function createFirstInvoice(
         invoiceId: invoice.id,
         paymentId: params.paidByPaymentId,
         grossAmount: settledAmount,
+      })
+      await maybeGrantReferralCreditsOnFirstPayment(tx, {
+        customerId: params.customerId,
+        invoiceId: invoice.id,
       })
     }
     await trackAnalyticsEvent(tx, {
@@ -214,11 +254,25 @@ export async function generateDueInvoices(now = todayISO()): Promise<number> {
         .where(eq(rentals.id, rental.id))
       if (inserted.length === 0) return false
 
+      const credit = await applyStoreCreditToInvoice(tx, {
+        customerId: rental.customerId,
+        invoiceId: inserted[0].id,
+        subtotal: tax.total,
+      })
+
       await notifyUser(tx, {
         userId: rental.customerId,
-        type: 'info',
-        title: 'Monthly payment due',
-        message: `Your subscription payment of QAR ${Number(rental.monthlyAmount).toFixed(2)} for ${periodStart} is due. Pay online from My Booking, or at your dealer.`,
+        ...(credit.fullyCovered
+          ? {
+              type: 'success' as const,
+              title: 'Monthly payment covered by credit',
+              message: `Your store credit covered this month's subscription payment of QAR ${credit.creditApplied.toFixed(2)} for ${periodStart}. Nothing is due.`,
+            }
+          : {
+              type: 'info' as const,
+              title: 'Monthly payment due',
+              message: `Your subscription payment of QAR ${Number(rental.monthlyAmount).toFixed(2)} for ${periodStart} is due. Pay online from My Booking, or at your dealer.`,
+            }),
       })
       await logAudit(tx, {
         action: 'billing.invoice.generated',
@@ -233,25 +287,40 @@ export async function generateDueInvoices(now = todayISO()): Promise<number> {
         entityId: inserted[0].id,
         properties: { rentalId: rental.id, amount: tax.total, periodStart },
       })
-      return { customerId: rental.customerId, amount: rental.monthlyAmount, periodStart }
+      return {
+        customerId: rental.customerId,
+        amount: rental.monthlyAmount,
+        periodStart,
+        fullyCovered: credit.fullyCovered,
+      }
     })
 
     if (created) {
       generated += 1
+      // A credit-covered invoice is already settled — don't chase it for money.
+      if (created.fullyCovered) continue
       const [customer] = await db
         .select({ email: profiles.email, name: profiles.name })
         .from(profiles)
         .where(eq(profiles.id, created.customerId))
         .limit(1)
-      if (customer?.email) {
-        void sendEmail({
-          to: customer.email,
-          subject: 'Your CarFlow monthly payment is due',
-          html: `<p>Hi ${customer.name},</p>
+      dispatchCustomerTransactionalChannelsSafe({
+        userId: created.customerId,
+        event: 'invoice_due',
+        parameters: [
+          customer?.name ?? 'Customer',
+          Number(created.amount).toFixed(2),
+          created.periodStart,
+        ],
+        email: customer?.email
+          ? {
+              subject: 'Your CarFlow monthly payment is due',
+              html: `<p>Hi ${customer.name},</p>
 <p>Your monthly subscription payment of <strong>QAR ${Number(created.amount).toFixed(2)}</strong> (period starting ${created.periodStart}) is due.</p>
 <p><a href="${customerAppUrl()}/my-booking">Pay online from My Booking</a>, or pay at your dealer.</p>`,
-        }).catch((err) => console.error('billing email failed', err))
-      }
+            }
+          : undefined,
+      })
     }
   }
   return generated
@@ -270,14 +339,14 @@ export async function markOverdueInvoices(now = todayISO()): Promise<number> {
 
   let flipped = 0
   for (const inv of overdue) {
-    await db.transaction(async (tx) => {
+    const overdueNotify = await db.transaction(async (tx) => {
       const [invoice] = await tx
         .select()
         .from(invoices)
         .where(eq(invoices.id, inv.id))
         .for('update')
         .limit(1)
-      if (!invoice || invoice.status !== 'due' || !invoice.rentalId) return
+      if (!invoice || invoice.status !== 'due' || !invoice.rentalId) return null
       await tx.update(invoices).set({ status: 'overdue' }).where(eq(invoices.id, invoice.id))
       const [rental] = await tx
         .select()
@@ -309,9 +378,34 @@ export async function markOverdueInvoices(now = todayISO()): Promise<number> {
           entityId: rental.id,
           after: { invoiceId: invoice.id },
         })
+        return {
+          customerId: rental.customerId,
+          amount: Number(invoice.amount),
+        }
       }
-      flipped += 1
+      return null
     })
+    if (overdueNotify) {
+      flipped += 1
+      const [customer] = await db
+        .select({ email: profiles.email, name: profiles.name })
+        .from(profiles)
+        .where(eq(profiles.id, overdueNotify.customerId))
+        .limit(1)
+      dispatchCustomerTransactionalChannelsSafe({
+        userId: overdueNotify.customerId,
+        event: 'invoice_overdue',
+        parameters: [customer?.name ?? 'Customer', overdueNotify.amount.toFixed(2)],
+        email: customer?.email
+          ? {
+              subject: 'Your CarFlow payment is overdue',
+              html: `<p>Hi ${customer.name},</p>
+<p>Your subscription payment of <strong>QAR ${overdueNotify.amount.toFixed(2)}</strong> is overdue.</p>
+<p><a href="${customerAppUrl()}/my-booking">Pay online from My Booking</a> to restore your subscription.</p>`,
+            }
+          : undefined,
+      })
+    }
   }
   return flipped
 }
@@ -396,6 +490,12 @@ export async function settleInvoice(
       paymentId: params.paymentId,
     },
   })
+  if (invoice.ownerType === 'customer') {
+    await maybeGrantReferralCreditsOnFirstPayment(tx, {
+      customerId: invoice.ownerId,
+      invoiceId: invoice.id,
+    })
+  }
   return 'settled'
 }
 
@@ -542,6 +642,42 @@ export async function releaseExpiredHolds(): Promise<number> {
 
 export type VoidInvoiceOutcome = 'voided' | 'not-found' | 'not-voidable'
 
+/**
+ * Voids every open invoice for a rental and gives back any store credit those
+ * invoices had already consumed.
+ *
+ * By default only `due` (future/current period) invoices are voided —
+ * `overdue` invoices are real receivables and must survive a return so the
+ * debt isn't silently erased (re-audit F10). Cancellations may forgive
+ * everything explicitly.
+ *
+ * Exported so every void path (rental return/cancel/force-complete as well as
+ * the admin void below) restores credit the same way: referrals consume credit
+ * at invoice GENERATION, so voiding without this destroys it outright.
+ */
+export async function voidOpenInvoicesForRental(
+  tx: DbOrTx,
+  rentalId: string,
+  opts: { includeOverdue?: boolean } = {}
+): Promise<{ voided: number; creditRestored: number }> {
+  const voidedRows = await tx
+    .update(invoices)
+    .set({ status: 'void' })
+    .where(
+      and(
+        eq(invoices.rentalId, rentalId),
+        inArray(invoices.status, opts.includeOverdue ? ['due', 'overdue'] : ['due'])
+      )
+    )
+    .returning({ id: invoices.id })
+
+  let creditRestored = 0
+  for (const row of voidedRows) {
+    creditRestored += await restoreStoreCreditForVoidedInvoice(tx, { invoiceId: row.id })
+  }
+  return { voided: voidedRows.length, creditRestored }
+}
+
 /** Admin reversal: void an unpaid invoice (due/overdue only). */
 export async function voidInvoiceByAdmin(invoiceId: string): Promise<VoidInvoiceOutcome> {
   return db.transaction(async (tx) => {
@@ -554,6 +690,9 @@ export async function voidInvoiceByAdmin(invoiceId: string): Promise<VoidInvoice
     if (!invoice) return 'not-found'
     if (invoice.status !== 'due' && invoice.status !== 'overdue') return 'not-voidable'
     await tx.update(invoices).set({ status: 'void' }).where(eq(invoices.id, invoiceId))
+    // Credit consumed by this invoice goes back to the customer's balance —
+    // the status guard above makes this idempotent (a re-void is 'not-voidable').
+    await restoreStoreCreditForVoidedInvoice(tx, { invoiceId })
     return 'voided'
   })
 }

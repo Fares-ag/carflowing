@@ -100,7 +100,7 @@ export const Analytics = memo(function Analytics() {
       <Sidebar />
       <Header />
       
-      <div className="analytics-content">
+      <div className="analytics-content" role="main">
         <div className="page-header">
           <div className="page-title-section">
             <h1 className="page-title">Advanced Analytics</h1>

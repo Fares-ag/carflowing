@@ -3,7 +3,13 @@ import { db } from '../db/index.js'
 import { bookingRequests, invoices, payments, profiles, rentals, vehicles } from '../db/schema.js'
 import { trackAnalyticsEventSafe } from './analyticsEvents.js'
 import { logAuditSafe } from './audit.js'
-import { computeFirstPaymentAmount, parseCartNote } from './booking.js'
+import {
+  computeFirstPaymentAmount,
+  parseCartNote,
+  sanitizeTermMonths,
+  stripUntrustedPromoFields,
+  validateCartStartDate,
+} from './booking.js'
 import { validatePromoCode } from './promoCodes.js'
 import { createSkipCashPayment, SkipCashConfigError } from './skipcash.js'
 
@@ -64,6 +70,12 @@ export async function issueRentalSkipCashIntent(
     throw new SkipCashIntentError(409, 'This vehicle is not currently available for booking')
   }
 
+  let cart = stripUntrustedPromoFields(parseCartNote(note))
+  const startDateError = validateCartStartDate(cart)
+  if (startDateError) {
+    throw new SkipCashIntentError(400, startDateError)
+  }
+
   const { user, firstName, lastName, phone, email } = await resolveContact(userId, contact)
   if (!user?.emailVerifiedAt) {
     throw new SkipCashIntentError(403, 'Verify your email before paying online')
@@ -72,9 +84,11 @@ export async function issueRentalSkipCashIntent(
     throw new SkipCashIntentError(400, 'A phone number and email are required for online payment')
   }
 
-  let amount = computeFirstPaymentAmount(Number(vehicle.pricePerDay))
+  // The hosted page must charge the same discounted monthly rate the customer
+  // was quoted, so the term comes from the SANITIZED cart, never raw input.
+  const termMonths = sanitizeTermMonths(cart.durationMonths)
+  let amount = computeFirstPaymentAmount(Number(vehicle.pricePerDay), termMonths)
   const listMonthlyAmount = amount
-  let cart = parseCartNote(note)
   if (contact && Object.keys(contact).length > 0) {
     cart = { ...cart, contact }
   }
@@ -82,7 +96,7 @@ export async function issueRentalSkipCashIntent(
     const promoCheck = await validatePromoCode({
       code: cart.promo.code,
       customerId: userId,
-      termMonths: cart.durationMonths ?? 1,
+      termMonths,
       subtotal: listMonthlyAmount,
     })
     if (promoCheck.valid && promoCheck.discountAmount) {
@@ -96,9 +110,12 @@ export async function issueRentalSkipCashIntent(
           listMonthlyAmount,
         },
       }
+    } else {
+      const { promo: _dropped, ...rest } = cart
+      cart = rest
     }
   }
-  const cartNote = Object.keys(cart).length > 0 ? JSON.stringify(cart) : note ?? null
+  const cartNote = Object.keys(cart).length > 0 ? JSON.stringify(cart) : null
 
   let bookingRequestId: string
   const [existingHold] = await db
@@ -153,7 +170,7 @@ export async function issueRentalSkipCashIntent(
 
   let payment
   try {
-    ;[payment] = await db
+    [payment] = await db
       .insert(payments)
       .values({
         customerId: userId,
@@ -272,7 +289,7 @@ export async function issueInvoiceSkipCashIntent(
 
   let payment
   try {
-    ;[payment] = await db
+    [payment] = await db
       .insert(payments)
       .values({
         customerId: userId,

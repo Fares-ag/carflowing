@@ -40,6 +40,8 @@ async function main() {
   process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'e2e-access-secret'
   process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'e2e-refresh-secret'
   process.env.COOKIE_SECURE = 'false'
+  // The suite signs in far more than 20 times per 15 minutes; see skipRateLimitInTests.
+  process.env.E2E_RELAX_RATE_LIMITS = 'true'
   process.env.UPLOAD_DRIVER = 'local'
   process.env.UPLOAD_DIR = path.resolve(backendRoot, '.uploads-e2e')
   process.env.PORT = String(3001)

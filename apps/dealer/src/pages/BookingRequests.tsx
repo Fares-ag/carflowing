@@ -191,7 +191,7 @@ export function BookingRequests() {
     <div className="dashboard-page">
       <Sidebar />
       <Header />
-      <div className="bookingRequestsPage">
+      <div className="bookingRequestsPage" role="main">
         <div className="brPageHeader">
           <h1 className="brPageTitle">Booking Requests</h1>
           <p className="brPageSubtitle">

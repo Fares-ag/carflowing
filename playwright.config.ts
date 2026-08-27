@@ -17,6 +17,11 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   globalSetup: './e2e/global-setup.ts',
   use: {
+    // Playwright leaves actions unbounded by default, so a click on a control that
+    // never becomes actionable hangs until the whole test times out and reports the
+    // wrong line. Bound them so failures name the actual step.
+    actionTimeout: 10_000,
+    navigationTimeout: 20_000,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -48,9 +53,18 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:5173' },
     },
     {
+      /**
+       * Chromium-based mobile device on purpose. `devices['iPhone 13']` resolves
+       * to WEBKIT, and CI only installs chromium (`playwright install --with-deps
+       * chromium`), so this project could never run there. The mobile suite asserts
+       * responsive layout and touch-target usability, not Safari engine behaviour —
+       * Pixel 7 gives the same mobile viewport, touch input and mobile UA on the
+       * browser CI already provisions. Add `webkit` to the install step (and a second
+       * iOS project) only when there is an actual Safari-specific regression to cover.
+       */
       name: 'mobile',
       testDir: './e2e/mobile',
-      use: { ...devices['iPhone 13'], baseURL: 'http://localhost:5173' },
+      use: { ...devices['Pixel 7'], baseURL: 'http://localhost:5173' },
     },
   ],
   webServer: [

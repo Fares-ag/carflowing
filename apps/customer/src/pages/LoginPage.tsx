@@ -62,7 +62,7 @@ export function LoginPage() {
   return (
     <div className="customerAuthPage">
       <Header />
-      <div className="customerLogin">
+      <div className="customerLogin" role="main">
         <div className="customerLoginCard">
           <div className="customerLoginTitle">
             {challengeToken ? 'Two-factor authentication' : 'Customer Login'}

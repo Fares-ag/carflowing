@@ -1,5 +1,4 @@
 import type {
-  BillingHistoryItem,
   BookingRequest,
   Invoice,
   Lead,
@@ -11,11 +10,9 @@ import type {
   Payment,
   PaymentMethod,
   PaymentMethodType,
-  Plan,
   Rental,
   RentalEvent,
   RentalStatus,
-  Subscription,
   SwapRequest,
   Vehicle,
   VehicleStatus,
@@ -254,22 +251,12 @@ export async function getDealerVehicleCount(): Promise<number> {
   return data.count
 }
 
-export async function getSubscription(): Promise<Subscription> {
-  const sub = await apiRequest<Subscription | null>('/dealer/subscription')
-  if (!sub) throw new Error('No subscription found')
-  return sub
-}
-
 export async function listPaymentMethods(): Promise<PaymentMethod[]> {
   return apiRequest('/dealer/payment-methods')
 }
 
 export async function removePaymentMethod(id: string): Promise<void> {
   await apiRequest(`/dealer/payment-methods/${id}`, { method: 'DELETE' })
-}
-
-export async function listBillingHistory(): Promise<BillingHistoryItem[]> {
-  return apiRequest('/dealer/billing-history')
 }
 
 export async function createVehicle(input: CreateVehicleInput): Promise<Vehicle> {
@@ -419,15 +406,117 @@ export async function getDealerAnalyticsInsights(): Promise<DealerAnalyticsInsig
   return apiRequest('/dealer/analytics/insights')
 }
 
-export async function listDealerPlans(): Promise<Plan[]> {
-  return apiRequest('/dealer/plans')
+/**
+ * DEALER SUBSCRIPTION BILLING
+ *
+ * These mirror apps/backend/src/routes/dealerFeatures.ts (`/billing/*` and
+ * `/subscription/*`), which is backed by the dealer_plans / dealer_subscriptions
+ * / dealer_invoices tables. They are NOT the customer-facing `plans` /
+ * `subscriptions` tables: `/dealer/plans` returns the tiers CarFlow sells to
+ * *customers*, and `/dealer/billing/plans` returns the tiers CarFlow sells to
+ * *dealers*. Only the latter is a valid target for a dealer plan change.
+ */
+
+export interface DealerBillingPlan {
+  id: string
+  code: string
+  name: string
+  priceQar: number
+  /** Null means unlimited listings. */
+  vehicleLimit: number | null
+  features: string[]
+  active: boolean
 }
 
-export async function changeDealerSubscriptionPlan(planId: string): Promise<Subscription> {
+export interface DealerBillingSubscription {
+  id: string
+  dealerId: string
+  planId: string
+  planCode: string
+  planName: string
+  priceQar: number
+  vehicleLimit: number | null
+  status: 'active' | 'past_due' | 'cancelled' | 'pending'
+  currentPeriodStart: string
+  currentPeriodEnd: string
+  cancelAt?: string
+  createdAt: string
+}
+
+export interface DealerBillingInvoice {
+  id: string
+  dealerId: string
+  subscriptionId: string
+  amount: number
+  status: 'due' | 'paid' | 'past_due' | 'void'
+  date: string
+  description: string
+  periodStart: string
+  periodEnd: string
+  dueDate: string
+  paidAt?: string
+  paymentId?: string
+}
+
+/** Listing headroom the current plan grants. `limit === null` means unlimited. */
+export interface DealerVehicleQuota {
+  planId: string | null
+  planCode: string | null
+  planName: string | null
+  limit: number | null
+  used: number
+  remaining: number | null
+  overLimit: boolean
+  /** True only when a capped plan is actually enforceable for this dealer. */
+  enforced: boolean
+}
+
+export interface DealerBillingState {
+  subscription: DealerBillingSubscription | null
+  plan: DealerBillingPlan | null
+  quota: DealerVehicleQuota
+}
+
+export interface DealerPlanChangeResult {
+  subscription: DealerBillingSubscription
+  plan: DealerBillingPlan
+  /** Raised when the change is billable — it is due, not paid. */
+  invoice: DealerBillingInvoice | null
+  change: 'subscribed' | 'upgraded' | 'downgraded' | 'unchanged'
+  deactivatedVehicles: number
+  quota: DealerVehicleQuota
+}
+
+export interface DealerCancelResult {
+  subscription: DealerBillingSubscription
+  plan: DealerBillingPlan
+  /** Billing boundary the cancellation takes effect on — never immediate. */
+  effectiveDate: string
+}
+
+/** Tiers CarFlow sells to dealers, cheapest first. */
+export async function listDealerBillingPlans(): Promise<DealerBillingPlan[]> {
+  return apiRequest('/dealer/billing/plans')
+}
+
+export async function getDealerBillingState(): Promise<DealerBillingState> {
+  return apiRequest('/dealer/billing/subscription')
+}
+
+export async function listDealerBillingInvoices(): Promise<DealerBillingInvoice[]> {
+  return apiRequest('/dealer/billing/invoices')
+}
+
+/**
+ * Changes the dealer's plan. An upgrade is applied immediately but is never
+ * free: the response carries a `due` invoice that must be paid inside the
+ * billing grace window or the dealer walks down to the free tier.
+ */
+export async function changeDealerSubscriptionPlan(planId: string): Promise<DealerPlanChangeResult> {
   return apiRequest('/dealer/subscription/plan', { method: 'PATCH', body: { planId } })
 }
 
-export async function cancelDealerSubscription(): Promise<Subscription> {
+export async function cancelDealerSubscription(): Promise<DealerCancelResult> {
   return apiRequest('/dealer/subscription/cancel', { method: 'POST' })
 }
 

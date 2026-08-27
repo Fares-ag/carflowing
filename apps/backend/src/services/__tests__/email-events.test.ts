@@ -94,6 +94,49 @@ describe('transactional email events', () => {
     })
   })
 
+  it('MAIL-EVT-05: attacker-controlled text is escaped before it reaches the mail provider', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test')
+    vi.stubEnv('FROM_EMAIL', 'noreply@test.dev')
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => '{}',
+    } as Response)
+
+    const payload =
+      '<a href="https://evil.example/phish">click & "win"</a> <script>alert(1)</script>'
+    const { sendBookingDeclinedEmail, sendStaffInviteEmail } = await import('../mail.js')
+    await sendBookingDeclinedEmail({
+      to: 'victim@test.dev',
+      customerName: payload,
+      vehicleName: payload,
+      declineReason: payload,
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const { html } = JSON.parse(String(init.body)) as { html: string }
+    expect(html).not.toContain('<a href="https://evil.example/phish">')
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&lt;a href=&quot;https://evil.example/phish&quot;&gt;')
+    expect(html).toContain('click &amp; &quot;win&quot;')
+    expect(html).toContain('&lt;script&gt;')
+
+    // A javascript: invite URL never becomes a live href either.
+    fetchMock.mockClear()
+    await sendStaffInviteEmail({
+      to: 'staff@test.dev',
+      name: 'Ops',
+      role: 'ops',
+      // eslint-disable-next-line no-script-url
+      inviteUrl: 'javascript:alert(1)',
+    })
+    const [, inviteInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const invite = JSON.parse(String(inviteInit.body)) as { html: string }
+    expect(invite.html).toContain('<a href="#">')
+    expect(invite.html).not.toContain('javascript:')
+    fetchMock.mockRestore()
+  })
+
   it('MAIL-EVT-04: customer suspension enqueues account email', async () => {
     vi.stubEnv('RESEND_API_KEY', '')
     const fixtures = await seedFixtures()

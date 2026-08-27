@@ -178,11 +178,17 @@ export function PaymentsPage() {
       const isRefundRow = payment.type === 'refund'
       const car = isRefundRow
         ? payment.refundOfPaymentId
-          ? `Refund of ${payment.refundOfPaymentId.slice(0, 8).toUpperCase()}`
+          ? `Refund of ${payment.refundOfPaymentId.slice(0, 8)}…`
           : 'Refund'
         : payment.type === 'subscription'
           ? 'Plan subscription'
           : '—'
+      // Show the reference ops can actually look up: the gateway's transaction
+      // id when the provider issued one, otherwise our own payment id verbatim.
+      // The old `id.slice(0, 8).toUpperCase()` matched neither and read as a
+      // transaction code that exists nowhere.
+      const gatewayReference = payment.externalTransactionId?.trim() || ''
+      const reference = gatewayReference || payment.id
       const remaining = remainingOf(payment)
       const canRefund =
         !isRefundRow &&
@@ -194,7 +200,8 @@ export function PaymentsPage() {
       return {
         payment,
         paymentId: payment.id,
-        id: payment.id.slice(0, 8).toUpperCase(),
+        id: reference,
+        referenceLabel: gatewayReference ? 'Gateway reference' : 'Payment ID',
         status: payment.status,
         type: payment.type,
         isRefundRow,
@@ -227,7 +234,7 @@ export function PaymentsPage() {
     if (!searchQuery.trim()) return base
     const query = searchQuery.toLowerCase()
     return base.filter(txn =>
-      [txn.id, txn.customer, txn.car, txn.method].some(value => value.toLowerCase().includes(query))
+      [txn.id, txn.paymentId, txn.customer, txn.car, txn.method].some(value => value.toLowerCase().includes(query))
     )
   }, [transactions, searchQuery, statusFilter, typeFilter, methodFilter, minAmount])
 
@@ -460,7 +467,7 @@ export function PaymentsPage() {
                       </div>
                       <div className="paymentsRowDetails">
                         <div className="paymentsRowMeta">
-                          <span className="paymentsRowId">{txn.id}</span>
+                          <span className="paymentsRowId" title={`${txn.referenceLabel}: ${txn.id}`}>{txn.id}</span>
                           {txn.isRefundRow ? (
                             <span className="paymentsBadge paymentsBadge--refundTag">Refund</span>
                           ) : null}

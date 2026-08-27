@@ -1,37 +1,41 @@
 #!/usr/bin/env node
 /**
  * Create (or verify) a production dealer via the admin API.
- * Reads admin credentials from .production-admin.local or env vars.
  *
- * Usage:
+ * Every credential comes from the environment — there is no default password and
+ * no on-disk credential file. An earlier revision defaulted the dealer password to
+ * the seed password published in this public repo, created the account with it, and
+ * printed it to stdout (and therefore into CI logs and shell history).
+ *
+ * Required:
+ *   ADMIN_EMAIL, ADMIN_PASSWORD    admin login used to call the API
+ *   DEALER_EMAIL, DEALER_PASSWORD  dealer account to create
+ * Optional:
+ *   DEALER_NAME (default "Prime Auto Group"), PUBLIC_API_URL
+ *
+ * Usage (PowerShell):
+ *   $env:ADMIN_EMAIL = "ops@carflow.qa"; $env:ADMIN_PASSWORD = "..."
+ *   $env:DEALER_EMAIL = "dealer@carflow.qa"; $env:DEALER_PASSWORD = "..."
  *   node scripts/create-production-dealer.mjs
- *   DEALER_EMAIL=dealer@carflow.dev DEALER_PASSWORD=password123 node scripts/create-production-dealer.mjs
  */
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const root = path.resolve(__dirname, '..')
-
 const API =
   process.env.PUBLIC_API_URL?.replace(/\/$/, '') ||
   'https://carflow-api-production-9a43.up.railway.app'
 
-const dealerEmail = (process.env.DEALER_EMAIL || 'dealer@carflow.dev').trim().toLowerCase()
-const dealerName = (process.env.DEALER_NAME || 'Prime Auto Group').trim()
-const dealerPassword = process.env.DEALER_PASSWORD || 'password123'
-
-function readLocalCreds() {
-  const file = path.join(root, '.production-admin.local')
-  if (!fs.existsSync(file)) return {}
-  const out = {}
-  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^([^#=]+)=(.*)$/)
-    if (m) out[m[1].trim()] = m[2].trim()
+/** Every secret is read from the environment; nothing is defaulted or printed. */
+function requiredEnv(name) {
+  const value = process.env[name]?.trim()
+  if (!value) {
+    console.error(`${name} is required — export it before running this script.`)
+    console.error('Required: ADMIN_EMAIL, ADMIN_PASSWORD, DEALER_EMAIL, DEALER_PASSWORD')
+    process.exit(1)
   }
-  return out
+  return value
 }
+
+const dealerEmail = requiredEnv('DEALER_EMAIL').toLowerCase()
+const dealerName = (process.env.DEALER_NAME || 'Prime Auto Group').trim()
+const dealerPassword = requiredEnv('DEALER_PASSWORD')
 
 function cookieHeaderFromResponse(res) {
   const raw = res.headers.getSetCookie?.() ?? []
@@ -98,13 +102,8 @@ async function verifyDealerLogin() {
 }
 
 async function main() {
-  const local = readLocalCreds()
-  const adminEmail = process.env.ADMIN_EMAIL || local.email
-  const adminPassword = process.env.ADMIN_PASSWORD || local.password
-  if (!adminEmail || !adminPassword) {
-    console.error('Set ADMIN_EMAIL/ADMIN_PASSWORD or create .production-admin.local')
-    process.exit(1)
-  }
+  const adminEmail = requiredEnv('ADMIN_EMAIL')
+  const adminPassword = requiredEnv('ADMIN_PASSWORD')
 
   console.log(`API: ${API}`)
   console.log(`Creating dealer: ${dealerEmail}`)
@@ -131,7 +130,7 @@ async function main() {
   console.log('')
   console.log('Dealer portal: https://carflow-dealer.vercel.app')
   console.log(`Email:    ${dealerEmail}`)
-  console.log(`Password: ${dealerPassword}`)
+  console.log('Password: (not printed — it is the DEALER_PASSWORD you exported)')
 }
 
 main().catch((err) => {

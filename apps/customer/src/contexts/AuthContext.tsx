@@ -10,6 +10,7 @@ import { UNAUTHORIZED_EVENT } from '@carflow/shared'
 import type { AuthSession } from '../services/authService'
 import { getSession, logout as authLogout } from '../services/authService'
 import { useCartStore } from '../stores/cartStore'
+import { queryClient } from '../lib/queryClient'
 
 interface AuthContextValue {
   session: AuthSession | null
@@ -36,9 +37,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(async () => {
-    await authLogout()
+    let logoutError: unknown = null
+    try {
+      await authLogout()
+    } catch (err) {
+      // The server-side session may still be alive. Clearing local state anyway
+      // is the safer half: this device stops showing the account, and the
+      // caller surfaces the failure so the customer can sign out again from a
+      // trusted device.
+      logoutError = err
+    }
     useCartStore.getState().clearCart()
+    // Without this the next account to sign in on this tab renders the previous
+    // user's cached bookings, invoices and messages until each query refetches.
+    queryClient.clear()
     setSession(null)
+    if (logoutError) throw logoutError
   }, [])
 
   useEffect(() => {

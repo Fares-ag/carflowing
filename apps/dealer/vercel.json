@@ -1,5 +1,15 @@
 {
-  "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }],
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://carflow-api-production-9a43.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/skipcash-pay/:path*",
+      "destination": "https://carflow-api-production-9a43.up.railway.app/skipcash-pay/:path*"
+    },
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

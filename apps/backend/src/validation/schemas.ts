@@ -47,15 +47,6 @@ export const adminCreateVehicleSchema = z
   })
   .strict()
 
-export const dealerCreateVehicleSchema = adminCreateVehicleSchema.omit({ dealerId: true }).extend({
-  status: vehicleStatus.optional(),
-  licensePlate: z.string().nullable().optional(),
-  locationCity: z.string().nullable().optional(),
-  locationArea: z.string().nullable().optional(),
-  latitude: z.coerce.number().finite().optional(),
-  longitude: z.coerce.number().finite().optional(),
-})
-
 export const adminPatchVehicleStatusSchema = z
   .object({
     status: vehicleStatus,

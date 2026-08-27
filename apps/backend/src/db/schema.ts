@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm'
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -9,7 +11,6 @@ import {
   pgTable,
   text,
   timestamp,
-  unique,
   uniqueIndex,
   uuid,
   type AnyPgColumn,
@@ -130,6 +131,17 @@ export const bookingRequestStatusEnum = pgEnum('booking_request_status', [
   'approved',
   'declined',
 ])
+export const dealerSubscriptionStatusEnum = pgEnum('dealer_subscription_status', [
+  'active',
+  'past_due',
+  'cancelled',
+])
+export const dealerInvoiceStatusEnum = pgEnum('dealer_invoice_status', [
+  'open',
+  'paid',
+  'past_due',
+  'void',
+])
 
 export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -146,7 +158,9 @@ export const profiles = pgTable('profiles', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
-export const passwordResetTokens = pgTable('password_reset_tokens', {
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
     .notNull()
@@ -155,9 +169,16 @@ export const passwordResetTokens = pgTable('password_reset_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    // Range scan for the retention sweep that purges spent/expired tokens.
+    expiresAtIdx: index('password_reset_tokens_expires_at_idx').on(table.expiresAt),
+  })
+)
 
-export const emailVerificationTokens = pgTable('email_verification_tokens', {
+export const emailVerificationTokens = pgTable(
+  'email_verification_tokens',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
     .notNull()
@@ -166,9 +187,15 @@ export const emailVerificationTokens = pgTable('email_verification_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    expiresAtIdx: index('email_verification_tokens_expires_at_idx').on(table.expiresAt),
+  })
+)
 
-export const refreshSessions = pgTable('refresh_sessions', {
+export const refreshSessions = pgTable(
+  'refresh_sessions',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
     .notNull()
@@ -177,9 +204,15 @@ export const refreshSessions = pgTable('refresh_sessions', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    expiresAtIdx: index('refresh_sessions_expires_at_idx').on(table.expiresAt),
+  })
+)
 
-export const twoFaChallenges = pgTable('two_fa_challenges', {
+export const twoFaChallenges = pgTable(
+  'two_fa_challenges',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
     .notNull()
@@ -188,9 +221,15 @@ export const twoFaChallenges = pgTable('two_fa_challenges', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    expiresAtIdx: index('two_fa_challenges_expires_at_idx').on(table.expiresAt),
+  })
+)
 
-export const customerProfiles = pgTable('customer_profiles', {
+export const customerProfiles = pgTable(
+  'customer_profiles',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
     .notNull()
@@ -206,7 +245,12 @@ export const customerProfiles = pgTable('customer_profiles', {
   billingCity: text('billing_city'),
   billingCountry: text('billing_country'),
   billingPostalCode: text('billing_postal_code'),
-})
+},
+  (table) => ({
+    userUnique: uniqueIndex('customer_profiles_user_idx').on(table.userId),
+    spentNonneg: check('customer_profiles_total_spent_nonneg', sql`${table.totalSpent} >= 0`),
+  })
+)
 
 export const plans = pgTable('plans', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -218,7 +262,9 @@ export const plans = pgTable('plans', {
   features: text('features').array().notNull().default([]),
 })
 
-export const dealers = pgTable('dealers', {
+export const dealers = pgTable(
+  'dealers',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   ownerUserId: uuid('owner_user_id')
@@ -243,7 +289,12 @@ export const dealers = pgTable('dealers', {
   bankIban: text('bank_iban'),
   bankDetailsVerifiedAt: timestamp('bank_details_verified_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    ownerUnique: uniqueIndex('dealers_owner_user_idx').on(table.ownerUserId),
+    revenueNonneg: check('dealers_total_revenue_nonneg', sql`${table.totalRevenue} >= 0`),
+  })
+)
 
 export const vehicles = pgTable('vehicles', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -274,7 +325,9 @@ export const vehicles = pgTable('vehicles', {
   longitude: numeric('longitude'),
 })
 
-export const bookingRequests = pgTable('booking_requests', {
+export const bookingRequests = pgTable(
+  'booking_requests',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   customerId: uuid('customer_id')
     .notNull()
@@ -288,7 +341,13 @@ export const bookingRequests = pgTable('booking_requests', {
   declineReason: text('decline_reason'),
   /** True while an online payment holds this vehicle; hidden from dealers until paid. */
   awaitingPayment: boolean('awaiting_payment').notNull().default(false),
-})
+},
+  (table) => ({
+    pendingVehicle: uniqueIndex('booking_requests_pending_vehicle_idx')
+      .on(table.vehicleId)
+      .where(sql`${table.status} = 'pending'`),
+  })
+)
 
 export const rentals = pgTable('rentals', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -346,7 +405,16 @@ export const rentals = pgTable('rentals', {
   /** Latest calendar date the pause may run (inclusive). */
   pausedUntil: date('paused_until'),
   pauseReason: text('pause_reason'),
-})
+},
+  (table) => ({
+    vehicleOpen: uniqueIndex('rentals_vehicle_open_idx')
+      .on(table.vehicleId)
+      .where(sql`${table.status} <> 'completed' AND ${table.status} <> 'cancelled'`),
+    totalNonneg: check('rentals_total_amount_nonneg', sql`${table.totalAmount} >= 0`),
+    monthlyNonneg: check('rentals_monthly_amount_nonneg', sql`${table.monthlyAmount} >= 0`),
+    endAfterStart: check('rentals_end_after_start', sql`${table.endDate} >= ${table.startDate}`),
+  })
+)
 
 export const payments = pgTable('payments', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -377,7 +445,21 @@ export const payments = pgTable('payments', {
     onDelete: 'set null',
   }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    pendingBooking: uniqueIndex('payments_pending_booking_idx')
+      .on(table.bookingRequestId)
+      .where(sql`${table.status} = 'pending' AND ${table.bookingRequestId} IS NOT NULL`),
+    pendingInvoice: uniqueIndex('payments_pending_invoice_idx')
+      .on(table.invoiceId)
+      .where(sql`${table.status} = 'pending' AND ${table.invoiceId} IS NOT NULL`),
+    externalTxn: uniqueIndex('payments_external_txn_idx')
+      .on(table.externalTransactionId)
+      .where(sql`${table.externalTransactionId} IS NOT NULL`),
+    amountNonneg: check('payments_amount_nonneg', sql`${table.amount} >= 0`),
+    refundedNonneg: check('payments_refunded_amount_nonneg', sql`${table.refundedAmount} >= 0`),
+  })
+)
 
 export const subscriptions = pgTable('subscriptions', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -402,16 +484,27 @@ export const invoices = pgTable('invoices', {
   date: date('date').notNull().defaultNow(),
   description: text('description').notNull(),
   depositAmount: numeric('deposit_amount').notNull().default('0'),
+  /** Store credit applied to this invoice (referrals, etc.). */
+  creditApplied: numeric('credit_applied').notNull().default('0'),
   /** Subscription (rental) this invoice bills, for monthly-cycle invoices. */
   rentalId: uuid('rental_id').references(() => rentals.id, { onDelete: 'set null' }),
   dueDate: date('due_date'),
   periodStart: date('period_start'),
   periodEnd: date('period_end'),
-})
+},
+  (table) => ({
+    rentalPeriod: uniqueIndex('invoices_rental_period_idx')
+      .on(table.rentalId, table.periodStart)
+      .where(sql`${table.rentalId} IS NOT NULL AND ${table.periodStart} IS NOT NULL`),
+    amountNonneg: check('invoices_amount_nonneg', sql`${table.amount} >= 0`),
+  })
+)
 
 export const emailOutboxStatusEnum = pgEnum('email_outbox_status', ['pending', 'sent', 'failed'])
 
-export const emailOutbox = pgTable('email_outbox', {
+export const emailOutbox = pgTable(
+  'email_outbox',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   to: text('to').notNull(),
   subject: text('subject').notNull(),
@@ -421,7 +514,11 @@ export const emailOutbox = pgTable('email_outbox', {
   lastError: text('last_error'),
   nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    createdAtIdx: index('email_outbox_created_at_idx').on(table.createdAt),
+  })
+)
 
 export const invoiceReminderSends = pgTable(
   'invoice_reminder_sends',
@@ -476,7 +573,9 @@ export const swapRequests = pgTable('swap_requests', {
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
 })
 
-export const auditLogs = pgTable('audit_logs', {
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   actorId: uuid('actor_id').references(() => profiles.id, { onDelete: 'set null' }),
   actorRole: text('actor_role'),
@@ -487,9 +586,15 @@ export const auditLogs = pgTable('audit_logs', {
   after: jsonb('after'),
   note: text('note'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    createdAtIdx: index('audit_logs_created_at_idx').on(table.createdAt),
+  })
+)
 
-export const favorites = pgTable('favorites', {
+export const favorites = pgTable(
+  'favorites',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   customerId: uuid('customer_id')
     .notNull()
@@ -498,7 +603,14 @@ export const favorites = pgTable('favorites', {
     .notNull()
     .references(() => vehicles.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    customerVehicle: uniqueIndex('favorites_customer_vehicle_uidx').on(
+      table.customerId,
+      table.vehicleId
+    ),
+  })
+)
 
 export const complaints = pgTable('complaints', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -514,7 +626,9 @@ export const complaints = pgTable('complaints', {
   assignedTo: uuid('assigned_to').references(() => profiles.id),
 })
 
-export const complaintReplies = pgTable('complaint_replies', {
+export const complaintReplies = pgTable(
+  'complaint_replies',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   complaintId: uuid('complaint_id')
     .notNull()
@@ -524,7 +638,11 @@ export const complaintReplies = pgTable('complaint_replies', {
     .references(() => profiles.id, { onDelete: 'cascade' }),
   body: text('body').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+},
+  (table) => ({
+    complaintIdx: index('complaint_replies_complaint_idx').on(table.complaintId),
+  })
+)
 
 export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -579,6 +697,11 @@ export const paymentMethods = pgTable('payment_methods', {
   expiryYear: integer('expiry_year').notNull(),
   isDefault: boolean('is_default').notNull().default(false),
   methodType: paymentMethodTypeEnum('method_type').notNull().default('card'),
+  /** `reference` = customer-entered last4 for display only; `skipcash` = provider token vault. */
+  provider: text('provider').notNull().default('reference'),
+  /** SkipCash tokenId only — never store PAN or full card number. */
+  providerTokenId: text('provider_token_id'),
+  tokenSavedAt: timestamp('token_saved_at', { withTimezone: true }),
 })
 
 export const maintenanceRecords = pgTable('maintenance_records', {
@@ -659,6 +782,7 @@ export const userPreferences = pgTable('user_preferences', {
   emailNotifications: boolean('email_notifications').notNull().default(true),
   pushNotifications: boolean('push_notifications').notNull().default(true),
   smsNotifications: boolean('sms_notifications').notNull().default(false),
+  whatsappNotifications: boolean('whatsapp_notifications').notNull().default(false),
   marketingEmails: boolean('marketing_emails').notNull().default(false),
   locale: text('locale').notNull().default('en'),
   theme: text('theme').notNull().default('system'),
@@ -754,7 +878,7 @@ export const promoRedemptions = pgTable(
     discountAmount: numeric('discount_amount').notNull().default('0'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
+  () => [
     // Per-customer limits > 1 are enforced via redemption counts in application code.
   ]
 )
@@ -850,5 +974,152 @@ export const analyticsEvents = pgTable(
   (table) => ({
     typeOccurredIdx: index('analytics_events_type_occurred_idx').on(table.eventType, table.occurredAt),
     entityIdx: index('analytics_events_entity_idx').on(table.entityType, table.entityId),
+    createdAtIdx: index('analytics_events_created_at_idx').on(table.createdAt),
+  })
+)
+
+export const referralCodes = pgTable('referral_codes', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  code: text('code').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const referrals = pgTable('referrals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  referrerUserId: uuid('referrer_user_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  referredUserId: uuid('referred_user_id')
+    .notNull()
+    .unique()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  referralCode: text('referral_code').notNull(),
+  status: text('status').notNull().default('pending'),
+  firstPaidInvoiceId: uuid('first_paid_invoice_id').references(() => invoices.id, {
+    onDelete: 'set null',
+  }),
+  creditedAt: timestamp('credited_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const customerCredits = pgTable(
+  'customer_credits',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    amount: numeric('amount').notNull(),
+    remainingAmount: numeric('remaining_amount').notNull(),
+    source: text('source').notNull(),
+    referralId: uuid('referral_id').references(() => referrals.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    referralGrantUnique: uniqueIndex('customer_credits_referral_grant_uidx')
+      .on(table.referralId, table.userId, table.source)
+      .where(sql`${table.referralId} IS NOT NULL`),
+  })
+)
+
+/**
+ * Append-only record of a user accepting a versioned legal document
+ * (signup terms/privacy, checkout rental agreement). Re-accepting a newer
+ * version inserts another row; rows are never updated.
+ */
+export const consentRecords = pgTable(
+  'consent_records',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    profileId: uuid('profile_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    /** 'terms' | 'privacy' | 'rental_agreement' — text so new documents need no migration. */
+    documentKind: text('document_kind').notNull(),
+    documentVersion: text('document_version').notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+  },
+  (table) => ({
+    profileKindIdx: index('consent_records_profile_kind_idx').on(
+      table.profileId,
+      table.documentKind
+    ),
+  })
+)
+
+export const dealerPlans = pgTable(
+  'dealer_plans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    code: text('code').notNull().unique(),
+    name: text('name').notNull(),
+    priceQar: numeric('price_qar').notNull().default('0'),
+    /** Null means unlimited listings. */
+    vehicleLimit: integer('vehicle_limit'),
+    features: jsonb('features').$type<string[]>().notNull().default([]),
+    active: boolean('active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    priceNonneg: check('dealer_plans_price_qar_nonneg', sql`${table.priceQar} >= 0`),
+  })
+)
+
+export const dealerSubscriptions = pgTable(
+  'dealer_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealerId: uuid('dealer_id')
+      .notNull()
+      .references(() => dealers.id, { onDelete: 'restrict' }),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => dealerPlans.id, { onDelete: 'restrict' }),
+    status: dealerSubscriptionStatusEnum('status').notNull().default('active'),
+    currentPeriodStart: timestamp('current_period_start', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
+    /** Set when the dealer has asked to stop at the end of the current period. */
+    cancelAt: timestamp('cancel_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    dealerOpen: uniqueIndex('dealer_subscriptions_dealer_open_uidx')
+      .on(table.dealerId)
+      .where(sql`${table.status} <> 'cancelled'`),
+  })
+)
+
+export const dealerInvoices = pgTable(
+  'dealer_invoices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dealerId: uuid('dealer_id')
+      .notNull()
+      .references(() => dealers.id, { onDelete: 'restrict' }),
+    subscriptionId: uuid('subscription_id')
+      .notNull()
+      .references(() => dealerSubscriptions.id, { onDelete: 'restrict' }),
+    amount: numeric('amount').notNull().default('0'),
+    status: dealerInvoiceStatusEnum('status').notNull().default('open'),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    paymentId: uuid('payment_id').references(() => payments.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    subscriptionPeriod: uniqueIndex('dealer_invoices_subscription_period_uidx').on(
+      table.subscriptionId,
+      table.periodStart
+    ),
+    dealerStatusIdx: index('dealer_invoices_dealer_status_idx').on(table.dealerId, table.status),
+    amountNonneg: check('dealer_invoices_amount_nonneg', sql`${table.amount} >= 0`),
   })
 )

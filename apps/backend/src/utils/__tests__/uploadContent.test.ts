@@ -17,4 +17,11 @@ describe('validateUploadContent', () => {
     const result = validateUploadContent(tinyPdfBuffer, 'application/pdf', ['application/pdf'])
     expect(result).toEqual({ mime: 'application/pdf', ext: '.pdf' })
   })
+
+  it('rejects SVG even when claimed as an allowed image type', () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+    expect(validateUploadContent(svg, 'image/svg+xml', VEHICLE_IMAGE_MIMES)).toEqual({
+      error: 'SVG uploads are not allowed',
+    })
+  })
 })

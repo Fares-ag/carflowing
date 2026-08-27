@@ -1,10 +1,13 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { mapMaintenanceRecord } from '../db/mappers.js'
 import { maintenanceRecords, profiles, rentals, vehicles } from '../db/schema.js'
 import { notifyDealerOwner, notifyUser } from './notify.js'
 
 const ACTIVE_RENTAL_STATUSES = ['reserved', 'active', 'past_due'] as const
+
+/** Rental states that still occupy the vehicle, so it must not be freed. */
+const VEHICLE_HOLDING_STATUSES = ['reserved', 'active', 'paused', 'past_due'] as const
 
 type RentalRow = typeof rentals.$inferSelect
 
@@ -135,7 +138,10 @@ export async function acceptDealerMaintenanceRequest(dealerId: string, recordId:
       .update(maintenanceRecords)
       .set({ status: 'open' })
       .where(eq(maintenanceRecords.id, record.id))
-    await tx.update(vehicles).set({ status: 'maintenance' }).where(eq(vehicles.id, record.vehicleId))
+    await tx
+      .update(vehicles)
+      .set({ status: 'maintenance' })
+      .where(and(eq(vehicles.id, record.vehicleId), ne(vehicles.status, 'rented')))
   })
 
   await notifyCustomerReporter(record, 'Service request accepted', `Your dealer accepted "${record.title}" and will begin work.`)
@@ -192,7 +198,7 @@ export async function completeDealerMaintenanceRecord(dealerId: string, recordId
       .where(
         and(
           eq(rentals.vehicleId, record.vehicleId),
-          inArray(rentals.status, [...ACTIVE_RENTAL_STATUSES])
+          inArray(rentals.status, [...VEHICLE_HOLDING_STATUSES])
         )
       )
       .limit(1)

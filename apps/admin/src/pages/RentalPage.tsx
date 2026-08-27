@@ -17,8 +17,8 @@ import './RentalPage.css'
 const STATUS_CLASS: Record<RentalStatus, string> = {
   active: 'adminBadge adminBadge--green',
   reserved: 'adminBadge adminBadge--blue',
+  paused: 'adminBadge rentalBadge--paused',
   past_due: 'adminBadge rentalBadge--pastdue',
-  paused: 'adminBadge adminBadge--amber',
   completed: 'adminBadge adminBadge--amber',
   cancelled: 'adminBadge adminBadge--red',
 }
@@ -595,7 +595,7 @@ export function RentalPage() {
                                     className="rentalEventPhotoLink"
                                     aria-label={`Open condition photo ${index + 1}`}
                                   >
-                                    <img src={url} alt={`Condition photo ${index + 1}`} loading="lazy" />
+                                    <img src={url} alt={`Vehicle condition ${index + 1}`} loading="lazy" />
                                   </a>
                                 ))}
                               </div>

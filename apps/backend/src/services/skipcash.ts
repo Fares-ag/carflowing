@@ -131,6 +131,8 @@ export interface SkipCashWebhookPayload {
   TransactionId?: string | null
   Custom1?: string | null
   VisaId?: string | null
+  /** Returned when the customer checked Save Card on the hosted page. */
+  TokenId?: string | null
 }
 
 /** Verifies the webhook `Authorization` header using the webhook key (a separate secret from the payment-creation key). */
@@ -201,6 +203,8 @@ export interface SkipCashRefundResult {
   refunded: boolean
   manual: boolean
   message?: string
+  /** SkipCash's id for the refund transaction, when the response carries one. */
+  providerRefundId?: string
 }
 
 /** Attempts a SkipCash refund when configured; otherwise returns manual ops guidance. */
@@ -231,20 +235,138 @@ export async function requestSkipCashRefund(params: {
       },
       body: JSON.stringify(body),
     })
-    if (!res.ok) {
-      const json = (await res.json().catch(() => ({}))) as { errorMessage?: string }
+    // SkipCash reports business-rule rejections INSIDE a 200 via `hasError`,
+    // exactly like createSkipCashPayment / getSkipCashPayment. Trusting res.ok
+    // alone recorded a REJECTED refund as money returned to the customer.
+    const json = (await res.json().catch(() => ({}))) as {
+      resultObj?: { id?: string; statusId?: number; status?: number }
+      hasError?: boolean
+      errorMessage?: string
+    }
+    if (!res.ok || json.hasError || !json.resultObj) {
       return {
         refunded: false,
         manual: true,
         message: json.errorMessage || `SkipCash refund failed (HTTP ${res.status})`,
       }
     }
-    return { refunded: true, manual: false }
+    const statusId = json.resultObj.statusId ?? json.resultObj.status
+    // PENDING_REFUND is an accepted refund still settling — treating it as a
+    // failure would send ops to refund a second time by hand. Only an explicit
+    // REFUND_FAILED means the money did not move.
+    if (statusId === SkipCashStatus.REFUND_FAILED) {
+      return {
+        refunded: false,
+        manual: true,
+        message:
+          json.errorMessage ||
+          'SkipCash reported REFUND_FAILED. Process the refund manually in the SkipCash dashboard.',
+      }
+    }
+    return {
+      refunded: true,
+      manual: false,
+      ...(json.resultObj.id ? { providerRefundId: json.resultObj.id } : {}),
+    }
   } catch (err) {
     return {
       refunded: false,
       manual: true,
       message: err instanceof Error ? err.message : 'SkipCash refund failed',
     }
+  }
+}
+
+/**
+ * SkipCash supports card tokenization at the provider (see
+ * https://dev.skipcash.app/doc/tokenization/) but this integration only
+ * implements hosted redirect checkout today.
+ */
+export const SKIPCASH_SAVED_CARD_CAPABILITY =
+  'SkipCash Tokenization: customer saves card on first hosted payment (Save Card checkbox); ' +
+  'capture TokenId from webhook or GET /api/v1/payments/{id}; charge renewals via POST /api/v1/payments ' +
+  'with TokenId in the request body (excluded from HMAC signature); optional GET /token/cardDetails/{id} ' +
+  'for masked brand/last4/expiry. Merchant account must have tokenization enabled by SkipCash.'
+
+/** Capability flag — default off until token charge is wired and verified. */
+export function isSkipCashSavedCardsEnabled(): boolean {
+  return process.env.SKIPCASH_SAVED_CARDS_ENABLED === 'true'
+}
+
+/** Set true once createSkipCashPaymentWithToken is implemented and tested. */
+export function isSkipCashSavedCardsChargeReady(): boolean {
+  return process.env.SKIPCASH_SAVED_CARDS_CHARGE_READY === 'true'
+}
+
+export class SkipCashSavedCardNotImplementedError extends Error {
+  constructor() {
+    super(`Saved-card charge is not wired in skipcash.ts. ${SKIPCASH_SAVED_CARD_CAPABILITY}`)
+    this.name = 'SkipCashSavedCardNotImplementedError'
+  }
+}
+
+export interface SkipCashCardDetails {
+  last4: string
+  brand: 'Visa' | 'Mastercard' | 'Unknown'
+  expiryMonth: number
+  expiryYear: number
+}
+
+export interface CreateSkipCashPaymentWithTokenParams extends CreateSkipCashPaymentParams {
+  tokenId: string
+}
+
+/**
+ * TODO: Wire SkipCash token payment — POST /api/v1/payments with TokenId in body
+ * (TokenId must NOT be included in the HMAC Authorization signature).
+ * Response still includes payUrl; customer completes OTP on the hosted page.
+ */
+export async function createSkipCashPaymentWithToken(
+  _params: CreateSkipCashPaymentWithTokenParams
+): Promise<SkipCashPaymentResult> {
+  if (!isSkipCashSavedCardsChargeReady()) {
+    throw new SkipCashSavedCardNotImplementedError()
+  }
+  // When SKIPCASH_SAVED_CARDS_CHARGE_READY=true, implement:
+  // const body = { ...standard fields, TokenId: params.tokenId }
+  // POST ${baseUrl()}/payments with Authorization from PAYMENT_SIGNATURE_FIELDS only
+  throw new SkipCashSavedCardNotImplementedError()
+}
+
+/** Fetches masked card metadata for a SkipCash token (no PAN). */
+export async function getSkipCashCardDetails(tokenId: string): Promise<SkipCashCardDetails | null> {
+  try {
+    const { keyId, keySecret, clientId } = requireConfig()
+    const authorization = signFields({ TokenId: tokenId }, ['TokenId'], keySecret)
+    const res = await fetchWithTimeout(
+      `${baseUrl()}/token/cardDetails/${encodeURIComponent(tokenId)}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: authorization,
+          KeyId: keyId,
+          ...(clientId ? { 'x-client-id': clientId } : {}),
+        },
+      }
+    )
+    if (!res.ok) return null
+    const json = (await res.json().catch(() => ({}))) as {
+      resultObj?: Array<{ cardNumber?: string; cardType?: number; cardExpiry?: string }>
+      hasError?: boolean
+    }
+    if (json.hasError || !json.resultObj?.[0]) return null
+    const card = json.resultObj[0]
+    const last4 = String(card.cardNumber ?? '').replace(/\D/g, '').slice(-4)
+    if (!last4) return null
+    const brand =
+      card.cardType === 1 ? 'Visa' : card.cardType === 2 ? 'Mastercard' : 'Unknown'
+    const [mm, yyyy] = String(card.cardExpiry ?? '').split('/')
+    const expiryMonth = Number(mm)
+    const expiryYear = Number(yyyy)
+    if (!expiryMonth || !expiryYear) return null
+    return { last4, brand, expiryMonth, expiryYear }
+  } catch (err) {
+    console.error('SkipCash card details lookup error', err)
+    return null
   }
 }

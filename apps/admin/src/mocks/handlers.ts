@@ -254,6 +254,35 @@ export const handlers = [
   }),
   http.post('/api/auth/logout', async () => HttpResponse.json(await withLatency({ ok: true }))),
 
+  // Role-agnostic account security router (backend: src/auth/securityRouter.ts).
+  http.get('/api/auth/security', async () =>
+    HttpResponse.json(
+      await withLatency({
+        totpEnabled: false,
+        totpRequired: false,
+        smsVerified: false,
+        smsPhone: null,
+        smsVerificationAvailable: false,
+        smsProviderConfigured: false,
+        smsDevFallback: true,
+      })
+    )
+  ),
+  http.post('/api/auth/security/2fa/setup', async () =>
+    HttpResponse.json(
+      await withLatency({
+        secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        uri: 'otpauth://totp/CarFlow%3Aadmin%40carflow.dev?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=CarFlow&digits=6&period=30',
+      })
+    )
+  ),
+  http.post('/api/auth/security/2fa/enable', async () =>
+    HttpResponse.json(await withLatency({ ok: true }))
+  ),
+  http.post('/api/auth/security/2fa/disable', async () =>
+    HttpResponse.json(await withLatency({ ok: true }))
+  ),
+
   http.get('/api/admin/dashboard', async () =>
     HttpResponse.json(await withLatency(buildAdminDashboard()))
   ),
@@ -1167,6 +1196,37 @@ export const handlers = [
     return HttpResponse.json(await withLatency(mockPromoCodes[idx]))
   }),
   http.post('/api/auth/staff-invite/accept', async () =>
+    HttpResponse.json(await withLatency({ ok: true }))
+  ),
+
+  // Account security lives on the role-agnostic /api/auth/security router.
+  // `totpRequired` is true for admin-portal roles when the deployment enforces
+  // staff 2FA, which is the case worth exercising in the admin app.
+  http.get('/api/auth/security', async () =>
+    HttpResponse.json(
+      await withLatency({
+        totpEnabled: false,
+        totpRequired: true,
+        smsVerified: false,
+        smsPhone: null,
+        smsVerificationAvailable: true,
+        smsProviderConfigured: false,
+        smsDevFallback: true,
+      })
+    )
+  ),
+  http.post('/api/auth/security/2fa/setup', async () =>
+    HttpResponse.json(
+      await withLatency({
+        secret: 'MOCK2FA',
+        uri: 'otpauth://totp/CarFlow:admin@carflow.com?secret=MOCK2FA&issuer=CarFlow',
+      })
+    )
+  ),
+  http.post('/api/auth/security/2fa/enable', async () =>
+    HttpResponse.json(await withLatency({ ok: true }))
+  ),
+  http.post('/api/auth/security/2fa/disable', async () =>
     HttpResponse.json(await withLatency({ ok: true }))
   ),
 ]

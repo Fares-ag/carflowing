@@ -15,6 +15,12 @@ jobs:
     name: Run full test suite
     uses: ./.github/workflows/test.yml
 
+  # Migrations run BEFORE the code that needs them, so for the length of the deploy
+  # the OLD container is talking to the NEW schema. Every migration must therefore be
+  # backward compatible with the currently-deployed release: additive columns/tables,
+  # nullable or defaulted, no renames, no drops, no narrowing constraints. Destructive
+  # changes go out as a second, separate release after the new code is live.
+  # See docs/PRODUCTION_READINESS.md -> "Migration ordering contract".
   migrate:
     name: Database migrations
     runs-on: ubuntu-latest
@@ -31,12 +37,44 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
+  # `railway up --detach` returns as soon as the build is queued, so the smoke test
+  # below cannot tell "the new container is healthy" from "the old container is still
+  # answering". Record what is live BEFORE the deploy so the smoke test has something
+  # to compare against.
+  pre-deploy-identity:
+    name: Record currently-live API identity
+    runs-on: ubuntu-latest
+    needs: [tests]
+    outputs:
+      previous: ${{ steps.capture.outputs.previous }}
+    steps:
+      - name: Read deployment identifier from /health
+        id: capture
+        run: |
+          set -uo pipefail
+          body="$(curl -sf --max-time 20 "${{ secrets.PUBLIC_API_URL }}/health" || true)"
+          if [ -z "$body" ]; then
+            echo "No API is answering yet — treating this as a first deploy."
+            echo "previous=__none__" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "live /health: $body"
+          previous="$(printf '%s' "$body" | jq -r '.commit // .deploymentId // .startedAt // empty')"
+          if [ -z "$previous" ]; then
+            echo "::error::/health answered but exposes no deployment identifier."
+            echo "::error::Add a 'commit' field (process.env.GIT_COMMIT / RAILWAY_GIT_COMMIT_SHA)"
+            echo "::error::to the /health payload in apps/backend/src/app.ts. Without it this"
+            echo "::error::pipeline cannot prove a deploy actually replaced the running code."
+            exit 1
+          fi
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+
   deploy-api:
     name: Deploy API (Railway)
     runs-on: ubuntu-latest
     container: ghcr.io/railwayapp/cli:latest
-    needs: [migrate, tests]
-    if: always() && needs.tests.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    needs: [migrate, tests, pre-deploy-identity]
+    if: always() && needs.tests.result == 'success' && needs.pre-deploy-identity.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     env:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
@@ -47,11 +85,51 @@ jobs:
   smoke-api:
     name: API health smoke test
     runs-on: ubuntu-latest
-    needs: [deploy-api]
+    needs: [deploy-api, pre-deploy-identity]
     steps:
-      - name: Check /health includes DB connected
+      - name: Wait for the NEW deployment to serve a healthy /health
+        env:
+          API_URL: ${{ secrets.PUBLIC_API_URL }}
+          PREVIOUS: ${{ needs.pre-deploy-identity.outputs.previous }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          TIMEOUT_SECONDS: '900'
+          POLL_SECONDS: '15'
         run: |
-          curl -sf "${{ secrets.PUBLIC_API_URL }}/health" | grep -q '"db":"connected"'
+          set -uo pipefail
+          echo "Previously live identity: $PREVIOUS"
+          echo "Expecting commit:         $EXPECTED_COMMIT"
+          deadline=$(( SECONDS + TIMEOUT_SECONDS ))
+          last=""
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            body="$(curl -sf --max-time 15 "$API_URL/health" || true)"
+            last="${body:-<no response>}"
+            status="$(printf '%s' "$body" | jq -r '.status // empty' 2>/dev/null || true)"
+            db="$(printf '%s' "$body" | jq -r '.db // empty' 2>/dev/null || true)"
+            commit="$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)"
+            identity="$(printf '%s' "$body" | jq -r '.commit // .deploymentId // .startedAt // empty' 2>/dev/null || true)"
+            if [ "$status" = "ok" ] && [ "$db" = "connected" ]; then
+              # Preferred proof: the container reports the commit this workflow deployed.
+              if [ -n "$commit" ] && [ "$commit" = "$EXPECTED_COMMIT" ]; then
+                echo "New deployment is live and healthy (commit $commit)."
+                exit 0
+              fi
+              # Fallback while /health carries no commit: the identifier must have
+              # changed, which only a replaced container can do.
+              if [ -z "$commit" ] && [ -n "$identity" ] && [ "$identity" != "$PREVIOUS" ]; then
+                echo "New deployment is live and healthy (identity $PREVIOUS -> $identity)."
+                echo "::warning::/health exposes no 'commit' field — this only proves the"
+                echo "::warning::container was replaced, not that it runs $EXPECTED_COMMIT."
+                exit 0
+              fi
+            fi
+            echo "still waiting (${SECONDS}s): $last"
+            sleep "$POLL_SECONDS"
+          done
+          echo "::error::Timed out after ${TIMEOUT_SECONDS}s waiting for the new deployment."
+          echo "::error::Last /health response: $last"
+          echo "::error::Frontends were NOT deployed. Check the Railway build logs, then"
+          echo "::error::follow the rollback procedure in docs/PRODUCTION_READINESS.md."
+          exit 1
 
   deploy-customer:
     name: Deploy Customer (Vercel)

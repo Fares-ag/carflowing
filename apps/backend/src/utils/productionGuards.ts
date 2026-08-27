@@ -1,3 +1,5 @@
+import { resolveDatabaseUrl } from '../db/databaseUrl.js'
+
 const WEAK_SECRET_PATTERN = /dev-.*-change-me|change-me|secret|password/i
 const LOCALHOST_PATTERN = /localhost|127\.0\.0\.1/i
 
@@ -10,6 +12,14 @@ const COMPROMISED_SKIPCASH_VALUES = new Set([
   '29d76865-b757-43c4-887a-53bab3519088',
   '7adcc306-8732-46b9-9da6-f8769699e8c4',
 ])
+
+function databaseHost(connection: string): string {
+  try {
+    return new URL(connection.replace(/^postgresql:/, 'http:')).hostname
+  } catch {
+    return ''
+  }
+}
 
 function requireHttpsUrl(name: string, value: string | undefined): void {
   if (!value?.trim()) {
@@ -52,6 +62,23 @@ export function assertProductionSecrets(): void {
   if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
     throw new Error('BLOB_READ_WRITE_TOKEN is required when UPLOAD_DRIVER=blob in production')
   }
+  // BLOB_ACCESS=public makes every uploaded blob — including QID/licence scans
+  // and dealer trade licences — readable by anyone holding the URL.
+  if (process.env.BLOB_ACCESS?.trim().toLowerCase() === 'public') {
+    throw new Error(
+      'BLOB_ACCESS must not be "public" in production: identity documents would be world-readable. Leave it unset so uploads stay private.'
+    )
+  }
+
+  // The job scheduler holds a session-scoped Postgres advisory lock. Neon's
+  // pooled endpoint (PgBouncer, transaction pooling) silently drops session
+  // state, so the lock is lost and billing/dunning/reconciliation wedge.
+  const dbHost = databaseHost(resolveDatabaseUrl())
+  if (dbHost.includes('-pooler')) {
+    throw new Error(
+      `DATABASE_URL points at a pooled endpoint (${dbHost}). The API needs the DIRECT (non-pooled) connection string: the job scheduler's session advisory lock does not survive PgBouncer transaction pooling. Remove "-pooler" from the host.`
+    )
+  }
 
   // Default ENABLE_JOBS=true (unset). In-process scheduler on Railway is the supported path.
   if (process.env.ENABLE_JOBS === 'false' && process.env.EXTERNAL_SCHEDULER !== 'true') {
@@ -86,8 +113,18 @@ export function assertProductionSecrets(): void {
   if (!process.env.RESEND_API_KEY?.trim()) {
     throw new Error('RESEND_API_KEY must be set in production')
   }
+  // Online payment is gated on email verification, so a missing sender address
+  // silently kills the entire online-payment funnel while the API boots green.
   if (!process.env.FROM_EMAIL?.trim()) {
-    console.warn('[productionGuards] FROM_EMAIL not set — transactional email disabled')
+    throw new Error(
+      'FROM_EMAIL must be set in production: verification email is a hard dependency of the online payment flow'
+    )
+  }
+
+  if (process.env.SKIPCASH_SAVED_CARDS_CHARGE_READY === 'true') {
+    throw new Error(
+      'SKIPCASH_SAVED_CARDS_CHARGE_READY must not be enabled in production until token charging is implemented'
+    )
   }
 
   const deposit = Number(process.env.SUBSCRIPTION_DEPOSIT_AMOUNT ?? 0)
@@ -113,5 +150,20 @@ export function assertProductionSecrets(): void {
         'SKIPCASH_WEBHOOK_KEY matches a key that was committed to the repository. Rotate it in the SkipCash portal before launching.'
       )
     }
+  }
+
+  // Checked last: everything above is a leak, an outage or a broken funnel,
+  // and should be the error an operator sees first. Without a DSN every
+  // captureException/captureMessage in the codebase is a silent no-op, so
+  // production failures leave no trace anywhere.
+  if (!process.env.SENTRY_DSN?.trim()) {
+    if (process.env.ALLOW_NO_ERROR_REPORTING !== 'true') {
+      throw new Error(
+        'SENTRY_DSN must be set in production (or set ALLOW_NO_ERROR_REPORTING=true to run blind on purpose)'
+      )
+    }
+    console.warn(
+      '[productionGuards] ALLOW_NO_ERROR_REPORTING=true — SENTRY_DSN is unset, so every captureException in this process is a no-op and production errors are only visible in stdout logs.'
+    )
   }
 }

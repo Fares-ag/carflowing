@@ -141,6 +141,7 @@ describe('Request body validation', () => {
         nationality: 'Qatari',
       },
       license: { number: '12345678', expiry: '2028-12-31' },
+      delivery: { mode: 'dealer_pickup', date: '2026-09-01', time: '09:00–12:00' },
     })
     const res = await agent
       .post('/api/customer/booking-requests')

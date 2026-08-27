@@ -1,7 +1,7 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { analyticsEvents, analyticsRollups, payments, rentals } from '../db/schema.js'
-import { addDays, todayISO } from '../utils/dates.js'
+import { addDays, isOnOrBefore, maxDate, todayISO, zonedDayStartUtc } from '../utils/dates.js'
 
 const LIFECYCLE_METRIC_KEYS = [
   'activation_rate',
@@ -29,8 +29,10 @@ export interface PlatformMetricsSummary {
 }
 
 function dayBounds(dateISO: string) {
-  const dayStart = new Date(`${dateISO}T00:00:00.000Z`)
-  const dayEnd = new Date(`${addDays(dateISO, 1)}T00:00:00.000Z`)
+  // dateISO is a billing-timezone calendar date (todayISO), so the window has
+  // to start at local midnight, not UTC midnight.
+  const dayStart = zonedDayStartUtc(dateISO)
+  const dayEnd = zonedDayStartUtc(addDays(dateISO, 1))
   return { dayStart, dayEnd }
 }
 
@@ -76,7 +78,7 @@ async function paymentSuccessRateForRange(dayStart: Date, dayEnd: Date): Promise
         gte(payments.createdAt, dayStart),
         lt(payments.createdAt, dayEnd),
         sql`${payments.type} <> 'refund'`,
-        sql`${payments.provider} = 'skipcash' OR ${payments.method} = 'card'`
+        sql`(${payments.provider} = 'skipcash' OR ${payments.method} = 'card')`
       )
     )
   const completed = Number(row?.completed ?? 0)
@@ -128,7 +130,26 @@ async function upsertRollupMetric(dateISO: string, metricKey: string, value: num
   }
 }
 
-export async function recordDailyRollups(dateISO = todayISO()): Promise<number> {
+/** How far back a catch-up run will rebuild missing daily rollups. */
+export function rollupBackfillMaxDays(): number {
+  const n = Number(process.env.ANALYTICS_ROLLUP_BACKFILL_MAX_DAYS)
+  return Number.isFinite(n) && n >= 1 ? n : 30
+}
+
+/** Days of raw analytics_events kept; the daily rollups outlive them. */
+export function analyticsEventRetentionDays(): number {
+  const n = Number(process.env.ANALYTICS_EVENT_RETENTION_DAYS)
+  return Number.isFinite(n) && n >= 1 ? n : 400
+}
+
+async function lastRollupDate(): Promise<string | null> {
+  const [row] = await db
+    .select({ value: sql<string | null>`max(${analyticsRollups.rollupDate})` })
+    .from(analyticsRollups)
+  return row?.value ? String(row.value) : null
+}
+
+async function recordRollupsForDay(dateISO: string): Promise<number> {
   const { dayStart, dayEnd } = dayBounds(dateISO)
 
   const [revenueRow] = await db
@@ -159,6 +180,43 @@ export async function recordDailyRollups(dateISO = todayISO()): Promise<number> 
     await upsertRollupMetric(dateISO, m.key, m.value)
   }
   return metrics.length
+}
+
+/**
+ * Writes the daily rollups. With an explicit date only that day is computed;
+ * without one it catches up every day since the last stored rollup (inclusive,
+ * so the final numbers for a day the sweep only ever saw mid-flight are
+ * corrected) through today. Before this, a sweep that was down over midnight
+ * lost that day permanently.
+ */
+export async function recordDailyRollups(dateISO?: string): Promise<number> {
+  if (dateISO) return recordRollupsForDay(dateISO)
+
+  const today = todayISO()
+  const last = await lastRollupDate()
+  if (!last) return recordRollupsForDay(today)
+
+  const earliest = addDays(today, -(rollupBackfillMaxDays() - 1))
+  let day = maxDate(last, earliest)
+  let written = 0
+  while (isOnOrBefore(day, today)) {
+    written += await recordRollupsForDay(day)
+    day = addDays(day, 1)
+  }
+  return written
+}
+
+/**
+ * Retention sweep for the raw event stream (the rollups above are what the
+ * dashboards read, and they are kept indefinitely).
+ */
+export async function purgeOldAnalyticsEvents(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - analyticsEventRetentionDays() * 24 * 60 * 60 * 1000)
+  const rows = await db
+    .delete(analyticsEvents)
+    .where(lt(analyticsEvents.createdAt, cutoff))
+    .returning({ id: analyticsEvents.id })
+  return rows.length
 }
 
 export async function listRollupTrend(metricKey: string, days = 30) {
@@ -228,7 +286,7 @@ export async function computePlatformMetrics(days = 30): Promise<PlatformMetrics
           gte(payments.createdAt, sinceStart),
           lt(payments.createdAt, dayEnd),
           sql`${payments.type} <> 'refund'`,
-          sql`${payments.provider} = 'skipcash' OR ${payments.method} = 'card'`
+          sql`(${payments.provider} = 'skipcash' OR ${payments.method} = 'card')`
         )
       ),
   ])

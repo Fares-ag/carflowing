@@ -17,24 +17,38 @@ export async function createRefreshSession(userId: string, jti: string): Promise
   })
 }
 
-export async function isRefreshSessionActive(
+/**
+ * Revocation watermark for access tokens: an access token carries the
+ * `hashJti()` of the refresh session it was minted with, so a revoked or
+ * expired session invalidates it immediately (logout-all, password change,
+ * account deletion) instead of leaving it live until it expires.
+ */
+export async function isSessionActiveByHash(
   userId: string,
-  jti: string | undefined
+  jtiHash: string | undefined
 ): Promise<boolean> {
-  if (!jti) return false
+  if (!jtiHash) return false
   const [row] = await db
     .select()
     .from(refreshSessions)
     .where(
       and(
         eq(refreshSessions.userId, userId),
-        eq(refreshSessions.jtiHash, hashJti(jti)),
+        eq(refreshSessions.jtiHash, jtiHash),
         isNull(refreshSessions.revokedAt)
       )
     )
     .limit(1)
   if (!row) return false
   return row.expiresAt > new Date()
+}
+
+export async function isRefreshSessionActive(
+  userId: string,
+  jti: string | undefined
+): Promise<boolean> {
+  if (!jti) return false
+  return isSessionActiveByHash(userId, hashJti(jti))
 }
 
 export async function revokeRefreshSession(userId: string, jti: string | undefined): Promise<void> {

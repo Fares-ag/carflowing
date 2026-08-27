@@ -228,7 +228,7 @@ export function MaintenancePage() {
     <div className="maintenance-page">
       <Sidebar />
       <Header />
-      <div className="maintenance-content">
+      <div className="maintenance-content" role="main">
         <div className="page-header">
           <div>
             <h1 className="page-title">Fleet Maintenance</h1>

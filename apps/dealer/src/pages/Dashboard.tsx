@@ -107,7 +107,7 @@ export const Dashboard = memo(function Dashboard() {
       <Sidebar />
       <Header />
       
-      <div className="dashboard-content">
+      <div className="dashboard-content" role="main">
         <div className="page-header">
           <h1 className="page-title">Dashboard</h1>
           <p className="page-subtitle">Welcome back, {userName ?? 'Dealer'}</p>

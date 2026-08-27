@@ -22,6 +22,7 @@ import { Footer } from '../components/shared/Footer'
 import { Header } from '../components/shared/Header'
 import {
   SUPPORT_EMAIL,
+  SUPPORT_PHONE_CONFIGURED,
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_TEL,
 } from '../constants/support'
@@ -169,7 +170,9 @@ const FAQ_ITEMS: FaqItem[] = [
     id: 'support',
     category: 'subscription',
     q: 'Who do I contact for support?',
-    a: 'Use the Contact page, email hello@carflow.qa, call +974 4444 4444, or WhatsApp the same number. We typically respond within 24 hours for email.',
+    a: SUPPORT_PHONE_CONFIGURED
+      ? `Use the Contact page, email ${SUPPORT_EMAIL}, call ${SUPPORT_PHONE_DISPLAY}, or WhatsApp the same number. We typically respond within 24 hours for email.`
+      : `Use the Contact page or email ${SUPPORT_EMAIL}. We typically respond within 24 hours.`,
   },
 ]
 
@@ -338,23 +341,33 @@ export function FAQPage() {
                 Carflow subscription.
               </p>
               <div className="faq-support__actions">
-                <a className="faq-support__btn faq-support__btn--primary" href={`tel:${SUPPORT_PHONE_TEL}`}>
-                  <Phone size={16} aria-hidden />
-                  {SUPPORT_PHONE_DISPLAY}
-                </a>
-                <a className="faq-support__btn" href={`mailto:${SUPPORT_EMAIL}`}>
+                {SUPPORT_PHONE_CONFIGURED && (
+                  <a
+                    className="faq-support__btn faq-support__btn--primary"
+                    href={`tel:${SUPPORT_PHONE_TEL}`}
+                  >
+                    <Phone size={16} aria-hidden />
+                    {SUPPORT_PHONE_DISPLAY}
+                  </a>
+                )}
+                <a
+                  className={`faq-support__btn${SUPPORT_PHONE_CONFIGURED ? '' : ' faq-support__btn--primary'}`}
+                  href={`mailto:${SUPPORT_EMAIL}`}
+                >
                   <Mail size={16} aria-hidden />
                   Email Support
                 </a>
-                <a
-                  className="faq-support__btn"
-                  href={whatsappHref}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <MessageCircle size={16} aria-hidden />
-                  Live Chat
-                </a>
+                {SUPPORT_PHONE_CONFIGURED && (
+                  <a
+                    className="faq-support__btn"
+                    href={whatsappHref}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <MessageCircle size={16} aria-hidden />
+                    Live Chat
+                  </a>
+                )}
               </div>
               <div className="faq-support__meta">
                 <span>

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { db } from '../db/index.js'
 import {
@@ -25,6 +25,7 @@ import {
   invoices,
   leads,
   maintenanceRecords,
+  rentalReviews,
   messages,
   notifications,
   paymentMethods,
@@ -76,13 +77,12 @@ import {
 } from '../services/rentalLifecycle.js'
 import { extendRentalTerm } from '../services/rentalExtension.js'
 import { listDealerReviews, respondToReview } from '../services/reviews.js'
-import { asyncHandler, paginated, parsePagination } from '../utils/http.js'
+import { asyncHandler, paginated, parsePagination, attachUuidParamGuard } from '../utils/http.js'
 import { parseBody } from '../validation/parse.js'
 import {
   customerPatchMessageFolderSchema,
   customerPatchMessageReadSchema,
   dealerExtendRentalSchema,
-  dealerCreateVehicleSchema,
   pauseRentalSchema,
   dealerPickupFulfilmentSchema,
   dealerReviewResponseSchema,
@@ -93,6 +93,7 @@ import {
 
 
 export const dealerRouter = Router()
+attachUuidParamGuard(dealerRouter)
 dealerRouter.use(requireAuth, requireRole('dealer'))
 
 export async function getDealerOrThrow(userId: string) {
@@ -116,9 +117,10 @@ dealerRouter.get(
         db.select({ value: count() }).from(leads).where(eq(leads.dealerId, dealer.id)),
         monthlyPaymentBuckets(6, dealer.id),
         db
-          .select({ rental: rentals, vehicle: vehicles })
+          .select({ rental: rentals, vehicle: vehicles, customer: profiles })
           .from(rentals)
           .leftJoin(vehicles, eq(rentals.vehicleId, vehicles.id))
+          .leftJoin(profiles, eq(rentals.customerId, profiles.id))
           .where(eq(rentals.dealerId, dealer.id))
           .orderBy(desc(rentals.createdAt))
           .limit(5),
@@ -144,7 +146,7 @@ dealerRouter.get(
       }),
       recentRentals: recent.map((r) => ({
         id: r.rental.id,
-        customerName: 'Customer',
+        customerName: r.customer?.name ?? 'Unknown customer',
         vehicleName: r.vehicle?.name ?? 'Unknown',
         status: r.rental.status,
         createdAt: r.rental.createdAt.toISOString(),
@@ -184,10 +186,15 @@ dealerRouter.post(
   '/vehicles',
   asyncHandler(async (req: AuthedRequest, res) => {
     const dealer = await getDealerOrThrow(req.user!.sub)
-    const body = parseBody(dealerCreateVehicleSchema, req, res)
-    if (!body) return
-    const { imageUrl, imageUrls } = normalizeVehicleImages(body as Record<string, unknown>)
-    const features = body.features ?? parseOptionalVehicleFeatures((req.body as Record<string, unknown>).features)
+    const body = req.body as Record<string, unknown>
+    const { imageUrl, imageUrls } = normalizeVehicleImages(body)
+    const features = parseOptionalVehicleFeatures(body.features)
+    const mileageCapKm =
+      body.mileageCapKm !== undefined
+        ? Number(body.mileageCapKm)
+        : body.mileage_cap_km !== undefined
+          ? Number(body.mileage_cap_km)
+          : undefined
     const [row] = await db
       .insert(vehicles)
       .values({
@@ -197,30 +204,47 @@ dealerRouter.post(
         model: body.model,
         year: body.year,
         category: body.category,
-        status: body.status ?? 'available',
-        pricePerDay: String(body.pricePerDay),
+        status: CREATABLE_VEHICLE_STATUSES.includes(body.status as any)
+          ? body.status
+          : 'available',
+        pricePerDay: String(body.pricePerDay ?? body.price_per_day ?? 0),
         mileage: body.mileage ?? 0,
         transmission: body.transmission,
-        fuelType: body.fuelType,
+        fuelType: body.fuelType ?? body.fuel_type,
         seats: body.seats ?? 4,
         imageUrl,
         imageUrls,
-        description: body.description ?? null,
-        color: body.color ?? null,
-        mileageCapKm: body.mileageCapKm ?? null,
+        description: typeof body.description === 'string' ? body.description.trim() || null : null,
+        color: typeof body.color === 'string' ? body.color.trim() || null : null,
+        mileageCapKm:
+          mileageCapKm !== undefined && Number.isFinite(mileageCapKm) ? Math.max(0, mileageCapKm) : null,
         features: features ?? [],
-        licensePlate: body.licensePlate ?? null,
-        locationCity: body.locationCity ?? null,
-        locationArea: body.locationArea ?? null,
+        licensePlate: body.licensePlate ?? body.license_plate ?? null,
+        locationCity:
+          typeof body.locationCity === 'string'
+            ? body.locationCity.trim() || null
+            : typeof body.location_city === 'string'
+              ? body.location_city.trim() || null
+              : null,
+        locationArea:
+          typeof body.locationArea === 'string'
+            ? body.locationArea.trim() || null
+            : typeof body.location_area === 'string'
+              ? body.location_area.trim() || null
+              : null,
         latitude:
-          body.latitude != null && Number.isFinite(body.latitude) ? String(body.latitude) : null,
+          body.latitude != null && Number.isFinite(Number(body.latitude))
+            ? String(body.latitude)
+            : null,
         longitude:
-          body.longitude != null && Number.isFinite(body.longitude) ? String(body.longitude) : null,
-      })
+          body.longitude != null && Number.isFinite(Number(body.longitude))
+            ? String(body.longitude)
+            : null,
+      } as typeof vehicles.$inferInsert)
       .returning()
     await db
       .update(dealers)
-      .set({ vehiclesCount: dealer.vehiclesCount + 1 })
+      .set({ vehiclesCount: sql`${dealers.vehiclesCount} + 1` })
       .where(eq(dealers.id, dealer.id))
     res.status(201).json(mapVehicle(row))
   })
@@ -248,10 +272,19 @@ dealerRouter.patch(
     if (u.transmission !== undefined) patch.transmission = u.transmission
     if (u.fuelType !== undefined) patch.fuelType = u.fuelType
     if (u.seats !== undefined) patch.seats = u.seats
-    if (u.imageUrl !== undefined || u.imageUrls !== undefined || u.image_urls !== undefined) {
+    if (u.imageUrls !== undefined || u.image_urls !== undefined) {
       const normalized = normalizeVehicleImages(u as Record<string, unknown>)
       patch.imageUrl = normalized.imageUrl
       patch.imageUrls = normalized.imageUrls
+    } else if (u.imageUrl !== undefined || u.image_url !== undefined) {
+      // Cover-only edit. normalizeVehicleImages would collapse imageUrls to just
+      // this one URL, silently deleting the rest of the gallery.
+      patch.imageUrl =
+        typeof u.imageUrl === 'string'
+          ? u.imageUrl
+          : typeof u.image_url === 'string'
+            ? u.image_url
+            : null
     }
     if (u.description !== undefined) patch.description = u.description?.trim() || null
     if (u.color !== undefined) patch.color = u.color
@@ -276,6 +309,10 @@ dealerRouter.patch(
       patch.longitude =
         u.longitude != null && Number.isFinite(Number(u.longitude)) ? String(u.longitude) : null
     }
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: 'No fields to update' })
+      return
+    }
     const [row] = await db
       .update(vehicles)
       .set(patch as any)
@@ -290,6 +327,9 @@ dealerRouter.patch(
 )
 
 const VEHICLE_STATUSES = ['available', 'rented', 'maintenance', 'inactive'] as const
+
+/** 'rented' is owned by the rental lifecycle, never set directly at creation. */
+const CREATABLE_VEHICLE_STATUSES = ['available', 'maintenance', 'inactive'] as const
 
 /**
  * Guarded vehicle status change: a vehicle with an open rental cannot be made
@@ -325,7 +365,7 @@ async function guardedVehicleStatusChange(params: {
         .where(
           and(
             eq(rentals.vehicleId, vehicle.id),
-            inArray(rentals.status, ['reserved', 'active', 'past_due'])
+            inArray(rentals.status, ['reserved', 'active', 'paused', 'past_due'])
           )
         )
         .limit(1)
@@ -374,7 +414,7 @@ dealerRouter.delete(
         and(
           eq(rentals.vehicleId, req.params.id),
           eq(rentals.dealerId, dealer.id),
-          inArray(rentals.status, ['reserved', 'active', 'past_due'])
+          inArray(rentals.status, ['reserved', 'active', 'paused', 'past_due'])
         )
       )
       .limit(1)
@@ -394,6 +434,25 @@ dealerRouter.delete(
       })
       return
     }
+    const blockers: Array<[string, typeof bookingRequests | typeof maintenanceRecords | typeof rentalReviews]> =
+      [
+        ['booking requests', bookingRequests],
+        ['maintenance records', maintenanceRecords],
+        ['reviews', rentalReviews],
+      ]
+    for (const [label, table] of blockers) {
+      const [row] = await db
+        .select({ id: table.id })
+        .from(table)
+        .where(eq(table.vehicleId, req.params.id))
+        .limit(1)
+      if (row) {
+        res.status(409).json({
+          error: `This vehicle has ${label} and cannot be deleted. Set its status to "inactive" to retire it.`,
+        })
+        return
+      }
+    }
     const deleted = await db
       .delete(vehicles)
       .where(and(eq(vehicles.id, req.params.id), eq(vehicles.dealerId, dealer.id)))
@@ -404,7 +463,7 @@ dealerRouter.delete(
     }
     await db
       .update(dealers)
-      .set({ vehiclesCount: Math.max(0, dealer.vehiclesCount - 1) })
+      .set({ vehiclesCount: sql`GREATEST(${dealers.vehiclesCount} - 1, 0)` })
       .where(eq(dealers.id, dealer.id))
     res.status(204).end()
   })
@@ -479,7 +538,10 @@ dealerRouter.get(
     const { page, pageSize, offset, limit } = parsePagination(req.query as any)
     const status = req.query.status as string | undefined
     const filters = [eq(rentals.dealerId, dealer.id)]
-    if (status && ['reserved', 'active', 'past_due', 'completed', 'cancelled'].includes(status)) {
+    if (
+      status &&
+      ['reserved', 'active', 'paused', 'past_due', 'completed', 'cancelled'].includes(status)
+    ) {
       filters.push(eq(rentals.status, status as any))
     }
     const where = and(...filters)
@@ -923,6 +985,10 @@ dealerRouter.patch(
         u.priority === 'low' || u.priority === 'high' ? u.priority : 'medium'
     }
     if (u.notes !== undefined) patch.notes = u.notes
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: 'No fields to update' })
+      return
+    }
     const [row] = await db
       .update(leads)
       .set(patch as any)
@@ -1090,12 +1156,23 @@ dealerRouter.patch(
     ] as const) {
       if (u[key] !== undefined) patch[key] = u[key]
     }
-    const bankTouched =
-      u.bankAccountName !== undefined || u.bankName !== undefined || u.bankIban !== undefined
-    if (u.bankAccountName !== undefined) patch.bankAccountName = u.bankAccountName?.trim() || null
-    if (u.bankName !== undefined) patch.bankName = u.bankName?.trim() || null
-    if (u.bankIban !== undefined) patch.bankIban = u.bankIban?.trim() || null
-    if (bankTouched) patch.bankDetailsVerifiedAt = null
+    // Compare values, not mere presence: the settings form posts every field on
+    // each save, so keying off `!== undefined` cleared bank verification (and
+    // therefore payouts) whenever a dealer edited an unrelated business detail.
+    const trimmed = (v: unknown) => (typeof v === 'string' ? v.trim() || null : null)
+    const bankChanged =
+      (u.bankAccountName !== undefined &&
+        trimmed(u.bankAccountName) !== (dealer.bankAccountName ?? null)) ||
+      (u.bankName !== undefined && trimmed(u.bankName) !== (dealer.bankName ?? null)) ||
+      (u.bankIban !== undefined && trimmed(u.bankIban) !== (dealer.bankIban ?? null))
+    if (u.bankAccountName !== undefined) patch.bankAccountName = trimmed(u.bankAccountName)
+    if (u.bankName !== undefined) patch.bankName = trimmed(u.bankName)
+    if (u.bankIban !== undefined) patch.bankIban = trimmed(u.bankIban)
+    if (bankChanged) patch.bankDetailsVerifiedAt = null
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: 'No fields to update' })
+      return
+    }
     const [row] = await db
       .update(dealers)
       .set(patch as any)
@@ -1170,12 +1247,32 @@ dealerRouter.post(
       res.status(404).json({ error: 'Vehicle not found' })
       return
     }
+    // An unchecked rentalId would attach this record to another dealer’s rental.
+    let linkedRentalId: string | null = null
+    if (rentalId) {
+      const [rental] = await db
+        .select({ id: rentals.id })
+        .from(rentals)
+        .where(
+          and(
+            eq(rentals.id, rentalId),
+            eq(rentals.dealerId, dealer.id),
+            eq(rentals.vehicleId, vehicleId)
+          )
+        )
+        .limit(1)
+      if (!rental) {
+        res.status(404).json({ error: 'Rental not found for this vehicle' })
+        return
+      }
+      linkedRentalId = rental.id
+    }
     const [row] = await db
       .insert(maintenanceRecords)
       .values({
         vehicleId,
         dealerId: dealer.id,
-        rentalId: rentalId ?? null,
+        rentalId: linkedRentalId,
         title: title.trim(),
         description: description ?? null,
         reportedBy: req.user!.sub,
@@ -1184,7 +1281,13 @@ dealerRouter.post(
         photos: [],
       })
       .returning()
-    await db.update(vehicles).set({ status: 'maintenance' }).where(eq(vehicles.id, vehicleId))
+    // Never overwrite ‘rented’: the rental still holds this vehicle, and
+    // completing it only frees a vehicle still marked rented — so flipping it to
+    // maintenance here would strand the car once the customer returns it.
+    await db
+      .update(vehicles)
+      .set({ status: 'maintenance' })
+      .where(and(eq(vehicles.id, vehicleId), ne(vehicles.status, 'rented')))
     res.status(201).json(mapMaintenanceRecord(row))
   })
 )
@@ -1347,6 +1450,13 @@ dealerRouter.patch(
     const [existing] = await db.select().from(messages).where(eq(messages.id, req.params.id)).limit(1)
     if (!existing || !userOwnsMessage(req.user!.sub, existing)) {
       res.status(404).json({ error: 'Not found' })
+      return
+    }
+
+    if (existing.folder === 'sent') {
+      res.status(409).json({
+        error: 'Sent messages cannot be moved between folders.',
+      })
       return
     }
 

@@ -13,6 +13,7 @@ import {
 import { useState, useCallback, memo, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Header } from '../components/Header'
+import { SecuritySection } from '../components/SecuritySection'
 import { Sidebar } from '../components/Sidebar'
 import { getCurrentUser } from '../services/authService'
 import { getDealerSettings, listNotifications, updateDealerSettings } from '../services/dealerService'
@@ -166,7 +167,7 @@ export const Settings = memo(function Settings() {
       <Sidebar />
       <Header />
 
-      <div className="settings-content">
+      <div className="settings-content" role="main">
         <div className="page-header">
           <h1 className="page-title">Settings</h1>
           <p className="page-subtitle">Manage your business profile, preferences, and security</p>
@@ -469,14 +470,8 @@ export const Settings = memo(function Settings() {
 
           {activeTab === 'security' && (
             <div className="security-settings-tab">
-              <div className="settings-info-banner">
-                Preferences editing is not available in this release.
-              </div>
               <p>Signed in as {currentUser?.email ?? 'dealer'}.</p>
-              <p>
-                Password management and security settings are available through your account provider (for example,
-                the identity service you used to sign in).
-              </p>
+              <SecuritySection email={currentUser?.email} />
             </div>
           )}
 

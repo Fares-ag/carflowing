@@ -11,6 +11,10 @@ export const CRITICAL_UNIQUE_INDEXES = [
     purpose: 'at most one open rental per vehicle',
   },
   {
+    name: 'booking_requests_pending_vehicle_idx',
+    purpose: 'at most one pending booking request per vehicle',
+  },
+  {
     name: 'payments_pending_booking_idx',
     purpose: 'at most one pending payment per booking request',
   },

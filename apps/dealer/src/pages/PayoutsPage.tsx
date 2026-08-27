@@ -48,7 +48,7 @@ export function PayoutsPage() {
     <div className="dealer-payouts-page">
       <Sidebar />
       <Header />
-      <div className="dealer-payouts-content">
+      <div className="dealer-payouts-content" role="main">
         <div className="page-header">
           <div>
             <h1 className="page-title">Payouts & Earnings</h1>

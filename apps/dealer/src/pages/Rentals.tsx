@@ -256,11 +256,12 @@ export function Rentals() {
 
   const submitExtend = () => {
     if (!extendRentalRow || extendSubmitting || !extendPreview) return
+    const preview = extendPreview
     setExtendSubmitting(true)
     extendRental(extendRentalRow.id, extendMonths)
       .then(() => {
         toast.success(
-          `Subscription extended — new end date ${formatDateOrDash(extendPreview.newEndDate)}.`
+          `Subscription extended — new end date ${formatDateOrDash(preview.newEndDate)}.`
         )
         const extendedId = extendRentalRow.id
         setExtendRentalRow(null)
@@ -440,7 +441,7 @@ export function Rentals() {
     <div className="dashboard-page">
       <Sidebar />
       <Header />
-      <div className="rentalsPage">
+      <div className="rentalsPage" role="main">
         <div className="rnPageHeader">
           <h1 className="rnPageTitle">Rentals</h1>
           <p className="rnPageSubtitle">

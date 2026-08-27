@@ -63,11 +63,19 @@ function dispatchUnauthorized(path: string) {
 }
 
 async function parseErrorResponse(response: Response): Promise<never> {
+  // Read the body exactly once. Calling response.json() and then falling back to
+  // response.text() throws "body stream already read", which escapes as a raw
+  // TypeError — no ApiError, so callers never see the real status (notably 401,
+  // which drives the session-expiry redirect). Non-JSON error bodies are normal
+  // in production: rate-limit 429s, proxy 502/504 pages, and framework 404s.
   let errorPayload: unknown = null
-  try {
-    errorPayload = await response.json()
-  } catch {
-    errorPayload = await response.text()
+  const raw = await response.text().catch(() => '')
+  if (raw) {
+    try {
+      errorPayload = JSON.parse(raw)
+    } catch {
+      errorPayload = raw
+    }
   }
   const message =
     typeof errorPayload === 'object' &&
@@ -97,7 +105,12 @@ async function authorizedFetch(path: string, options: ApiRequestOptions = {}): P
 
   let response = await doFetch()
 
-  if (response.status === 401 && !path.startsWith('/auth/')) {
+  // /auth/* endpoints answer 401 as a real verdict (bad credentials, dead
+  // refresh cookie) and must not recurse through the refresh path. /auth/me is
+  // the exception: it is the session-restore probe, so a 401 there just means
+  // the 15-minute access token aged out while the refresh cookie is still good.
+  const skipRefresh = path.startsWith('/auth/') && !path.startsWith('/auth/me')
+  if (response.status === 401 && !skipRefresh) {
     const refreshed = await tryRefresh()
     if (refreshed) {
       response = await doFetch()

@@ -8,8 +8,9 @@ import { bookingRequests, invoices, payments, rentals, vehicles } from '../../db
 import { generateDueInvoices, markOverdueInvoices } from '../../services/billing.js'
 import { runJobsOnce } from '../../services/scheduler.js'
 import { createSkipCashPayment } from '../../services/skipcash.js'
+import { computeMonthlyAmount } from '../../services/booking.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
-import { nextBoundaryAfter, nextBoundaryOnOrAfter } from '../../utils/dates.js'
+import { addDays, nextBoundaryAfter, nextBoundaryOnOrAfter, todayISO } from '../../utils/dates.js'
 
 vi.mock('../../services/skipcash.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/skipcash.js')>()
@@ -39,10 +40,13 @@ function postWebhook(app: Express, payload: Parameters<typeof signWebhook>[0]) {
     .send(payload)
 }
 
+/**
+ * Billing-timezone relative date. The services compute "today" in the billing
+ * timezone (utils/dates todayISO), so a UTC-based helper disagrees with them
+ * between 21:00 and 24:00 UTC and shifts every derived date by a day.
+ */
 function daysAgo(n: number): string {
-  const d = new Date()
-  d.setUTCDate(d.getUTCDate() - n)
-  return d.toISOString().slice(0, 10)
+  return addDays(todayISO(), -n)
 }
 
 async function bookAndApprove(app: Express, fixtures: Awaited<ReturnType<typeof seedFixtures>>) {
@@ -370,9 +374,104 @@ describe('Re-audit regressions', () => {
 
     const [rental] = await db.select().from(rentals)
     // The paid price wins: 450×30, not 600×30.
-    expect(Number(rental.monthlyAmount)).toBe(450 * 30)
+    expect(Number(rental.monthlyAmount)).toBe(computeMonthlyAmount(450, 2))
     const [invoice] = await db.select().from(invoices).where(eq(invoices.rentalId, rental.id))
-    expect(Number(invoice.amount)).toBe(450 * 30)
+    expect(Number(invoice.amount)).toBe(computeMonthlyAmount(450, 2))
     expect(invoice.status).toBe('paid')
+  })
+
+  it('RA-15: pay-at-shop approval ignores client-tampered promo amounts', async () => {
+    const fixtures = await seedFixtures()
+    const { agent: customerAgent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const created = await customerAgent.post('/api/customer/booking-requests').send({
+      vehicleId: fixtures.vehicles[0].id,
+      note: JSON.stringify({ durationMonths: 3 }),
+    })
+    expect(created.status).toBe(201)
+
+    const tampered = await customerAgent
+      .patch(`/api/customer/booking-requests/${created.body.id}/note`)
+      .send({
+        note: JSON.stringify({
+          durationMonths: 3,
+          promo: { discountAmount: 99999, listMonthlyAmount: 1 },
+        }),
+      })
+    expect(tampered.status).toBe(200)
+    expect(String(tampered.body.note)).not.toContain('99999')
+    expect(String(tampered.body.note)).not.toContain('"listMonthlyAmount"')
+
+    const { agent: dealerAgent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    const approved = await dealerAgent
+      .patch(`/api/dealer/booking-requests/${created.body.id}/status`)
+      .send({ status: 'approved' })
+    expect(approved.status).toBe(200)
+
+    const [rental] = await db.select().from(rentals)
+    expect(Number(rental.monthlyAmount)).toBe(computeMonthlyAmount(450, 3))
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.rentalId, rental.id))
+    expect(Number(invoice.amount)).toBe(computeMonthlyAmount(450, 3))
+  })
+
+  it('RA-16: customer withdraw flags completed payments for refund and fails pending ones', async () => {
+    const fixtures = await seedFixtures()
+    const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const created = await agent
+      .post('/api/customer/booking-requests')
+      .send({ vehicleId: fixtures.vehicles[0].id })
+    await db.insert(payments).values({
+      customerId: fixtures.customer.id,
+      dealerId: fixtures.dealer.dealerId,
+      vehicleId: fixtures.vehicles[0].id,
+      bookingRequestId: created.body.id,
+      amount: '100',
+      status: 'completed',
+      type: 'rental',
+      method: 'card',
+    })
+    await db.insert(payments).values({
+      customerId: fixtures.customer.id,
+      dealerId: fixtures.dealer.dealerId,
+      vehicleId: fixtures.vehicles[0].id,
+      bookingRequestId: created.body.id,
+      amount: '100',
+      status: 'pending',
+      type: 'rental',
+      method: 'card',
+    })
+
+    const withdrawn = await agent
+      .patch(`/api/customer/booking-requests/${created.body.id}/status`)
+      .send({ status: 'declined' })
+    expect(withdrawn.status).toBe(200)
+    expect(withdrawn.body.status).toBe('declined')
+
+    const rows = await db.select().from(payments).where(eq(payments.bookingRequestId, created.body.id))
+    expect(rows.some((p) => p.status === 'completed' && p.needsRefund)).toBe(true)
+    expect(rows.some((p) => p.status === 'failed')).toBe(true)
+  })
+
+  it('RA-17: SkipCash intent strips unvalidated promo objects before persisting the cart', async () => {
+    vi.mocked(createSkipCashPayment).mockResolvedValue({
+      id: 'ext-fake-promo',
+      payUrl: 'https://pay/fake',
+      statusId: 0,
+    })
+    const fixtures = await seedFixtures()
+    const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const intent = await agent.post('/api/payments/skipcash/create-intent').send({
+      vehicleId: fixtures.vehicles[0].id,
+      note: JSON.stringify({
+        durationMonths: 2,
+        promo: { listMonthlyAmount: 1, discountAmount: 9999 },
+      }),
+      contact: { firstName: 'J', lastName: 'D', phone: '+97455512345', email: 'j@test.dev' },
+    })
+    expect(intent.status).toBe(201)
+    const [hold] = await db.select().from(bookingRequests)
+    expect(hold.note ?? '').not.toContain('listMonthlyAmount')
+    expect(hold.note ?? '').not.toContain('9999')
+    const [payment] = await db.select().from(payments).where(eq(payments.id, intent.body.paymentId))
+    expect(Number(payment.amount)).toBe(450 * 30)
   })
 })

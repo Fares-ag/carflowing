@@ -1,3 +1,5 @@
+import { LANGUAGE_TOGGLE_ENABLED } from '../constants/featureFlags'
+
 export type Locale = 'en' | 'ar'
 
 const messages: Record<Locale, Record<string, string>> = {
@@ -137,8 +139,13 @@ const messages: Record<Locale, Record<string, string>> = {
   },
 }
 
-let currentLocale: Locale =
-  (typeof localStorage !== 'undefined' && (localStorage.getItem('carflow:locale') as Locale)) || 'en'
+// With the toggle off the persisted choice is ignored: someone who switched to
+// Arabic before it was hidden would otherwise stay stuck in a half-translated
+// RTL app with no control to switch back. The stored value is left untouched so
+// it returns when the toggle is enabled again.
+let currentLocale: Locale = LANGUAGE_TOGGLE_ENABLED
+  ? (typeof localStorage !== 'undefined' && (localStorage.getItem('carflow:locale') as Locale)) || 'en'
+  : 'en'
 
 const localeListeners = new Set<() => void>()
 

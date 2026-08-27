@@ -12,6 +12,10 @@ vi.mock('../../services/skipcash.js', async (importOriginal) => {
   return { ...actual, createSkipCashPayment: vi.fn() }
 })
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
+import { addDays, todayISO } from '../../utils/dates.js'
+
+/** Inside MAX_START_DATE_DAYS_AHEAD, so the fixture never ages out of the window. */
+const startDateSoon = addDays(todayISO(), 14)
 
 process.env.SKIPCASH_WEBHOOK_KEY = 'test-webhook-key'
 
@@ -83,7 +87,7 @@ describe('SkipCash payments API', () => {
     })
     const fixtures = await seedFixtures()
     const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
-    const note = JSON.stringify({ durationMonths: 2, startDate: '2030-02-01', total: 900 })
+    const note = JSON.stringify({ durationMonths: 2, startDate: startDateSoon, total: 900 })
     const res = await agent.post('/api/payments/skipcash/create-intent').send({
       vehicleId: fixtures.vehicles[0].id,
       note,
@@ -183,7 +187,7 @@ describe('SkipCash payments API', () => {
     })
     const fixtures = await seedFixtures()
     const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
-    const note = JSON.stringify({ durationMonths: 1, startDate: '2030-01-01', total: 450 })
+    const note = JSON.stringify({ durationMonths: 1, startDate: startDateSoon, total: 450 })
     const created = await agent.post('/api/payments/skipcash/create-intent').send({
       vehicleId: fixtures.vehicles[0].id,
       note,
@@ -302,7 +306,7 @@ describe('SkipCash payments API', () => {
     })
     const fixtures = await seedFixtures()
     const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
-    const note = JSON.stringify({ durationMonths: 1, startDate: '2030-01-01', total: 450 })
+    const note = JSON.stringify({ durationMonths: 1, startDate: startDateSoon, total: 450 })
     const created = await agent.post('/api/payments/skipcash/create-intent').send({
       vehicleId: fixtures.vehicles[0].id,
       note,

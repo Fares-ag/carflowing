@@ -1,5 +1,6 @@
-import { and, count, desc, eq } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
 import { Router } from 'express'
+import { securityRouter } from '../auth/securityRouter.js'
 import { db } from '../db/index.js'
 import {
   mapMessage,
@@ -16,12 +17,9 @@ import {
   rentalReviews,
   rentals,
   userPreferences,
-  userSecurity,
   vehicles,
 } from '../db/schema.js'
 import { requireAuth, requireRole, type AuthedRequest } from '../middleware/auth.js'
-import { sendSmsCode } from '../services/mail.js'
-import { getSmsVerificationCapabilities, isSmsVerificationAvailable } from '../services/smsVerification.js'
 import {
   assertBookingContext,
   assertRentalContext,
@@ -36,6 +34,7 @@ import {
 } from '../services/messages.js'
 import { buildContractPdf, buildInvoicePdf } from '../services/pdfDocuments.js'
 import { validatePromoCode } from '../services/promoCodes.js'
+import { getReferralSummary } from '../services/referrals.js'
 import { createRentalReview } from '../services/reviews.js'
 import { extendRentalTerm } from '../services/rentalExtension.js'
 import { pauseRental, resumeRental } from '../services/rentalLifecycle.js'
@@ -43,14 +42,7 @@ import {
   createCustomerMaintenanceRequest,
   listRentalMaintenanceRequests,
 } from '../services/maintenance.js'
-import {
-  generateSmsCode,
-  generateTotpSecret,
-  hashSmsCode,
-  totpUri,
-  verifyTotp,
-} from '../services/totp.js'
-import { asyncHandler, paginated, parsePagination } from '../utils/http.js'
+import { asyncHandler, paginated, parsePagination, attachUuidParamGuard } from '../utils/http.js'
 import { parseBody } from '../validation/parse.js'
 import {
   customerCreateMaintenanceRequestSchema,
@@ -65,6 +57,7 @@ import {
 } from '../validation/schemas.js'
 
 export const customerFeaturesRouter = Router()
+attachUuidParamGuard(customerFeaturesRouter)
 customerFeaturesRouter.use(requireAuth, requireRole('customer'))
 
 customerFeaturesRouter.post(
@@ -207,6 +200,7 @@ customerFeaturesRouter.post(
         expiryMonth: body.expiryMonth,
         expiryYear: body.expiryYear,
         methodType: body.methodType ?? 'card',
+        provider: 'reference',
         isDefault: isFirst,
       })
       .returning()
@@ -405,6 +399,13 @@ customerFeaturesRouter.patch(
       return
     }
 
+    if (existing.folder === 'sent') {
+      res.status(409).json({
+        error: 'Sent messages cannot be moved between folders.',
+      })
+      return
+    }
+
     const [row] = await db
       .update(messages)
       .set({ folder: body.folder as any })
@@ -427,6 +428,7 @@ customerFeaturesRouter.get(
         emailNotifications: true,
         pushNotifications: true,
         smsNotifications: false,
+        whatsappNotifications: false,
         marketingEmails: false,
         locale: 'en',
         theme: 'system',
@@ -442,6 +444,7 @@ customerFeaturesRouter.patch(
       emailNotifications: boolean
       pushNotifications: boolean
       smsNotifications: boolean
+      whatsappNotifications: boolean
       marketingEmails: boolean
       locale: string
       theme: string
@@ -455,6 +458,9 @@ customerFeaturesRouter.patch(
       ...(body.emailNotifications !== undefined ? { emailNotifications: !!body.emailNotifications } : {}),
       ...(body.pushNotifications !== undefined ? { pushNotifications: !!body.pushNotifications } : {}),
       ...(body.smsNotifications !== undefined ? { smsNotifications: !!body.smsNotifications } : {}),
+      ...(body.whatsappNotifications !== undefined
+        ? { whatsappNotifications: !!body.whatsappNotifications }
+        : {}),
       ...(body.marketingEmails !== undefined ? { marketingEmails: !!body.marketingEmails } : {}),
       ...(body.locale !== undefined ? { locale: body.locale === 'ar' ? 'ar' : 'en' } : {}),
       ...(body.theme !== undefined ? { theme: body.theme } : {}),
@@ -471,6 +477,14 @@ customerFeaturesRouter.patch(
           .values({ userId: req.user!.sub, ...patch })
           .returning()
     res.json(row)
+  })
+)
+
+customerFeaturesRouter.get(
+  '/referrals',
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const summary = await getReferralSummary(req.user!.sub)
+    res.json(summary)
   })
 )
 
@@ -534,164 +548,10 @@ customerFeaturesRouter.get(
   })
 )
 
-customerFeaturesRouter.get(
-  '/security',
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const [row] = await db
-      .select()
-      .from(userSecurity)
-      .where(eq(userSecurity.userId, req.user!.sub))
-      .limit(1)
-    res.json({
-      totpEnabled: row?.totpEnabled ?? false,
-      smsVerified: !!row?.smsVerifiedAt,
-      smsPhone: row?.smsPhone ? row.smsPhone.replace(/(\+\d{2,3})\d+(\d{3})$/, '$1****$2') : null,
-      ...getSmsVerificationCapabilities(),
-    })
-  })
-)
-
-customerFeaturesRouter.post(
-  '/security/2fa/setup',
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const [user] = await db.select().from(profiles).where(eq(profiles.id, req.user!.sub)).limit(1)
-    const secret = generateTotpSecret()
-    const [row] = await db
-      .insert(userSecurity)
-      .values({ userId: req.user!.sub, totpSecret: secret, totpEnabled: false })
-      .onConflictDoUpdate({
-        target: userSecurity.userId,
-        set: { totpSecret: secret, totpEnabled: false, updatedAt: new Date() },
-      })
-      .returning()
-    res.json({
-      secret: row.totpSecret,
-      uri: totpUri(row.totpSecret!, user!.email),
-    })
-  })
-)
-
-customerFeaturesRouter.post(
-  '/security/2fa/enable',
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const { code } = req.body as { code?: string }
-    const [row] = await db
-      .select()
-      .from(userSecurity)
-      .where(eq(userSecurity.userId, req.user!.sub))
-      .limit(1)
-    if (!row?.totpSecret) {
-      res.status(400).json({ error: 'Run 2FA setup first' })
-      return
-    }
-    if (!verifyTotp(row.totpSecret, String(code ?? ''))) {
-      res.status(400).json({ error: 'Invalid authentication code' })
-      return
-    }
-    await db
-      .update(userSecurity)
-      .set({ totpEnabled: true, updatedAt: new Date() })
-      .where(eq(userSecurity.userId, req.user!.sub))
-    res.json({ ok: true })
-  })
-)
-
-customerFeaturesRouter.post(
-  '/security/2fa/disable',
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const { code } = req.body as { code?: string }
-    const [row] = await db
-      .select()
-      .from(userSecurity)
-      .where(eq(userSecurity.userId, req.user!.sub))
-      .limit(1)
-    if (!row?.totpEnabled || !row.totpSecret) {
-      res.status(400).json({ error: '2FA is not enabled' })
-      return
-    }
-    if (!verifyTotp(row.totpSecret, String(code ?? ''))) {
-      res.status(400).json({ error: 'Invalid authentication code' })
-      return
-    }
-    await db
-      .update(userSecurity)
-      .set({ totpEnabled: false, totpSecret: null, updatedAt: new Date() })
-      .where(eq(userSecurity.userId, req.user!.sub))
-    res.json({ ok: true })
-  })
-)
-
-customerFeaturesRouter.post(
-  '/security/sms/send',
-  asyncHandler(async (req: AuthedRequest, res) => {
-    if (!isSmsVerificationAvailable()) {
-      res.status(503).json({ error: 'SMS verification is not available in this environment' })
-      return
-    }
-    const { phone } = req.body as { phone?: string }
-    const normalized = String(phone ?? '').trim()
-    if (normalized.length < 8) {
-      res.status(400).json({ error: 'Valid phone number required' })
-      return
-    }
-    const code = generateSmsCode()
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
-    await db
-      .insert(userSecurity)
-      .values({
-        userId: req.user!.sub,
-        smsPhone: normalized,
-        smsCodeHash: hashSmsCode(code),
-        smsCodeExpiresAt: expiresAt,
-      })
-      .onConflictDoUpdate({
-        target: userSecurity.userId,
-        set: {
-          smsPhone: normalized,
-          smsCodeHash: hashSmsCode(code),
-          smsCodeExpiresAt: expiresAt,
-          smsVerifiedAt: null,
-          updatedAt: new Date(),
-        },
-      })
-    await sendSmsCode(normalized, code)
-    res.json({ ok: true })
-  })
-)
-
-customerFeaturesRouter.post(
-  '/security/sms/verify',
-  asyncHandler(async (req: AuthedRequest, res) => {
-    if (!isSmsVerificationAvailable()) {
-      res.status(503).json({ error: 'SMS verification is not available in this environment' })
-      return
-    }
-    const { code } = req.body as { code?: string }
-    const [row] = await db
-      .select()
-      .from(userSecurity)
-      .where(eq(userSecurity.userId, req.user!.sub))
-      .limit(1)
-    if (!row?.smsCodeHash || !row.smsCodeExpiresAt || row.smsCodeExpiresAt < new Date()) {
-      res.status(400).json({ error: 'SMS code expired. Request a new one.' })
-      return
-    }
-    if (row.smsCodeHash !== hashSmsCode(String(code ?? ''))) {
-      res.status(400).json({ error: 'Invalid SMS code' })
-      return
-    }
-    await db
-      .update(userSecurity)
-      .set({
-        smsVerifiedAt: new Date(),
-        smsCodeHash: null,
-        smsCodeExpiresAt: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(userSecurity.userId, req.user!.sub))
-    if (row.smsPhone) {
-      await db.update(profiles).set({ phone: row.smsPhone }).where(eq(profiles.id, req.user!.sub))
-    }
-    res.json({ ok: true })
-  })
-)
+/**
+ * TOTP + SMS verification. The handlers live in a shared, role-agnostic router
+ * (src/auth/securityRouter.ts) that is also mounted at /api/auth/security so
+ * staff and dealers can enrol; these customer paths are kept so the customer
+ * app and its tests are unaffected.
+ */
+customerFeaturesRouter.use('/security', securityRouter)

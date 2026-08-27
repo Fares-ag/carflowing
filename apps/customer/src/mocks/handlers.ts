@@ -1,17 +1,25 @@
 import type {
+  BillingCapabilities,
   BookingRequest,
   BookingRequestStatus,
   Invoice,
+  Message,
   PaymentMethod,
   Rental,
   RentalEvent,
   RentalStatus,
   Subscription,
   SwapRequest,
+  VehicleReview,
 } from '@carflow/shared'
 import { createId, getDb, paginate, updateDb, withLatency } from '@carflow/shared'
 import { http, HttpResponse } from 'msw'
-import type { CustomerDashboardData } from '../services/customerService'
+import type {
+  CustomerDashboardData,
+  CustomerMessage,
+  MaintenanceRequest,
+  MessageThreadSummary,
+} from '../services/customerService'
 
 const parseListParams = (request: Request) => {
   const url = new URL(request.url)
@@ -22,6 +30,10 @@ const parseListParams = (request: Request) => {
 
 const CANCEL_NOTICE_DAYS = 30
 const SWAP_ELIGIBLE_DAYS = 30
+/** Mirrors the MAX_PAUSE_DAYS business setting the real API validates against. */
+const MAX_PAUSE_DAYS = 90
+/** Mock deposit so the checkout deposit line renders; production defaults to 0. */
+const SUBSCRIPTION_DEPOSIT_AMOUNT = 1000
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10)
 
@@ -33,6 +45,165 @@ const addDays = (base: Date | string, days: number) => {
 
 /** Mock-only swap request store (the real API persists these server-side). */
 let mockSwapRequests: SwapRequest[] = []
+
+/** Mock-only maintenance request store (the real API persists these server-side). */
+let mockMaintenanceRequests: MaintenanceRequest[] = []
+
+/** The signed-in customer, resolved the same way `/api/auth/me` does. */
+const currentCustomerId = (): string => {
+  const db = getDb()
+  return (db.users.find((u) => u.role === 'customer') ?? db.users[0]).id
+}
+
+/**
+ * Thread subjects carry a `[cf:rental:<id>]` tag so replies group by rental.
+ * The API pins the id to a UUID; mock ids are `rental_1`-style, so this is the
+ * same tag with a looser id pattern.
+ */
+const THREAD_TAG_RE = /^\[cf:(rental|booking):([\w-]+)\]/i
+
+const displaySubject = (subject: string) => subject.replace(THREAD_TAG_RE, '').trim() || subject
+
+/** Newest first, matching the API's `order by created_at desc`. */
+const byNewestFirst = (a: { createdAt: string }, b: { createdAt: string }) =>
+  new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+
+/**
+ * One entry per thread, newest message first — mirrors `listMessageThreads` in
+ * apps/backend/src/services/messages.ts.
+ */
+const buildMessageThreads = (userId: string): MessageThreadSummary[] => {
+  const db = getDb()
+  const visible = db.messages
+    .filter(
+      (m) =>
+        (m.fromUserId === userId && m.folder === 'sent') ||
+        (m.toUserId === userId && m.folder === 'inbox')
+    )
+    .sort(byNewestFirst)
+
+  const threads = new Map<string, MessageThreadSummary>()
+  for (const message of visible) {
+    if (threads.has(message.subject)) continue
+    const counterpartId = message.fromUserId === userId ? message.toUserId : message.fromUserId
+    const counterpart = db.users.find((u) => u.id === counterpartId)
+    const sender = db.users.find((u) => u.id === message.fromUserId)
+    threads.set(message.subject, {
+      threadSubject: message.subject,
+      displaySubject: displaySubject(message.subject),
+      lastMessage: { ...message, fromName: sender?.name, fromEmail: sender?.email },
+      unreadCount: db.messages.filter(
+        (m) =>
+          m.subject === message.subject &&
+          m.toUserId === userId &&
+          m.folder === 'inbox' &&
+          !m.read
+      ).length,
+      participantName: counterpart?.name,
+      participantEmail: counterpart?.email,
+    })
+  }
+  return Array.from(threads.values())
+}
+
+/** Oldest first, the order the thread view renders. */
+const buildThreadMessages = (userId: string, threadSubject: string): CustomerMessage[] => {
+  const db = getDb()
+  return db.messages
+    .filter(
+      (m) =>
+        m.subject === threadSubject && (m.fromUserId === userId || m.toUserId === userId)
+    )
+    .sort((a, b) => byNewestFirst(b, a))
+    .map((message) => {
+      const sender = db.users.find((u) => u.id === message.fromUserId)
+      return { ...message, fromName: sender?.name, fromEmail: sender?.email }
+    })
+}
+
+/**
+ * Seeded vehicle reviews. Shaped like `listVehicleReviews` in
+ * apps/backend/src/services/reviews.ts: first name only on public surfaces,
+ * optional dealer response.
+ */
+const mockVehicleReviews = (vehicleId: string): VehicleReview[] => {
+  const vehicle = getDb().vehicles.find((v) => v.id === vehicleId)
+  if (!vehicle) return []
+  return [
+    {
+      id: `rev_${vehicleId}_1`,
+      rentalId: 'rental_1',
+      vehicleId,
+      dealerId: vehicle.dealerId,
+      rating: 5,
+      comment: 'Delivered to my building in West Bay, spotless and on time.',
+      createdAt: '2026-01-18T09:30:00.000Z',
+      customerName: 'Chris',
+      dealerResponse: 'Thank you — see you at the next service.',
+      dealerRespondedAt: '2026-01-19T07:00:00.000Z',
+    },
+    {
+      id: `rev_${vehicleId}_2`,
+      rentalId: 'rental_2',
+      vehicleId,
+      dealerId: vehicle.dealerId,
+      rating: 4,
+      comment: 'Great car; the service booking took a couple of days.',
+      createdAt: '2026-01-04T16:45:00.000Z',
+      customerName: 'Noor',
+    },
+  ]
+}
+
+/** Same one-decimal rounding as `roundRating` in the reviews service. */
+const roundRating = (value: number) => Math.round(value * 10) / 10
+
+/**
+ * Mock settlement for an online invoice payment: the invoice flips to paid and
+ * a past_due subscription recovers (the real API does this from the SkipCash
+ * webhook, which mock mode has no gateway to deliver).
+ */
+const settleInvoiceInMock = (
+  invoiceId: string
+): { status: number; body: { paymentId: string; payUrl: string } | { error: string } } => {
+  const db = getDb()
+  const invoice = db.invoices.find((inv) => inv.id === invoiceId && inv.ownerType === 'customer')
+  if (!invoice) return { status: 404, body: { error: 'Invoice not found' } }
+  if (invoice.status !== 'due' && invoice.status !== 'overdue') {
+    return { status: 409, body: { error: `Invoice is ${invoice.status}; nothing to pay` } }
+  }
+  const paymentId = createId('pay')
+  updateDb((current) => ({
+    ...current,
+    invoices: current.invoices.map((inv) =>
+      inv.id === invoiceId ? { ...inv, status: 'paid' as const } : inv
+    ),
+    rentals: current.rentals.map((r) =>
+      r.id === invoice.rentalId && r.status === 'past_due'
+        ? { ...r, status: 'active' as const }
+        : r
+    ),
+    payments: [
+      {
+        id: paymentId,
+        customerId: invoice.ownerId,
+        rentalId: invoice.rentalId,
+        invoiceId,
+        amount: invoice.amount,
+        status: 'completed' as const,
+        type: 'subscription' as const,
+        method: 'card' as const,
+        provider: 'skipcash',
+        createdAt: new Date().toISOString(),
+      },
+      ...current.payments,
+    ],
+  }))
+  return {
+    status: 200,
+    body: { paymentId, payUrl: `/payment-status?paymentId=${paymentId}&mock=1` },
+  }
+}
 
 const mockSwapEligibleFrom = (rental: Rental): string | null => {
   const anchor = rental.activatedAt ?? (rental.status !== 'reserved' ? rental.startDate : null)
@@ -215,6 +386,11 @@ export const handlers = [
   http.get('/api/customer/dashboard', async () =>
     HttpResponse.json(await withLatency(buildCustomerDashboard()))
   ),
+  http.get('/api/customer/pricing-settings', async () =>
+    HttpResponse.json(
+      await withLatency({ subscriptionDepositAmount: SUBSCRIPTION_DEPOSIT_AMOUNT })
+    )
+  ),
   http.get('/api/customer/vehicles', async ({ request }) => {
     const { page, pageSize } = parseListParams(request)
     const db = getDb()
@@ -235,6 +411,24 @@ export const handlers = [
     )
     if (pending) return HttpResponse.json({ error: 'Not found' }, { status: 404 })
     return HttpResponse.json(await withLatency(vehicle))
+  }),
+  http.get('/api/customer/vehicles/:vehicleId/reviews', async ({ params, request }) => {
+    const { page, pageSize } = parseListParams(request)
+    const reviews = mockVehicleReviews(String(params.vehicleId))
+    const paged = paginate(reviews, page, pageSize)
+    const averageRating = reviews.length
+      ? roundRating(reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length)
+      : 0
+    return HttpResponse.json(
+      await withLatency({
+        averageRating,
+        reviewCount: reviews.length,
+        items: paged.items,
+        page: paged.page,
+        pageSize: paged.pageSize,
+        total: paged.total,
+      })
+    )
   }),
   http.get('/api/customer/rentals', async ({ request }) => {
     const { page, pageSize } = parseListParams(request)
@@ -401,6 +595,143 @@ export const handlers = [
     const payload = (await request.json().catch(() => ({}))) as { reason?: string } | null
     const result = cancelRentalInMock(String(params.id), payload?.reason)
     return HttpResponse.json(await withLatency(result.body), { status: result.status })
+  }),
+  /**
+   * Travel hold. Mirrors `pauseRental` in the lifecycle service: only an active
+   * subscription with no overdue invoice and no scheduled cancellation can be
+   * paused, for at most MAX_PAUSE_DAYS.
+   */
+  http.post('/api/customer/rentals/:rentalId/pause', async ({ params, request }) => {
+    const id = String(params.rentalId)
+    const payload = (await request.json().catch(() => ({}))) as
+      | { days?: number; reason?: string }
+      | null
+    const rental = getDb().rentals.find((r) => r.id === id)
+    if (!rental) return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    if (rental.status === 'past_due') {
+      return HttpResponse.json(
+        {
+          error:
+            'Cannot pause a subscription with overdue payments. Pay outstanding invoices first.',
+        },
+        { status: 409 }
+      )
+    }
+    if (rental.status !== 'active') {
+      return HttpResponse.json(
+        { error: `Cannot pause a rental in status "${rental.status}"` },
+        { status: 409 }
+      )
+    }
+    if (rental.cancellationEffectiveDate) {
+      return HttpResponse.json(
+        { error: 'Cannot pause a subscription that is pending cancellation' },
+        { status: 409 }
+      )
+    }
+    const days = payload?.days ?? MAX_PAUSE_DAYS
+    if (!Number.isFinite(days) || days < 1 || days > MAX_PAUSE_DAYS) {
+      return HttpResponse.json(
+        { error: `Pause duration must be between 1 and ${MAX_PAUSE_DAYS} days` },
+        { status: 400 }
+      )
+    }
+    const now = new Date()
+    const updated: Rental = {
+      ...rental,
+      status: 'paused',
+      pausedAt: now.toISOString(),
+      pausedUntil: isoDate(addDays(now, days)),
+      pauseReason: payload?.reason?.trim() || undefined,
+    }
+    updateDb((current) => ({
+      ...current,
+      rentals: current.rentals.map((r) => (r.id === id ? updated : r)),
+    }))
+    return HttpResponse.json(await withLatency(updated))
+  }),
+  /** Unpause and push the billing/return dates out by the days spent on hold. */
+  http.post('/api/customer/rentals/:rentalId/resume', async ({ params }) => {
+    const id = String(params.rentalId)
+    const rental = getDb().rentals.find((r) => r.id === id)
+    if (!rental) return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    if (rental.status !== 'paused') {
+      return HttpResponse.json(
+        { error: `Cannot resume a rental in status "${rental.status}"` },
+        { status: 409 }
+      )
+    }
+    if (!rental.pausedAt) {
+      return HttpResponse.json({ error: 'This rental is not paused' }, { status: 409 })
+    }
+    const pausedDays = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(rental.pausedAt).getTime()) / 86_400_000)
+    )
+    const updated: Rental = {
+      ...rental,
+      status: 'active',
+      pausedAt: undefined,
+      pausedUntil: undefined,
+      pauseReason: undefined,
+      nextBillingDate:
+        rental.nextBillingDate && pausedDays > 0
+          ? isoDate(addDays(rental.nextBillingDate, pausedDays))
+          : rental.nextBillingDate,
+      endDate: pausedDays > 0 ? isoDate(addDays(rental.endDate, pausedDays)) : rental.endDate,
+    }
+    updateDb((current) => ({
+      ...current,
+      rentals: current.rentals.map((r) => (r.id === id ? updated : r)),
+    }))
+    return HttpResponse.json(await withLatency(updated))
+  }),
+  http.get('/api/customer/rentals/:rentalId/maintenance-requests', async ({ params }) => {
+    const id = String(params.rentalId)
+    const rental = getDb().rentals.find((r) => r.id === id)
+    if (!rental) return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    return HttpResponse.json(
+      await withLatency({
+        items: mockMaintenanceRequests.filter((m) => m.rentalId === id).sort(byNewestFirst),
+      })
+    )
+  }),
+  http.post('/api/customer/rentals/:rentalId/maintenance-requests', async ({ params, request }) => {
+    const id = String(params.rentalId)
+    const payload = (await request.json()) as {
+      description?: string
+      title?: string
+      photos?: string[]
+    }
+    const rental = getDb().rentals.find((r) => r.id === id)
+    if (!rental) return HttpResponse.json({ error: 'Rental not found' }, { status: 404 })
+    // Same statuses the API accepts (services/maintenance.ts ACTIVE_RENTAL_STATUSES).
+    if (!['reserved', 'active', 'past_due'].includes(rental.status)) {
+      return HttpResponse.json(
+        { error: 'Maintenance requests are only allowed for active subscriptions' },
+        { status: 409 }
+      )
+    }
+    if (!payload.description?.trim()) {
+      return HttpResponse.json({ error: 'description is required' }, { status: 400 })
+    }
+    const created: MaintenanceRequest = {
+      id: createId('mnt'),
+      vehicleId: rental.vehicleId,
+      dealerId: rental.dealerId,
+      rentalId: rental.id,
+      status: 'requested',
+      title: payload.title?.trim() || 'Service request',
+      description: payload.description.trim(),
+      reportedBy: rental.customerId,
+      photos: payload.photos ?? [],
+      scheduledAt: null,
+      source: 'customer',
+      completedAt: null,
+      createdAt: new Date().toISOString(),
+    }
+    mockMaintenanceRequests = [created, ...mockMaintenanceRequests]
+    return HttpResponse.json(await withLatency(created), { status: 201 })
   }),
   http.get('/api/customer/rentals/:id/subscription', async ({ params }) => {
     const id = String(params.id)
@@ -585,46 +916,82 @@ export const handlers = [
   http.post('/api/payments/skipcash/invoice-intent', async ({ request }) => {
     const { invoiceId } = (await request.json()) as { invoiceId?: string }
     if (!invoiceId) return HttpResponse.json({ error: 'invoiceId required' }, { status: 400 })
-    const db = getDb()
-    const invoice = db.invoices.find(
-      (inv) => inv.id === invoiceId && inv.ownerType === 'customer'
-    )
-    if (!invoice) return HttpResponse.json({ error: 'Invoice not found' }, { status: 404 })
-    if (invoice.status !== 'due' && invoice.status !== 'overdue') {
-      return HttpResponse.json(
-        { error: `Invoice is ${invoice.status}; nothing to pay` },
-        { status: 409 }
-      )
+    const result = settleInvoiceInMock(invoiceId)
+    return HttpResponse.json(await withLatency(result.body), { status: result.status })
+  }),
+
+  /**
+   * Saved-card invoice payment. The real API only charges a stored SkipCash
+   * token once the charge stub is wired; until then it reports the attempt and
+   * falls back to hosted checkout, which is what this mirrors (and what
+   * `/customer/billing-capabilities` advertises below).
+   */
+  http.post('/api/payments/skipcash/invoice-intent-saved-card', async ({ request }) => {
+    const { invoiceId, paymentMethodId } = (await request.json()) as {
+      invoiceId?: string
+      paymentMethodId?: string
     }
-    const paymentId = createId('pay')
+    if (!invoiceId || !paymentMethodId) {
+      return HttpResponse.json({ error: 'invoiceId and paymentMethodId required' }, { status: 400 })
+    }
+    if (!getDb().paymentMethods.some((pm) => pm.id === paymentMethodId)) {
+      return HttpResponse.json({ error: 'Payment method not found' }, { status: 404 })
+    }
+    const result = settleInvoiceInMock(invoiceId)
+    if (result.status >= 400) {
+      return HttpResponse.json(await withLatency(result.body), { status: result.status })
+    }
+    return HttpResponse.json(
+      await withLatency({
+        ...result.body,
+        savedCardAttempted: true,
+        savedCardUsed: false,
+        message:
+          'Saved-card charge is not wired yet — redirecting to SkipCash hosted checkout (standard flow).',
+      }),
+      { status: 201 }
+    )
+  }),
+
+  /**
+   * Retry a failed or timed-out attempt. Mirrors the API: completed/refunded
+   * payments cannot be retried, a stale `pending` row is abandoned, and the
+   * caller gets a fresh intent.
+   */
+  http.post('/api/payments/skipcash/retry/:paymentId', async ({ params }) => {
+    const paymentId = String(params.paymentId)
+    const original = getDb().payments.find((p) => p.id === paymentId)
+    if (!original) return HttpResponse.json({ error: 'Payment not found' }, { status: 404 })
+    if (original.status === 'completed') {
+      return HttpResponse.json({ error: 'This payment has already completed' }, { status: 409 })
+    }
+    if (original.status === 'refunded') {
+      return HttpResponse.json({ error: 'This payment was refunded' }, { status: 409 })
+    }
+    if (original.type === 'subscription' && original.invoiceId) {
+      const result = settleInvoiceInMock(original.invoiceId)
+      return HttpResponse.json(await withLatency(result.body), {
+        status: result.status >= 400 ? result.status : 201,
+      })
+    }
+    const retryId = createId('pay')
     updateDb((current) => ({
       ...current,
-      invoices: current.invoices.map((inv) =>
-        inv.id === invoiceId ? { ...inv, status: 'paid' as const } : inv
-      ),
-      rentals: current.rentals.map((r) =>
-        r.id === invoice.rentalId && r.status === 'past_due'
-          ? { ...r, status: 'active' as const }
-          : r
-      ),
       payments: [
         {
-          id: paymentId,
-          customerId: invoice.ownerId,
-          rentalId: invoice.rentalId,
-          invoiceId,
-          amount: invoice.amount,
+          ...original,
+          id: retryId,
           status: 'completed' as const,
-          type: 'subscription' as const,
-          method: 'card' as const,
-          provider: 'skipcash',
           createdAt: new Date().toISOString(),
         },
-        ...current.payments,
+        ...current.payments.map((p) =>
+          p.id === paymentId && p.status === 'pending' ? { ...p, status: 'failed' as const } : p
+        ),
       ],
     }))
     return HttpResponse.json(
-      await withLatency({ paymentId, payUrl: `/payment-status?paymentId=${paymentId}&mock=1` })
+      await withLatency({ paymentId: retryId, payUrl: `/payment-status?paymentId=${retryId}&mock=1` }),
+      { status: 201 }
     )
   }),
 
@@ -667,12 +1034,145 @@ export const handlers = [
       { status: 201 }
     )
   ),
-  http.get('/api/customer/messages', async () => HttpResponse.json(await withLatency([]))),
-  http.get('/api/customer/messages/unread-count', async () =>
-    HttpResponse.json(await withLatency({ count: 0 }))
+  http.get('/api/customer/messages', async ({ request }) => {
+    const { page, pageSize } = parseListParams(request)
+    const url = new URL(request.url)
+    const folder = url.searchParams.get('folder') ?? 'inbox'
+    const db = getDb()
+    const userId = currentCustomerId()
+    const items: CustomerMessage[] = db.messages
+      .filter(
+        (m) =>
+          m.folder === folder && (folder === 'sent' ? m.fromUserId === userId : m.toUserId === userId)
+      )
+      .sort(byNewestFirst)
+      .map((message) => {
+        const sender = db.users.find((u) => u.id === message.fromUserId)
+        return { ...message, fromName: sender?.name, fromEmail: sender?.email }
+      })
+    return HttpResponse.json(await withLatency(paginate(items, page, pageSize)))
+  }),
+  http.get('/api/customer/messages/unread-count', async () => {
+    const userId = currentCustomerId()
+    const count = getDb().messages.filter(
+      (m) => m.toUserId === userId && m.folder === 'inbox' && !m.read
+    ).length
+    return HttpResponse.json(await withLatency({ count }))
+  }),
+  http.get('/api/customer/messages/threads', async () =>
+    HttpResponse.json(await withLatency(buildMessageThreads(currentCustomerId())))
+  ),
+  http.get('/api/customer/messages/thread', async ({ request }) => {
+    const subject = new URL(request.url).searchParams.get('subject')?.trim()
+    if (!subject) {
+      return HttpResponse.json(
+        { error: 'subject query parameter is required' },
+        { status: 400 }
+      )
+    }
+    return HttpResponse.json(
+      await withLatency(buildThreadMessages(currentCustomerId(), subject))
+    )
+  }),
+  /**
+   * Compose/reply. Like the API, the thread subject is derived server-side (a
+   * reply keeps the original subject, a rental-scoped message gets the
+   * `[cf:rental:<id>]` tag) and both a `sent` and an `inbox` copy are stored.
+   */
+  http.post('/api/customer/messages', async ({ request }) => {
+    const payload = (await request.json()) as {
+      toUserId?: string
+      body?: string
+      subject?: string
+      rentalId?: string
+      bookingRequestId?: string
+      replyToMessageId?: string
+    }
+    const db = getDb()
+    if (!payload.toUserId || !payload.body?.trim()) {
+      return HttpResponse.json({ error: 'toUserId and body are required' }, { status: 400 })
+    }
+    if (!db.users.some((u) => u.id === payload.toUserId)) {
+      return HttpResponse.json({ error: 'Dealer not found' }, { status: 404 })
+    }
+    const original = payload.replyToMessageId
+      ? db.messages.find((m) => m.id === payload.replyToMessageId)
+      : undefined
+    const subject = original
+      ? original.subject
+      : payload.rentalId
+        ? `[cf:rental:${payload.rentalId}] ${payload.subject?.trim() || 'Rental conversation'}`
+        : payload.bookingRequestId
+          ? `[cf:booking:${payload.bookingRequestId}] ${payload.subject?.trim() || 'Booking conversation'}`
+          : payload.subject?.trim()
+    if (!subject) {
+      return HttpResponse.json({ error: 'Could not resolve thread subject' }, { status: 400 })
+    }
+    const userId = currentCustomerId()
+    const createdAt = new Date().toISOString()
+    const sent: Message = {
+      id: createId('msg'),
+      fromUserId: userId,
+      toUserId: payload.toUserId,
+      subject,
+      body: payload.body.trim(),
+      read: true,
+      folder: 'sent',
+      createdAt,
+    }
+    const delivered: Message = { ...sent, id: createId('msg'), read: false, folder: 'inbox' }
+    updateDb((current) => ({ ...current, messages: [sent, delivered, ...current.messages] }))
+    return HttpResponse.json(await withLatency(sent), { status: 201 })
+  }),
+  /**
+   * Append-only consent log. The API records IP and user agent server-side and
+   * answers with no body of its own, so the client only sees the status.
+   */
+  http.post('/api/customer/consents', async ({ request }) => {
+    const { consents } = (await request.json()) as {
+      consents?: Array<{ documentKind?: string; documentVersion?: string }>
+    }
+    if (!Array.isArray(consents) || consents.length === 0) {
+      return HttpResponse.json({ error: 'consents is required' }, { status: 400 })
+    }
+    if (consents.some((c) => !c.documentKind || !c.documentVersion)) {
+      return HttpResponse.json(
+        { error: 'documentKind and documentVersion are required' },
+        { status: 400 }
+      )
+    }
+    return HttpResponse.json(await withLatency({ recorded: consents.length }), { status: 201 })
+  }),
+  http.get('/api/customer/billing-capabilities', async () =>
+    HttpResponse.json(
+      await withLatency<BillingCapabilities>({
+        skipcashSavedCardsEnabled: true,
+        skipcashSavedCardsChargeReady: false,
+        capabilityRequired:
+          'SkipCash Tokenization: capture TokenId from the payment webhook, then charge renewals via POST /api/v1/payments with TokenId in the body.',
+      })
+    )
+  ),
+  http.get('/api/customer/referrals', async () =>
+    HttpResponse.json(
+      await withLatency({
+        code: 'AB12CD34',
+        shareUrl: 'http://localhost:5173/signup?ref=AB12CD34',
+        creditBalance: 0,
+        pendingReferrals: 0,
+        creditedReferrals: 0,
+        referrals: [],
+      })
+    )
   ),
   http.get('/api/customer/preferences', async () =>
-    HttpResponse.json(await withLatency({ emailNotifications: true, smsNotifications: false }))
+    HttpResponse.json(
+      await withLatency({
+        emailNotifications: true,
+        smsNotifications: false,
+        whatsappNotifications: false,
+      })
+    )
   ),
   http.patch('/api/customer/preferences', async ({ request }) =>
     HttpResponse.json(await withLatency(await request.json()))

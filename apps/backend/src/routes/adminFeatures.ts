@@ -23,7 +23,7 @@ import { listRollupTrend, recordDailyRollups, computePlatformMetrics, listLifecy
 import { logAuditSafe } from '../services/audit.js'
 import { sendStaffInviteEmail } from '../services/mail.js'
 import { runJobsOnce } from '../services/scheduler.js'
-import { asyncHandler, paginated, parsePagination } from '../utils/http.js'
+import { asyncHandler, paginated, parsePagination, attachUuidParamGuard } from '../utils/http.js'
 
 const STAFF_PORTAL_ROLES = [...ADMIN_PORTAL_ROLES] as string[]
 
@@ -72,6 +72,7 @@ function mapStaffInvite(r: typeof staffInvites.$inferSelect) {
 }
 
 export const adminFeaturesRouter = Router()
+attachUuidParamGuard(adminFeaturesRouter)
 adminFeaturesRouter.use(requireAdminPortal)
 
 adminFeaturesRouter.get(

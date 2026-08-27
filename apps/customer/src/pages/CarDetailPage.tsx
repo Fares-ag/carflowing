@@ -220,12 +220,11 @@ export function CarDetailPage() {
                 )}
               </div>
               {gallery.length > 1 && (
-                <div className="car-detail-gallery" role="list" aria-label="Vehicle photos">
+                <div className="car-detail-gallery" role="group" aria-label="Vehicle photos">
                   {gallery.map((url, index) => (
                     <button
                       key={`${url}-${index}`}
                       type="button"
-                      role="listitem"
                       className={`car-detail-thumb ${index === activePhotoIndex ? 'active' : ''}`}
                       onClick={() => setActivePhotoIndex(index)}
                       aria-label={`View photo ${index + 1}`}

@@ -1,18 +1,26 @@
 import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { db } from '../db/index.js'
-import { mapPlan, mapSubscription } from '../db/mappers.js'
+import { mapPlan } from '../db/mappers.js'
 import {
   commissionLedger,
-  dealers,
   maintenanceRecords,
   payouts,
   plans,
-  subscriptions,
   vehicles,
 } from '../db/schema.js'
 import { requireAuth, requireRole, type AuthedRequest } from '../middleware/auth.js'
-import { logAuditSafe } from '../services/audit.js'
+import {
+  cancelDealerSubscription,
+  changeDealerPlan,
+  getDealerSubscription,
+  getDealerVehicleQuota,
+  listDealerInvoices,
+  listDealerPlans,
+  mapDealerInvoice,
+  mapDealerPlan,
+  mapDealerSubscription,
+} from '../services/dealerBilling.js'
 import { asyncHandler, paginated, parsePagination } from '../utils/http.js'
 import { getDealerOrThrow } from './dealer.js'
 
@@ -96,85 +104,83 @@ dealerFeaturesRouter.get(
   })
 )
 
-dealerFeaturesRouter.patch(
-  '/subscription/plan',
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const { planId } = req.body as { planId?: string }
-    if (!planId) {
-      res.status(400).json({ error: 'planId is required' })
-      return
-    }
-    const [plan] = await db
-      .select()
-      .from(plans)
-      .where(and(eq(plans.id, planId), eq(plans.status, 'active')))
-      .limit(1)
-    if (!plan) {
-      res.status(404).json({ error: 'Plan not found or inactive' })
-      return
-    }
-    const dealer = await getDealerOrThrow(req.user!.sub)
-    const [sub] = await db
-      .select()
-      .from(subscriptions)
-      .where(and(eq(subscriptions.ownerId, req.user!.sub), eq(subscriptions.ownerType, 'dealer')))
-      .limit(1)
-    let row
-    if (sub) {
-      [row] = await db
-        .update(subscriptions)
-        .set({ planId, status: 'active' })
-        .where(eq(subscriptions.id, sub.id))
-        .returning()
-    } else {
-      [row] = await db
-        .insert(subscriptions)
-        .values({
-          ownerId: req.user!.sub,
-          ownerType: 'dealer',
-          planId,
-          status: 'active',
-        })
-        .returning()
-    }
-    await db.update(dealers).set({ planId }).where(eq(dealers.id, dealer.id))
-    await logAuditSafe({
-      actorId: req.user!.sub,
-      actorRole: 'dealer',
-      action: 'dealer.subscription.plan_change',
-      entityType: 'subscription',
-      entityId: row.id,
-      after: { planId },
-    })
-    res.json(mapSubscription(row))
+/** Dealer subscription tiers actually sold (dealer_plans), cheapest first. */
+dealerFeaturesRouter.get(
+  '/billing/plans',
+  asyncHandler(async (_req, res) => {
+    const rows = await listDealerPlans()
+    res.json(rows.map(mapDealerPlan))
   })
 )
 
+/** Current dealer subscription plus the listing headroom it grants. */
+dealerFeaturesRouter.get(
+  '/billing/subscription',
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const dealer = await getDealerOrThrow(req.user!.sub)
+    const current = await getDealerSubscription(db, dealer.id)
+    const quota = await getDealerVehicleQuota(dealer.id)
+    res.json({
+      subscription: current ? mapDealerSubscription(current.subscription, current.plan) : null,
+      plan: current ? mapDealerPlan(current.plan) : null,
+      quota,
+    })
+  })
+)
+
+/** Invoice history — same shape convention as the customer invoice list. */
+dealerFeaturesRouter.get(
+  '/billing/invoices',
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const dealer = await getDealerOrThrow(req.user!.sub)
+    const rows = await listDealerInvoices(db, dealer.id)
+    res.json(rows.map((r) => mapDealerInvoice(r.invoice, r.planName)))
+  })
+)
+
+/**
+ * Plan change. Never free: upgrading raises an open invoice that must be paid
+ * within the billing grace window or the dealer walks down to the free tier
+ * (services/dealerBilling.ts documents the full policy).
+ */
+dealerFeaturesRouter.patch(
+  '/subscription/plan',
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { planId, planCode } = req.body as { planId?: string; planCode?: string }
+    if (!planId && !planCode) {
+      res.status(400).json({ error: 'planId is required' })
+      return
+    }
+    const dealer = await getDealerOrThrow(req.user!.sub)
+    const result = await changeDealerPlan({
+      dealerId: dealer.id,
+      planId,
+      planCode,
+      actorId: req.user!.sub,
+    })
+    const quota = await getDealerVehicleQuota(dealer.id)
+    res.json({
+      subscription: mapDealerSubscription(result.subscription, result.plan),
+      plan: mapDealerPlan(result.plan),
+      invoice: result.invoice ? mapDealerInvoice(result.invoice, result.plan.name) : null,
+      change: result.change,
+      deactivatedVehicles: result.deactivatedVehicles,
+      quota,
+    })
+  })
+)
+
+/** Cancellation is scheduled at a billing boundary, never mid-period. */
 dealerFeaturesRouter.post(
   '/subscription/cancel',
   asyncHandler(async (req: AuthedRequest, res) => {
-    const [sub] = await db
-      .select()
-      .from(subscriptions)
-      .where(and(eq(subscriptions.ownerId, req.user!.sub), eq(subscriptions.ownerType, 'dealer')))
-      .limit(1)
-    if (!sub) {
-      res.status(404).json({ error: 'No active subscription' })
-      return
-    }
-    const [row] = await db
-      .update(subscriptions)
-      .set({ status: 'canceled', endDate: new Date().toISOString().slice(0, 10) })
-      .where(eq(subscriptions.id, sub.id))
-      .returning()
-    await logAuditSafe({
-      actorId: req.user!.sub,
-      actorRole: 'dealer',
-      action: 'dealer.subscription.cancel',
-      entityType: 'subscription',
-      entityId: sub.id,
+    const dealer = await getDealerOrThrow(req.user!.sub)
+    const result = await cancelDealerSubscription({ dealerId: dealer.id, actorId: req.user!.sub })
+    res.json({
+      subscription: mapDealerSubscription(result.subscription, result.plan),
+      plan: mapDealerPlan(result.plan),
+      effectiveDate: result.effectiveDate,
     })
-    res.json(mapSubscription(row))
   })
 )
 

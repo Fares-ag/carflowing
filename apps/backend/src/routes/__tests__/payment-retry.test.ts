@@ -7,6 +7,10 @@ import { db } from '../../db/index.js'
 import { bookingRequests, invoices, payments, rentals } from '../../db/schema.js'
 import { SkipCashStatus, createSkipCashPayment } from '../../services/skipcash.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
+import { addDays, todayISO } from '../../utils/dates.js'
+
+/** Inside MAX_START_DATE_DAYS_AHEAD, so the fixture never ages out of the window. */
+const startDateSoon = addDays(todayISO(), 14)
 
 vi.mock('../../services/skipcash.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/skipcash.js')>()
@@ -68,7 +72,7 @@ describe('SkipCash payment retry API', () => {
       .mockResolvedValueOnce({ id: 'ext-r2', payUrl: 'https://pay/r2', statusId: SkipCashStatus.NEW })
     const fixtures = await seedFixtures()
     const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
-    const note = JSON.stringify({ durationMonths: 2, startDate: '2030-02-01', total: 900 })
+    const note = JSON.stringify({ durationMonths: 2, startDate: startDateSoon, total: 900 })
     const contact = { firstName: 'Jane', lastName: 'Doe', phone: '+97455512345', email: 'jane@test.dev' }
     const created = await agent.post('/api/payments/skipcash/create-intent').send({
       vehicleId: fixtures.vehicles[0].id,

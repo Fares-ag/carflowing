@@ -13,9 +13,11 @@ import {
   SkipCashIntentError,
   type ContactInput,
 } from '../services/skipCashIntents.js'
-import { asyncHandler } from '../utils/http.js'
+import { issueInvoiceSkipCashIntentWithSavedCard } from '../services/savedCardPayments.js'
+import { asyncHandler, attachUuidParamGuard } from '../utils/http.js'
 
 export const paymentsRouter = Router()
+attachUuidParamGuard(paymentsRouter)
 
 function handleIntentError(res: Parameters<Parameters<typeof asyncHandler>[0]>[1], err: unknown): boolean {
   if (err instanceof SkipCashIntentError) {
@@ -78,6 +80,38 @@ paymentsRouter.post(
     }
     try {
       const result = await issueInvoiceSkipCashIntent(req.user!.sub, invoiceId)
+      res.status(201).json(result)
+    } catch (err) {
+      if (handleIntentError(res, err)) return
+      throw err
+    }
+  })
+)
+
+/**
+ * Starts invoice payment using a saved SkipCash token when the capability flag
+ * is on. Falls back to hosted redirect while token charge remains stubbed.
+ */
+paymentsRouter.post(
+  '/skipcash/invoice-intent-saved-card',
+  requireAuth,
+  requireRole('customer'),
+  requireOnlinePaymentsEnabled,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { invoiceId, paymentMethodId } = req.body as {
+      invoiceId?: string
+      paymentMethodId?: string
+    }
+    if (!invoiceId || !paymentMethodId) {
+      res.status(400).json({ error: 'invoiceId and paymentMethodId required' })
+      return
+    }
+    try {
+      const result = await issueInvoiceSkipCashIntentWithSavedCard(
+        req.user!.sub,
+        invoiceId,
+        paymentMethodId
+      )
       res.status(201).json(result)
     } catch (err) {
       if (handleIntentError(res, err)) return

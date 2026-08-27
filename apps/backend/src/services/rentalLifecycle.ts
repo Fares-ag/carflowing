@@ -1,6 +1,8 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, lte } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import {
+  bookingRequests,
+  customerProfiles,
   invoices,
   payments,
   profiles,
@@ -92,6 +94,79 @@ async function notifyDealerOwnerLocal(
   await notifyDealerOwner(tx, dealerId, { title, message, type })
 }
 
+/**
+ * Reads the licence expiry the customer declared at checkout. It is the only
+ * place an expiry is captured today — `customer_profiles` has no column for it
+ * — so treat an unparseable or missing value as "unknown", never as valid.
+ */
+function declaredLicenceExpiry(note: string | null | undefined): string | null {
+  if (!note) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(note)
+  } catch {
+    return null
+  }
+  const expiry = (parsed as { license?: { expiry?: unknown } } | null)?.license?.expiry
+  if (typeof expiry !== 'string' || !expiry.trim()) return null
+  const raw = expiry.trim()
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : new Date(raw).toISOString().slice(0, 10)
+  return Number.isNaN(Date.parse(`${iso}T00:00:00Z`)) ? null : iso
+}
+
+/**
+ * KYC gate for handover. Identity documents are collected at checkout and were
+ * never checked again, so a customer who uploaded nothing could be handed a car
+ * (audit HIGH: nothing gates handover).
+ *
+ * Passing requires either both identity documents on file, or an explicit
+ * `verified` decision by staff (admin verification is recorded in
+ * `audit_logs`, and covers customers whose documents were checked in person).
+ * A `suspended` customer never passes, and a licence that has already expired
+ * — when checkout captured an expiry — blocks handover too.
+ */
+async function kycBlockerForHandover(
+  tx: DbOrTx,
+  rental: { customerId: string; bookingRequestId: string | null }
+): Promise<string | null> {
+  const [profile] = await tx
+    .select({
+      status: customerProfiles.status,
+      qidDocumentPath: customerProfiles.qidDocumentPath,
+      driversLicensePath: customerProfiles.driversLicensePath,
+    })
+    .from(customerProfiles)
+    .where(eq(customerProfiles.userId, rental.customerId))
+    .limit(1)
+
+  if (profile?.status === 'suspended') {
+    return 'This customer account is suspended. Contact CarFlow support before handing over the vehicle.'
+  }
+
+  const hasQid = !!profile?.qidDocumentPath?.trim()
+  const hasLicence = !!profile?.driversLicensePath?.trim()
+  if (profile?.status !== 'verified' && !(hasQid && hasLicence)) {
+    const missing = [!hasQid ? 'Qatar ID' : null, !hasLicence ? "driver's licence" : null]
+      .filter(Boolean)
+      .join(' and ')
+    return `Customer identity check incomplete: no ${missing} on file. Ask the customer to upload their documents (or have CarFlow verify them) before handover.`
+  }
+
+  if (rental.bookingRequestId) {
+    const [request] = await tx
+      .select({ note: bookingRequests.note })
+      .from(bookingRequests)
+      .where(eq(bookingRequests.id, rental.bookingRequestId))
+      .limit(1)
+    const expiry = declaredLicenceExpiry(request?.note)
+    if (expiry && expiry < todayISO()) {
+      return `The customer's driving licence expired on ${expiry}. A valid licence is required before handover.`
+    }
+  }
+
+  return null
+}
+
 export interface HandoverInput {
   rentalId: string
   dealerId: string
@@ -124,6 +199,10 @@ export async function recordHandover(input: HandoverInput): Promise<LifecycleRes
         status: 409,
         body: { error: 'First payment has not been received. Record the payment before handover.' },
       }
+    }
+    const kycBlocker = await kycBlockerForHandover(tx, rental)
+    if (kycBlocker) {
+      return { status: 409, body: { error: kycBlocker } }
     }
 
     const now = new Date()
@@ -536,6 +615,14 @@ export async function adminChangeRentalStatus(input: AdminStatusChangeInput): Pr
         body: { error: 'First payment has not been recorded. Record the payment before activating.' },
       }
     }
+    // Same for the KYC gate: an override to `active` is a handover by another
+    // name, and must not put an unverified driver on the road either.
+    if (input.toStatus === 'active' && from === 'reserved') {
+      const kycBlocker = await kycBlockerForHandover(tx, rental)
+      if (kycBlocker) {
+        return { status: 409, body: { error: kycBlocker } }
+      }
+    }
 
     const patch: Record<string, unknown> = { status: input.toStatus }
     if (input.toStatus === 'active' && !rental.activatedAt) patch.activatedAt = new Date()
@@ -940,4 +1027,30 @@ export async function resumeRental(input: ResumeRentalInput): Promise<LifecycleR
 
     return { status: 200, body: updated }
   })
+}
+
+/**
+ * Resume subscriptions whose hold has run out.
+ *
+ * pauseRental writes `pausedUntil` and tells the customer their subscription is
+ * "paused until X", but nothing ever acted on that date: the rental stayed
+ * paused — and unbilled — indefinitely. Attributed to the customer because the
+ * pause window is the one they chose.
+ */
+export async function resumeExpiredPauses(): Promise<number> {
+  const today = todayISO()
+  const due = await db
+    .select({ id: rentals.id, customerId: rentals.customerId })
+    .from(rentals)
+    .where(and(eq(rentals.status, 'paused'), lte(rentals.pausedUntil, today)))
+    .limit(200)
+  let resumed = 0
+  for (const row of due) {
+    const result = await resumeRental({
+      rentalId: row.id,
+      actor: { id: row.customerId, role: 'customer' },
+    })
+    if (result.status === 200) resumed++
+  }
+  return resumed
 }

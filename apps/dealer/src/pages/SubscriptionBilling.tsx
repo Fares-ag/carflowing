@@ -1,7 +1,6 @@
-import type { Plan, Subscription } from '@carflow/shared'
 import { formatCurrency, formatDate } from '@carflow/shared'
 import {
-  Bell,
+  AlertTriangle,
   Check,
   CreditCard,
   Download,
@@ -19,12 +18,14 @@ import { Sidebar } from '../components/Sidebar'
 import {
   cancelDealerSubscription,
   changeDealerSubscriptionPlan,
-  getDealerVehicleCount,
-  getSubscription,
-  listBillingHistory,
-  listDealerPlans,
+  getDealerBillingState,
+  listDealerBillingInvoices,
+  listDealerBillingPlans,
   listPaymentMethods,
   removePaymentMethod,
+  type DealerBillingInvoice,
+  type DealerBillingPlan,
+  type DealerBillingState,
 } from '../services/dealerService'
 import './SubscriptionBilling.css'
 
@@ -35,46 +36,6 @@ interface PaymentMethod {
   expiry: string
   isDefault: boolean
 }
-
-interface BillingHistoryItem {
-  id: string
-  description: string
-  date: string
-  amount: string
-  status: 'paid' | 'pending'
-}
-
-// Extracted constants
-const CURRENT_PLAN_FEATURES = [
-  'Up to 25 vehicles',
-  'Advanced analytics',
-  'Priority support',
-  'Custom branding',
-  'API access',
-] as const
-
-type UsageBarRow = {
-  label: string
-  used: number
-  total: number
-  percentage: number
-  /** When set, show `used / totalDisplay` instead of numeric total (e.g. unlimited plan). */
-  totalDisplay?: string
-}
-
-const DEFAULT_USAGE_CAPS: { vehicles: number; rentals: number; leads: number; messages: number } = {
-  vehicles: 25,
-  rentals: 200,
-  leads: 500,
-  messages: 5000,
-}
-
-const USAGE_FALLBACK: UsageBarRow[] = [
-  { label: 'Vehicles', used: 0, total: DEFAULT_USAGE_CAPS.vehicles, percentage: 0 },
-  { label: 'Active Rentals', used: 0, total: DEFAULT_USAGE_CAPS.rentals, percentage: 0 },
-  { label: 'Leads', used: 0, total: DEFAULT_USAGE_CAPS.leads, percentage: 0 },
-  { label: 'Messages', used: 0, total: DEFAULT_USAGE_CAPS.messages, percentage: 0 },
-]
 
 const BILLING_STORAGE_KEY = 'carflow-dealer-billing'
 
@@ -107,194 +68,125 @@ function loadBillingAddress(): BillingAddressForm {
   return { ...EMPTY_BILLING }
 }
 
-function parseVehicleCapFromFeatures(features: string[] | undefined): number | 'unlimited' | null {
-  if (!features?.length) return null
-  for (const f of features) {
-    if (/unlimited/i.test(f) && /vehicle/i.test(f)) return 'unlimited'
-    const m = f.match(/(?:up to\s+)?(\d+)\s+vehicles?/i)
-    if (m) return parseInt(m[1], 10)
-  }
-  return null
+/** Backend dates are plain `YYYY-MM-DD` in the billing timezone. */
+function formatBillingDate(value: string | undefined | null): string {
+  if (!value) return '—'
+  const parsed = new Date(`${value}T12:00:00`)
+  if (!Number.isFinite(parsed.getTime())) return value
+  return formatDate(parsed)
 }
 
-function computeNextBillingDate(sub: Subscription | null): string {
-  if (!sub) return '—'
-  const periodEnd = (sub as Subscription & { currentPeriodEnd?: string }).currentPeriodEnd
-  if (periodEnd) {
-    const d = new Date(periodEnd)
-    if (Number.isFinite(d.getTime())) return formatDate(d)
-  }
-  if (sub.endDate) {
-    const d = new Date(sub.endDate + 'T12:00:00')
-    if (Number.isFinite(d.getTime())) return formatDate(d)
-  }
-  const start = new Date(sub.startDate + 'T12:00:00')
-  if (!Number.isFinite(start.getTime())) return '—'
-  start.setDate(start.getDate() + 30)
-  return formatDate(start)
-}
-
-function formatSubscriptionStatus(status: Subscription['status'] | undefined): string {
-  if (!status) return 'Unknown'
+function formatSubscriptionStatus(status: string | undefined): string {
+  if (!status) return 'No subscription'
   return status
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 }
 
-type PlanCard = {
-  id: string
-  name: string
-  price: string
-  period: string
-  description: string
-  features: string[]
-  isPopular?: boolean
-  savings?: string
-}
-
-function planToCard(plan: Plan, period: 'monthly' | 'yearly'): PlanCard {
-  const isYearly = period === 'yearly'
-  const monthlySavings =
-    plan.priceMonthly > 0 && plan.priceYearly > 0
-      ? Math.max(0, plan.priceMonthly * 12 - plan.priceYearly)
-      : 0
-  return {
-    id: plan.id,
-    name: plan.name,
-    price: formatCurrency(isYearly ? plan.priceYearly : plan.priceMonthly),
-    period: isYearly ? 'per year' : 'per month',
-    description: plan.tier ? `${plan.tier} tier` : 'Dealer platform plan',
-    features: plan.features?.length ? plan.features : ['Standard dealer features'],
-    isPopular: plan.tier === 'professional',
-    savings: isYearly && monthlySavings > 0 ? `Save ${formatCurrency(monthlySavings)} annually` : undefined,
-  }
-}
+const INVOICE_OPEN_STATUSES = new Set(['due', 'past_due'])
 
 export const SubscriptionBilling = memo(function SubscriptionBilling() {
-  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly')
   const [showManageBillingModal, setShowManageBillingModal] = useState(false)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
-  const [billingHistory, setBillingHistory] = useState<BillingHistoryItem[]>([])
-  const [subscriptionRecord, setSubscriptionRecord] = useState<Subscription | null>(null)
-  const [vehicleCountState, setVehicleCountState] = useState(0)
+  const [invoices, setInvoices] = useState<DealerBillingInvoice[]>([])
+  const [billing, setBilling] = useState<DealerBillingState | null>(null)
+  const [availablePlans, setAvailablePlans] = useState<DealerBillingPlan[]>([])
   const [showAllInvoices, setShowAllInvoices] = useState(false)
-  const [selectedPlanName, setSelectedPlanName] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [paymentActionError, setPaymentActionError] = useState<string | null>(null)
   const [billingAddress, setBillingAddress] = useState<BillingAddressForm>(() => loadBillingAddress())
-  const [availablePlans, setAvailablePlans] = useState<Plan[]>([])
   const [planActionBusy, setPlanActionBusy] = useState(false)
   const planSectionRef = useRef<HTMLDivElement>(null)
 
-  const { subscriptionUsage, usageLimitNote } = useMemo(() => {
-    const pct = (used: number, total: number) =>
-      total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0
-
-    if (!subscriptionRecord) {
-      return {
-        subscriptionUsage: USAGE_FALLBACK.map((r) => ({ ...r, percentage: 0 })),
-        usageLimitNote: 'Default limits.',
-      }
-    }
-
-    const vehicleCap = parseVehicleCapFromFeatures(subscriptionRecord.plan?.features)
-    const listings = subscriptionRecord.usage.listings ?? 0
-    const rentals = subscriptionRecord.usage.rentals ?? 0
-    const messages = subscriptionRecord.usage.messages ?? 0
-
-    let vTotal: number = DEFAULT_USAGE_CAPS.vehicles
-    let vDisplay: string | undefined
-    if (vehicleCap === 'unlimited') {
-      vTotal = Math.max(vehicleCountState, 1)
-      vDisplay = '∞'
-    } else if (typeof vehicleCap === 'number') {
-      vTotal = vehicleCap
-    }
-
-    const vPct =
-      vehicleCap === 'unlimited'
-        ? vehicleCountState > 0
-          ? 100
-          : 0
-        : pct(vehicleCountState, vTotal)
-
-    const limitNote =
-      vehicleCap != null
-        ? 'Vehicle cap from your plan. Rentals, leads, and messages use default limits until configured.'
-        : 'Default limits.'
-
-    return {
-      subscriptionUsage: [
-        {
-          label: 'Vehicles',
-          used: vehicleCountState,
-          total: vTotal,
-          percentage: vPct,
-          totalDisplay: vDisplay,
-        },
-        {
-          label: 'Active Rentals',
-          used: rentals,
-          total: DEFAULT_USAGE_CAPS.rentals,
-          percentage: pct(rentals, DEFAULT_USAGE_CAPS.rentals),
-        },
-        {
-          label: 'Leads',
-          used: listings,
-          total: DEFAULT_USAGE_CAPS.leads,
-          percentage: pct(listings, DEFAULT_USAGE_CAPS.leads),
-        },
-        {
-          label: 'Messages',
-          used: messages,
-          total: DEFAULT_USAGE_CAPS.messages,
-          percentage: pct(messages, DEFAULT_USAGE_CAPS.messages),
-        },
-      ],
-      usageLimitNote: limitNote,
-    }
-  }, [subscriptionRecord, vehicleCountState])
-
-  useEffect(() => {
+  const load = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
-    Promise.all([
-      getSubscription(),
-      listPaymentMethods(),
-      listBillingHistory(),
-      getDealerVehicleCount(),
-      listDealerPlans().catch(() => [] as Plan[]),
-    ])
-      .then(([subscription, methods, history, vehicleCount, plans]) => {
-        setSubscriptionRecord(subscription)
-        setAvailablePlans(plans)
-        setVehicleCountState(vehicleCount)
-        setPaymentMethods(
-          methods.map(method => ({
-            id: method.id,
-            type: method.brand.toLowerCase() === 'mastercard' ? 'mastercard' : 'visa',
-            last4: method.last4,
-            expiry: `${String(method.expiryMonth).padStart(2, '0')}/${String(method.expiryYear).slice(-2)}`,
-            isDefault: method.isDefault,
-          }))
-        )
-        setBillingHistory(
-          history.map(item => ({
-            id: item.id,
-            description: item.description,
-            date: item.date,
-            amount: formatCurrency(item.amount),
-            status: item.status === 'paid' ? 'paid' : 'pending',
-          }))
-        )
-      })
-      .catch((err) => {
-        setLoadError(err instanceof Error ? err.message : 'Failed to load subscription data')
-      })
-      .finally(() => setLoading(false))
+    try {
+      const [state, invoiceRows, plans, methods] = await Promise.all([
+        getDealerBillingState(),
+        listDealerBillingInvoices(),
+        listDealerBillingPlans(),
+        listPaymentMethods(),
+      ])
+      setBilling(state)
+      setInvoices(invoiceRows)
+      setAvailablePlans(plans)
+      setPaymentMethods(
+        methods.map((method) => ({
+          id: method.id,
+          type: method.brand.toLowerCase() === 'mastercard' ? 'mastercard' : 'visa',
+          last4: method.last4,
+          expiry: `${String(method.expiryMonth).padStart(2, '0')}/${String(method.expiryYear).slice(-2)}`,
+          isDefault: method.isDefault,
+        }))
+      )
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load subscription data')
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const subscription = billing?.subscription ?? null
+  const currentPlan = billing?.plan ?? null
+  const quota = billing?.quota ?? null
+
+  /** Invoices the dealer still owes money on — the upgrade is not paid for yet. */
+  const openInvoices = useMemo(
+    () => invoices.filter((invoice) => INVOICE_OPEN_STATUSES.has(invoice.status)),
+    [invoices]
+  )
+  const openInvoiceTotal = useMemo(
+    () => openInvoices.reduce((sum, invoice) => sum + invoice.amount, 0),
+    [openInvoices]
+  )
+
+  const quotaView = useMemo(() => {
+    if (!quota) return null
+    if (quota.limit === null) {
+      return {
+        label: 'Vehicle listings',
+        countLabel: `${quota.used} / ∞`,
+        percentage: 0,
+        note: quota.planName
+          ? `${quota.planName} includes unlimited listings.`
+          : 'No dealer plan on file — listings are not capped.',
+        tone: 'ok' as const,
+      }
+    }
+    const percentage = quota.limit > 0 ? Math.min(100, Math.round((quota.used / quota.limit) * 100)) : 100
+    if (quota.overLimit) {
+      return {
+        label: 'Vehicle listings',
+        countLabel: `${quota.used} / ${quota.limit}`,
+        percentage,
+        note: `You have ${quota.used} listed vehicles but ${quota.planName ?? 'your plan'} allows ${quota.limit}. Deactivate ${quota.used - quota.limit} listing(s) or upgrade.`,
+        tone: 'over' as const,
+      }
+    }
+    if (quota.remaining === 0) {
+      return {
+        label: 'Vehicle listings',
+        countLabel: `${quota.used} / ${quota.limit}`,
+        percentage,
+        note: `You are at your plan cap. Upgrade or deactivate a listing before adding another vehicle.`,
+        tone: 'at-cap' as const,
+      }
+    }
+    return {
+      label: 'Vehicle listings',
+      countLabel: `${quota.used} / ${quota.limit}`,
+      percentage,
+      note: `${quota.remaining} listing(s) remaining on ${quota.planName ?? 'your plan'}.`,
+      tone: 'ok' as const,
+    }
+  }, [quota])
 
   const handleRemovePaymentMethod = useCallback(async (id: string) => {
     setPaymentActionError(null)
@@ -304,10 +196,6 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
     } catch (err) {
       setPaymentActionError(err instanceof Error ? err.message : 'Could not remove payment method')
     }
-  }, [])
-
-  const handleBillingPeriodChange = useCallback((period: 'monthly' | 'yearly') => {
-    setBillingPeriod(period)
   }, [])
 
   const handleManageBilling = useCallback(() => {
@@ -324,64 +212,113 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
     }
   }, [showManageBillingModal])
 
-  const handleDownloadInvoice = useCallback((items: BillingHistoryItem[]) => {
-    const rows = (items.length ? items : billingHistory).map(item => ({
-      id: item.id,
-      description: item.description,
-      date: item.date,
-      amount: item.amount,
-      status: item.status,
-    }))
-    if (!rows.length) return
-    const headers = Object.keys(rows[0] ?? {})
-    const csv = [
-      headers.join(','),
-      ...rows.map((row) =>
-        headers.map((header) => `"${String((row as Record<string, string>)[header] ?? '')}"`).join(',')
-      ),
-    ].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.setAttribute('download', 'billing-invoices.csv')
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-  }, [billingHistory])
+  const handleDownloadInvoices = useCallback(
+    (items: DealerBillingInvoice[]) => {
+      const source = items.length ? items : invoices
+      if (!source.length) {
+        toast.error('No invoices to export yet.')
+        return
+      }
+      const rows = source.map((invoice) => ({
+        id: invoice.id,
+        description: invoice.description,
+        periodStart: invoice.periodStart,
+        periodEnd: invoice.periodEnd,
+        dueDate: invoice.dueDate,
+        amount: String(invoice.amount),
+        status: invoice.status,
+      }))
+      const headers = Object.keys(rows[0])
+      const csv = [
+        headers.join(','),
+        ...rows.map((row) =>
+          headers.map((header) => `"${String((row as Record<string, string>)[header] ?? '')}"`).join(',')
+        ),
+      ].join('\n')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.setAttribute('download', 'dealer-invoices.csv')
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    },
+    [invoices]
+  )
 
   const handleUpgradePlan = useCallback(() => {
     planSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
 
   const handleChoosePlan = useCallback(
-    async (plan: PlanCard) => {
-      const currentId = subscriptionRecord?.planId
-      if (currentId === plan.id) {
-        setSelectedPlanName(plan.name)
-        setShowManageBillingModal(true)
-        return
-      }
+    async (plan: DealerBillingPlan) => {
+      if (subscription?.planId === plan.id) return
+
+      const isUpgrade = plan.priceQar > (currentPlan?.priceQar ?? 0)
+      const confirmation = isUpgrade
+        ? `Switch to ${plan.name} at ${formatCurrency(plan.priceQar)} per month?\n\nThe new tier applies immediately and CarFlow raises an invoice for it right away. If that invoice is not paid within the billing grace window your account drops back to the free tier.`
+        : `Switch to ${plan.name} at ${formatCurrency(plan.priceQar)} per month?\n\nThis takes effect immediately with no refund for the current period, and any listings above the new cap are deactivated.`
+      if (!window.confirm(confirmation)) return
+
       setPlanActionBusy(true)
       try {
-        const updated = await changeDealerSubscriptionPlan(plan.id)
-        setSubscriptionRecord(updated)
-        toast.success(`Plan changed to ${plan.name}`)
+        const result = await changeDealerSubscriptionPlan(plan.id)
+        setBilling({ subscription: result.subscription, plan: result.plan, quota: result.quota })
+        // Refresh the invoice list so the newly raised invoice is visible and
+        // the dealer can see exactly what is now owed.
+        setInvoices(await listDealerBillingInvoices())
+
+        if (result.invoice) {
+          toast.warning(
+            `${result.plan.name} is active. Invoice for ${formatCurrency(result.invoice.amount)} is due by ${formatBillingDate(result.invoice.dueDate)}.`
+          )
+        } else if (result.change === 'downgraded') {
+          const deactivated = result.deactivatedVehicles
+          toast.success(
+            deactivated > 0
+              ? `Moved to ${result.plan.name}. ${deactivated} listing(s) above the new cap were deactivated.`
+              : `Moved to ${result.plan.name}.`
+          )
+        } else if (result.change === 'unchanged') {
+          toast.info(`Already on ${result.plan.name}.`)
+        } else {
+          toast.success(`Plan changed to ${result.plan.name}.`)
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Unable to change plan')
       } finally {
         setPlanActionBusy(false)
       }
     },
-    [subscriptionRecord?.planId]
+    [currentPlan?.priceQar, subscription?.planId]
   )
 
   const handleCancelSubscription = useCallback(async () => {
-    if (!window.confirm('Cancel your dealer platform subscription?')) return
+    if (
+      !window.confirm(
+        'Cancel your dealer platform subscription?\n\nCancellation is scheduled at a billing boundary, not immediately — you keep your current tier until then.'
+      )
+    ) {
+      return
+    }
     setPlanActionBusy(true)
     try {
-      const updated = await cancelDealerSubscription()
-      setSubscriptionRecord(updated)
-      toast.success('Subscription canceled')
+      const result = await cancelDealerSubscription()
+      setBilling((prev) => ({
+        subscription: result.subscription,
+        plan: result.plan,
+        quota: prev?.quota ?? {
+          planId: result.plan.id,
+          planCode: result.plan.code,
+          planName: result.plan.name,
+          limit: result.plan.vehicleLimit,
+          used: 0,
+          remaining: result.plan.vehicleLimit,
+          overLimit: false,
+          enforced: result.plan.vehicleLimit !== null,
+        },
+      }))
+      toast.success(`Cancellation scheduled for ${formatBillingDate(result.effectiveDate)}.`)
       setShowManageBillingModal(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to cancel subscription')
@@ -390,43 +327,17 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
     }
   }, [])
 
-  const plans = useMemo(() => {
-    const source: Plan[] = availablePlans.length
-      ? availablePlans
-      : subscriptionRecord?.plan
-        ? [
-            {
-              id: subscriptionRecord.planId,
-              name: subscriptionRecord.plan.name,
-              tier: 'professional',
-              status: 'active',
-              priceMonthly: subscriptionRecord.plan.priceMonthly,
-              priceYearly: subscriptionRecord.plan.priceYearly,
-              features: subscriptionRecord.plan.features,
-            },
-          ]
-        : []
-    return billingPeriod === 'monthly'
-      ? source.map((p) => planToCard(p, 'monthly'))
-      : source.map((p) => planToCard(p, 'yearly'))
-  }, [availablePlans, billingPeriod, subscriptionRecord?.plan, subscriptionRecord?.planId])
-
-  const getAvailablePercentage = useCallback((used: number, total: number) => {
-    if (total <= 0) return 0
-    return ((total - used) / total) * 100
-  }, [])
-
-  const visibleBillingHistory = showAllInvoices ? billingHistory : billingHistory.slice(0, 4)
+  const visibleInvoices = showAllInvoices ? invoices : invoices.slice(0, 4)
 
   return (
     <div className="subscription-billing-page">
       <Sidebar />
       <Header />
 
-      <div className="subscription-billing-content">
+      <div className="subscription-billing-content" role="main">
         <div className="page-header">
           <h1 className="page-title">Subscription & Billing</h1>
-          <p className="page-subtitle">Manage your subscription, billing, and payment methods</p>
+          <p className="page-subtitle">Manage your dealer platform plan, invoices, and payment methods</p>
         </div>
 
         {loading && (
@@ -441,6 +352,24 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
           </div>
         )}
 
+        {!loading && !loadError && openInvoices.length > 0 && (
+          <div className="subscription-due-banner" role="alert">
+            <AlertTriangle size={16} />
+            <div>
+              <strong>
+                {formatCurrency(openInvoiceTotal)} outstanding across {openInvoices.length} invoice
+                {openInvoices.length === 1 ? '' : 's'}.
+              </strong>
+              <div className="subscription-due-banner-sub">
+                Earliest due {formatBillingDate(openInvoices[0]?.dueDate)}. Unpaid dealer invoices move
+                your subscription to past due and then back to the free tier. Dealer subscription
+                invoices are settled by CarFlow billing — self-service card payment for them is not
+                available yet.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Current Plan Section */}
         <div className="current-plan-section">
           <div className="current-plan-card">
@@ -450,15 +379,13 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
               </div>
               <div className="plan-title-info">
                 <h3 className="plan-name">
-                  {subscriptionRecord?.plan?.name
-                    ? `${subscriptionRecord.plan.name} Plan`
-                    : 'Professional Plan'}
+                  {currentPlan ? `${currentPlan.name} Plan` : 'No dealer plan'}
                 </h3>
-                <p className="plan-subtitle">Your current subscription</p>
+                <p className="plan-subtitle">Your CarFlow dealer platform subscription</p>
               </div>
               <div className="plan-price-info">
                 <div className="plan-price">
-                  {formatCurrency(subscriptionRecord?.plan?.priceMonthly ?? 299)}
+                  {currentPlan ? formatCurrency(currentPlan.priceQar) : '—'}
                 </div>
                 <div className="plan-period">per month</div>
               </div>
@@ -467,17 +394,22 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
             <div className="plan-details-grid">
               <div className="plan-features-section">
                 <h4 className="section-title">Plan Features</h4>
-                <ul className="features-list">
-                  {(subscriptionRecord?.plan?.features?.length
-                    ? subscriptionRecord.plan.features
-                    : [...CURRENT_PLAN_FEATURES]
-                  ).map((feature, index) => (
-                    <li key={index}>
-                      <Check size={14} />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
+                {currentPlan?.features.length ? (
+                  <ul className="features-list">
+                    {currentPlan.features.map((feature) => (
+                      <li key={feature}>
+                        <Check size={14} />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="modal-section-hint">
+                    {currentPlan
+                      ? 'No features listed for this plan.'
+                      : 'Choose a plan below to start a dealer subscription.'}
+                  </p>
+                )}
               </div>
 
               <div className="billing-info-section">
@@ -485,21 +417,25 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                 <div className="billing-info-item">
                   <span className="info-label">Status</span>
                   <span
-                    className={`status-badge subscription-status subscription-status--${subscriptionRecord?.status ?? 'unknown'}`}
+                    className={`status-badge subscription-status subscription-status--${subscription?.status ?? 'unknown'}`}
                   >
-                    {formatSubscriptionStatus(subscriptionRecord?.status)}
+                    {formatSubscriptionStatus(subscription?.status)}
                   </span>
                 </div>
                 <div className="billing-info-item">
-                  <span className="info-label">Next billing</span>
-                  <span className="info-value">{computeNextBillingDate(subscriptionRecord)}</span>
+                  <span className="info-label">Current period ends</span>
+                  <span className="info-value">{formatBillingDate(subscription?.currentPeriodEnd)}</span>
                 </div>
                 <div className="billing-info-item">
-                  <span className="info-label">Auto-renewal</span>
+                  <span className="info-label">
+                    {subscription?.cancelAt ? 'Cancels on' : 'Renews'}
+                  </span>
                   <span className="info-value">
-                    {subscriptionRecord?.status === 'active'
-                      ? 'Auto-renewal Enabled'
-                      : 'Auto-renewal Disabled'}
+                    {subscription?.cancelAt
+                      ? formatBillingDate(subscription.cancelAt)
+                      : subscription
+                        ? 'Automatically each period'
+                        : '—'}
                   </span>
                 </div>
               </div>
@@ -508,18 +444,19 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
             <div className="plan-actions">
               <button
                 className="action-btn"
-                onClick={() => handleDownloadInvoice(billingHistory.slice(0, 1))}
+                type="button"
+                onClick={() => handleDownloadInvoices(invoices)}
               >
                 <Download size={14} />
-                Download Invoice
+                Export invoices
               </button>
-              <button className="action-btn" onClick={handleManageBilling}>
+              <button className="action-btn" type="button" onClick={handleManageBilling}>
                 <Settings size={14} />
                 Manage Billing
               </button>
-              <button className="action-btn primary" onClick={handleUpgradePlan}>
+              <button className="action-btn primary" type="button" onClick={handleUpgradePlan}>
                 <Star size={14} />
-                Upgrade Plan
+                Change Plan
               </button>
             </div>
           </div>
@@ -527,36 +464,29 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
           <div className="usage-overview-card">
             <div className="card-header">
               <div className="card-title-section">
-              <Gauge size={18} />
-                <h3 className="card-title">Usage Overview</h3>
+                <Gauge size={18} />
+                <h3 className="card-title">Plan usage</h3>
               </div>
-              <p className="card-description">Current month usage · {usageLimitNote}</p>
+              <p className="card-description">Listing headroom reported by your plan</p>
             </div>
             <div className="usage-list">
-              {subscriptionUsage.map((item, index) => {
-                const availablePercent = getAvailablePercentage(item.used, item.total)
-                const countLabel =
-                  item.totalDisplay != null ? `${item.used} / ${item.totalDisplay}` : `${item.used} / ${item.total}`
-                return (
-                  <div key={index} className="usage-item">
-                    <div className="usage-header">
-                      <span className="usage-label">{item.label}</span>
-                      <span className="usage-count">{countLabel}</span>
-                    </div>
-                    <div className="usage-progress-bar">
-                      <div 
-                        className="usage-progress-fill" 
-                        style={{ width: `${item.percentage}%` }}
-                      ></div>
-                    </div>
-                    <div className="usage-available">
-                      {item.totalDisplay === '∞'
-                        ? 'Unlimited plan'
-                        : `${Math.round(availablePercent)}% available`}
-                    </div>
+              {quotaView ? (
+                <div className={`usage-item usage-item--${quotaView.tone}`}>
+                  <div className="usage-header">
+                    <span className="usage-label">{quotaView.label}</span>
+                    <span className="usage-count">{quotaView.countLabel}</span>
                   </div>
-                )
-              })}
+                  <div className="usage-progress-bar">
+                    <div
+                      className="usage-progress-fill"
+                      style={{ width: `${quotaView.percentage}%` }}
+                    ></div>
+                  </div>
+                  <div className="usage-available">{quotaView.note}</div>
+                </div>
+              ) : (
+                <div className="usage-available">Usage becomes available once your plan loads.</div>
+              )}
             </div>
           </div>
         </div>
@@ -565,67 +495,57 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
         <div className="plan-selection-section" ref={planSectionRef}>
           <div className="section-header">
             <h2 className="section-title">Choose Your Plan</h2>
-            <p className="section-subtitle">Upgrade or downgrade your subscription at any time</p>
+            <p className="section-subtitle">
+              Upgrades apply immediately and are invoiced straight away; downgrades apply immediately with
+              no refund and deactivate listings above the new cap.
+            </p>
           </div>
 
-          <div className="billing-period-tabs">
-            <button
-              className={`tab ${billingPeriod === 'monthly' ? 'active' : ''}`}
-              onClick={() => handleBillingPeriodChange('monthly')}
-            >
-              Monthly
-            </button>
-            <button
-              className={`tab ${billingPeriod === 'yearly' ? 'active' : ''}`}
-              onClick={() => handleBillingPeriodChange('yearly')}
-            >
-              Yearly (Save 17%)
-            </button>
-          </div>
-
-          <div className="plans-grid">
-            {plans.map((plan) => {
-              const isCurrent = subscriptionRecord?.planId === plan.id
-              return (
-              <div
-                key={plan.id}
-                className={`plan-card ${isCurrent ? 'current' : ''} ${plan.isPopular ? 'popular' : ''}`}
-              >
-                {plan.isPopular ? (
-                  <div className="popular-badge">Most Popular</div>
-                ) : null}
-                <div className="plan-card-header">
-                  <h3 className="plan-card-name">{plan.name}</h3>
-                  <p className="plan-card-description">{plan.description}</p>
-                  <div className="plan-card-price">
-                    <div className="price-amount">{plan.price}</div>
-                    <div className="price-period">{plan.period}</div>
-                    {'savings' in plan && plan.savings ? (
-                      <div className="price-savings">{plan.savings}</div>
-                    ) : null}
+          {availablePlans.length === 0 && !loading ? (
+            <p className="modal-section-hint">No dealer plans are on sale right now.</p>
+          ) : (
+            <div className="plans-grid">
+              {availablePlans.map((plan) => {
+                const isCurrent = subscription?.planId === plan.id
+                return (
+                  <div key={plan.id} className={`plan-card ${isCurrent ? 'current' : ''}`}>
+                    <div className="plan-card-header">
+                      <h3 className="plan-card-name">{plan.name}</h3>
+                      <p className="plan-card-description">
+                        {plan.vehicleLimit === null
+                          ? 'Unlimited vehicle listings'
+                          : `Up to ${plan.vehicleLimit} vehicle listing${plan.vehicleLimit === 1 ? '' : 's'}`}
+                      </p>
+                      <div className="plan-card-price">
+                        <div className="price-amount">{formatCurrency(plan.priceQar)}</div>
+                        <div className="price-period">per month</div>
+                      </div>
+                    </div>
+                    <div className="plan-card-content">
+                      {plan.features.length ? (
+                        <ul className="plan-features-list">
+                          {plan.features.map((feature) => (
+                            <li key={feature}>
+                              <Check size={14} />
+                              {feature}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <button
+                        className={`choose-plan-btn ${isCurrent ? 'current' : ''}`}
+                        type="button"
+                        disabled={planActionBusy || isCurrent}
+                        onClick={() => void handleChoosePlan(plan)}
+                      >
+                        {isCurrent ? 'Current Plan' : planActionBusy ? 'Updating…' : 'Choose Plan'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="plan-card-content">
-                  <ul className="plan-features-list">
-                    {plan.features.map((feature, featureIndex) => (
-                      <li key={featureIndex}>
-                        <Check size={14} />
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    className={`choose-plan-btn ${isCurrent ? 'current' : ''}`}
-                    disabled={planActionBusy}
-                    onClick={() => handleChoosePlan(plan)}
-                  >
-                    {isCurrent ? 'Current Plan' : planActionBusy ? 'Updating…' : 'Choose Plan'}
-                  </button>
-                </div>
-              </div>
-            )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* Payment Methods and Billing History Section */}
@@ -648,6 +568,9 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
               </div>
             )}
             <div className="payment-methods-list">
+              {paymentMethods.length === 0 && !loading ? (
+                <p className="modal-section-hint">No payment methods saved.</p>
+              ) : null}
               {paymentMethods.map((method) => (
                 <div key={method.id} className="payment-method-item">
                   <div className="payment-method-info">
@@ -679,31 +602,56 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
             <div className="card-header">
               <div className="card-title-section">
                 <Receipt size={18} />
-                <h3 className="card-title">Billing History</h3>
+                <h3 className="card-title">Invoice history</h3>
               </div>
-              <p className="card-description">Download invoices and view payment history</p>
+              <p className="card-description">Dealer subscription invoices raised by CarFlow</p>
             </div>
             <div className="billing-history-list">
-              {visibleBillingHistory.map((item) => (
-                <div key={item.id} className="billing-history-item">
+              {invoices.length === 0 && !loading ? (
+                <p className="modal-section-hint">
+                  No invoices yet — your dealer subscription has not been billed.
+                </p>
+              ) : null}
+              {visibleInvoices.map((invoice) => (
+                <div key={invoice.id} className="billing-history-item">
                   <div className="billing-info">
-                    <div className="billing-description">{item.description}</div>
-                    <div className="billing-date">{item.date}</div>
+                    <div className="billing-description">{invoice.description}</div>
+                    <div className="billing-date">
+                      {formatBillingDate(invoice.date)}
+                      {INVOICE_OPEN_STATUSES.has(invoice.status)
+                        ? ` · due ${formatBillingDate(invoice.dueDate)}`
+                        : invoice.paidAt
+                          ? ` · paid ${formatDate(new Date(invoice.paidAt))}`
+                          : ''}
+                    </div>
                   </div>
                   <div className="billing-actions">
                     <div className="billing-amount-status">
-                      <div className="billing-amount">{item.amount}</div>
-                      <span className={`status-badge ${item.status}`}>{item.status}</span>
+                      <div className="billing-amount">{formatCurrency(invoice.amount)}</div>
+                      <span className={`status-badge ${invoice.status}`}>
+                        {invoice.status.replace('_', ' ')}
+                      </span>
                     </div>
-                    <button className="icon-btn" onClick={() => handleDownloadInvoice([item])}>
+                    <button
+                      className="icon-btn"
+                      type="button"
+                      aria-label="Export invoice"
+                      onClick={() => handleDownloadInvoices([invoice])}
+                    >
                       <Download size={14} />
                     </button>
                   </div>
                 </div>
               ))}
-              <button className="view-all-btn" onClick={() => setShowAllInvoices((prev) => !prev)}>
-                {showAllInvoices ? 'Show Recent Invoices' : 'View All Invoices'}
-              </button>
+              {invoices.length > 4 ? (
+                <button
+                  className="view-all-btn"
+                  type="button"
+                  onClick={() => setShowAllInvoices((prev) => !prev)}
+                >
+                  {showAllInvoices ? 'Show Recent Invoices' : `View All ${invoices.length} Invoices`}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -713,43 +661,20 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
       {showManageBillingModal && (
         <div className="modal-overlay" onClick={handleCloseManageBilling}>
           <div className="modal-content manage-billing-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close-btn" onClick={handleCloseManageBilling}>
+            <button className="modal-close-btn" type="button" onClick={handleCloseManageBilling}>
               <X size={14} />
             </button>
             <div className="modal-header">
               <h2 className="modal-title">Manage Billing</h2>
-              <p className="modal-subtitle">Update your billing preferences and manage your subscription</p>
+              <p className="modal-subtitle">Billing details and subscription controls</p>
             </div>
             <div className="modal-body">
               <div className="modal-section">
-                <h3 className="modal-section-title">Subscription Controls</h3>
-                <div className="controls-grid">
-                  <div className="control-card">
-                    <div className="control-header">
-                      <label className="control-label">
-                        <input type="checkbox" defaultChecked />
-                        Auto-renewal
-                      </label>
-                      <div className="toggle-switch active"></div>
-                    </div>
-                    <p className="control-description">Automatically renew your subscription to avoid service interruption</p>
-                  </div>
-                  <div className="control-card">
-                    <div className="control-header">
-                      <label className="control-label">
-                        <Bell size={14} />
-                        Billing Alerts
-                      </label>
-                      <div className="toggle-switch active"></div>
-                    </div>
-                    <p className="control-description">Get notified 7 days before your next billing date</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="modal-section">
                 <h3 className="modal-section-title">Default Payment Method</h3>
                 <div className="payment-methods-list-modal">
+                  {paymentMethods.length === 0 ? (
+                    <p className="modal-section-hint">No payment methods saved.</p>
+                  ) : null}
                   {paymentMethods.map((method) => (
                     <div key={method.id} className="payment-method-item-modal">
                       <div className="payment-method-info">
@@ -843,6 +768,7 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                     </div>
                     <button
                       className="plan-management-btn"
+                      type="button"
                       onClick={() => {
                         setShowManageBillingModal(false)
                         planSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -863,8 +789,8 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                     <button
                       className="plan-management-btn cancel"
                       type="button"
-                      disabled={planActionBusy || subscriptionRecord?.status === 'canceled'}
-                      onClick={handleCancelSubscription}
+                      disabled={planActionBusy || !subscription || subscription.status === 'cancelled'}
+                      onClick={() => void handleCancelSubscription()}
                     >
                       Cancel subscription
                     </button>
@@ -874,7 +800,9 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
             </div>
 
             <div className="modal-footer">
-              <button className="modal-btn cancel" onClick={handleCloseManageBilling}>Close</button>
+              <button className="modal-btn cancel" type="button" onClick={handleCloseManageBilling}>
+                Close
+              </button>
               <button
                 className="modal-btn primary"
                 type="button"
@@ -885,9 +813,6 @@ export const SubscriptionBilling = memo(function SubscriptionBilling() {
                     /* ignore quota / private mode */
                   }
                   setShowManageBillingModal(false)
-                  if (selectedPlanName) {
-                    setSelectedPlanName(null)
-                  }
                 }}
               >
                 <Check size={14} />

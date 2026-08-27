@@ -2,11 +2,16 @@ import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { bookingRequests, payments, vehicles } from '../db/schema.js'
 import { logAudit } from './audit.js'
-import { settleInvoice } from './billing.js'
+import { reverseInvoicePaymentRefund, settleInvoice } from './billing.js'
 import { parseCartNote } from './booking.js'
-import { redeemPromoCode } from './promoCodes.js'
+import {
+  dispatchCustomerTransactionalChannelsSafe,
+  type CustomerNotificationContext,
+} from './customerNotifications.js'
+import { PromoRedeemError, redeemPromoCode } from './promoCodes.js'
 import { notifyUser, notifyDealerOwner } from './notify.js'
 import { SkipCashStatus } from './skipcash.js'
+import { logStructured } from '../utils/requestContext.js'
 
 export interface SettlementResult {
   handled: boolean
@@ -29,7 +34,14 @@ export async function applySkipCashOutcome(params: {
   reportedAmount?: string | null
 }): Promise<SettlementResult> {
   const { paymentId, statusId } = params
-  return db.transaction(async (tx) => {
+  let channelNotify: CustomerNotificationContext | null = null
+  let opsAlert: {
+    paymentId: string
+    promoCodeId: string
+    discountAmount: number
+    reason: string
+  } | null = null
+  const result = await db.transaction(async (tx) => {
     const [payment] = await tx
       .select()
       .from(payments)
@@ -129,6 +141,16 @@ export async function applySkipCashOutcome(params: {
             title: 'Payment received',
             message: `We received your subscription payment of QAR ${Number(payment.amount).toFixed(2)}. Thank you!`,
           })
+          const amount = Number(payment.amount).toFixed(2)
+          channelNotify = {
+            userId: payment.customerId,
+            event: 'payment_received',
+            parameters: [amount],
+            email: {
+              subject: 'Payment received — CarFlow',
+              html: `<p>We received your subscription payment of <strong>QAR ${amount}</strong>. Thank you!</p>`,
+            },
+          }
         }
         await logAudit(tx, {
           action: 'payment.invoice.completed',
@@ -255,12 +277,53 @@ export async function applySkipCashOutcome(params: {
         })
         const cart = parseCartNote(br?.note ?? payment.note)
         if (cart.promo?.promoCodeId && payment.customerId && cart.promo.discountAmount) {
-          await redeemPromoCode(tx, {
-            promoCodeId: cart.promo.promoCodeId,
-            customerId: payment.customerId,
-            discountAmount: cart.promo.discountAmount,
-            bookingRequestId: payment.bookingRequestId ?? undefined,
-          })
+          try {
+            await redeemPromoCode(tx, {
+              promoCodeId: cart.promo.promoCodeId,
+              customerId: payment.customerId,
+              discountAmount: cart.promo.discountAmount,
+              bookingRequestId: payment.bookingRequestId ?? undefined,
+            })
+          } catch (err) {
+            // Limit checks are a JS-level throw before any write, so the
+            // transaction is still usable. Letting it escape would roll back a
+            // settlement for money SkipCash has already captured.
+            if (!(err instanceof PromoRedeemError)) throw err
+            // The discount WAS honoured on the captured amount but no
+            // redemption row exists, so `used_count` never moves and a
+            // maxUses-capped code could be spent forever. Never let that pass
+            // silently: mark the payment so it surfaces in the admin payments
+            // list, audit it, and log it for ops after commit.
+            const reason = err.message
+            const shortfall = Number(cart.promo.discountAmount)
+            await tx
+              .update(payments)
+              .set({
+                note: appendNote(
+                  payment.note,
+                  `Promo ${cart.promo.code ?? cart.promo.promoCodeId} was honoured at checkout ` +
+                    `(QAR ${shortfall.toFixed(2)} off) but could NOT be redeemed: ${reason}. ` +
+                    'Discount granted without a redemption — needs ops review.'
+                ),
+              })
+              .where(eq(payments.id, payment.id))
+            await logAudit(tx, {
+              action: 'payment.promo.redeem_failed',
+              entityType: 'payment',
+              entityId: payment.id,
+              after: {
+                promoCodeId: cart.promo.promoCodeId,
+                discountAmount: shortfall,
+                reason,
+              },
+            })
+            opsAlert = {
+              paymentId: payment.id,
+              promoCodeId: cart.promo.promoCodeId,
+              discountAmount: shortfall,
+              reason,
+            }
+          }
         }
         return { handled: true, action: 'booking-paid' }
       }
@@ -327,19 +390,45 @@ export async function applySkipCashOutcome(params: {
     // ------------------------------------------------------------- REFUNDS
     if (statusId === SkipCashStatus.REFUNDED) {
       if (payment.status === 'refunded') return { handled: true, action: 'already-refunded' }
+      const paidAmount = Number(payment.amount)
+      const alreadyRefunded = Number(payment.refundedAmount ?? 0)
+      // Claiming the full amount on top of a recorded partial refund would
+      // report money back to the customer that we never sent. Keep what we
+      // actually recorded and flag the gap for reconciliation instead.
+      const partialOnRecord = alreadyRefunded > 0 && alreadyRefunded < paidAmount - 0.001
+      const newRefunded = partialOnRecord ? alreadyRefunded : paidAmount
       await tx
         .update(payments)
         .set({
           status: 'refunded',
-          refundedAmount: payment.amount,
+          refundedAmount: String(newRefunded),
           needsRefund: false,
-          note: appendNote(payment.note, 'Refund confirmed by SkipCash.'),
+          note: appendNote(
+            payment.note,
+            partialOnRecord
+              ? `Refund confirmed by SkipCash, but only ${alreadyRefunded.toFixed(2)} of ${paidAmount.toFixed(2)} is recorded here — needs reconciliation.`
+              : 'Refund confirmed by SkipCash.'
+          ),
         })
         .where(eq(payments.id, payment.id))
+      // Mirror the admin refund path so the invoice, dealer commission and
+      // revenue counters are reversed instead of left crediting a refund.
+      if (payment.invoiceId && payment.customerId && payment.dealerId) {
+        await reverseInvoicePaymentRefund(tx, {
+          paymentId: payment.id,
+          invoiceId: payment.invoiceId,
+          customerId: payment.customerId,
+          dealerId: payment.dealerId,
+          paymentAmount: paidAmount,
+          refundAmount: newRefunded - alreadyRefunded > 0 ? newRefunded - alreadyRefunded : newRefunded,
+          fullyRefunded: !partialOnRecord,
+        })
+      }
       await logAudit(tx, {
         action: 'payment.refunded.provider',
         entityType: 'payment',
         entityId: payment.id,
+        after: { refundedAmount: String(newRefunded), reconciliationNeeded: partialOnRecord },
       })
       return { handled: true, action: 'refunded' }
     }
@@ -369,6 +458,53 @@ export async function applySkipCashOutcome(params: {
 
     // NEW / PENDING — transaction still in flight.
     return { handled: true, action: 'still-pending' }
+  })
+  if (channelNotify) {
+    dispatchCustomerTransactionalChannelsSafe(channelNotify)
+  }
+  if (opsAlert) {
+    // Emitted after commit so a rolled-back settlement never pages ops.
+    logStructured('error', 'payment.promo.redeem_failed', opsAlert)
+  }
+  return result
+}
+
+/**
+ * Gives up locally on a SkipCash intent the customer never completed.
+ *
+ * A hosted payUrl stays payable indefinitely, so without a local TTL an
+ * abandoned checkout leaves a `pending` payment row that the reconciliation
+ * sweep re-reads forever and no job ever terminates. Marking it `failed` (with
+ * its external id intact) keeps the row eligible for the paid-after-local-
+ * failure handler above if the customer pays the stale page later.
+ */
+export async function expireStaleSkipCashIntent(paymentId: string): Promise<SettlementResult> {
+  return db.transaction(async (tx) => {
+    const [payment] = await tx
+      .select()
+      .from(payments)
+      .where(eq(payments.id, paymentId))
+      .for('update')
+      .limit(1)
+    if (!payment) return { handled: false, action: 'unknown-payment' }
+    if (payment.status !== 'pending') return { handled: false, action: 'not-pending' }
+    await tx
+      .update(payments)
+      .set({
+        status: 'failed',
+        note: appendNote(
+          payment.note,
+          'Expired locally: the SkipCash hosted payment was never completed.'
+        ),
+      })
+      .where(eq(payments.id, payment.id))
+    await releaseHold(tx, payment.bookingRequestId)
+    await logAudit(tx, {
+      action: 'payment.intent.expired',
+      entityType: 'payment',
+      entityId: payment.id,
+    })
+    return { handled: true, action: 'intent-expired' }
   })
 }
 

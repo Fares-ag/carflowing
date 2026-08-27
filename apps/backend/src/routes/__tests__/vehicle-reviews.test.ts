@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { Express } from 'express'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
-import { auditLogs, rentalReviews, rentals } from '../../db/schema.js'
+import { auditLogs, rentals } from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 describe('Vehicle reviews API', () => {

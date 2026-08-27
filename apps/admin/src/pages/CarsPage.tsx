@@ -1,5 +1,5 @@
-import type { Dealer, Vehicle, VehicleCategory, VehicleStatus } from '@carflow/shared'
-import { Check, Download, Eye, Filter, Search, Settings, Timer, Trash2, Truck, Users } from 'lucide-react'
+import type { Dealer, RentalStatus, Vehicle, VehicleCategory, VehicleStatus } from '@carflow/shared'
+import { Check, Download, Eye, Filter, Search, Timer, Trash2, Truck, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AddCarModal } from '../components/AddCarModal'
@@ -41,6 +41,7 @@ interface RequestRow {
   rentalDuration: string
   priority: Priority
   status: RequestStatus
+  rawStatus: RentalStatus
   timeAgo: string
 }
 
@@ -115,10 +116,10 @@ export function CarsPage() {
     const vehicleMap = new Map(vehicles.map(vehicle => [vehicle.id, vehicle]))
     return rentals.map((rental) => {
       const vehicle = rental.vehicle ?? vehicleMap.get(rental.vehicleId)
-      const customerName = rental.customer?.name ?? 'Unknown customer'
-      const customerEmail = rental.customer?.email ?? '—'
-      const dealerName = rental.dealer?.name ?? 'Unknown dealer'
-      const vehicleName = vehicle?.name ?? 'Unknown vehicle'
+      const customerName = rental.customer?.name?.trim() || rental.customer?.email?.trim() || '—'
+      const customerEmail = rental.customer?.email?.trim() || '—'
+      const dealerName = rental.dealer?.name?.trim() || '—'
+      const vehicleName = vehicle?.name?.trim() || '—'
       const vehicleYear = vehicle?.year != null ? String(vehicle.year) : '—'
       const start = new Date(rental.startDate)
       const end = new Date(rental.endDate)
@@ -144,6 +145,7 @@ export function CarsPage() {
         rentalDuration: `${days} days`,
         priority,
         status,
+        rawStatus: rental.status,
         timeAgo,
       }
     })
@@ -275,14 +277,6 @@ export function CarsPage() {
                 <Download size={16} />
                 Export
               </button>
-              <button
-                className="carsIconBtn"
-                type="button"
-                aria-label="More"
-                onClick={() => setInfoModal({ title: 'More Filters', message: 'More filter options coming soon.' })}
-              >
-                <Settings size={16} />
-              </button>
             </div>
           </div>
         </section>
@@ -388,23 +382,26 @@ export function CarsPage() {
                         >
                           <Eye size={14} />
                         </button>
-                        <button
-                          className="carsActionBtn"
-                          type="button"
-                          aria-label="Approve"
-                          onClick={() => {
-                            updateRentalStatus(r.sourceId, 'completed')
-                              .then(() => refreshRequests())
-                              .catch((err) =>
-                                setInfoModal({
-                                  title: 'Error',
-                                  message: err instanceof Error ? err.message : 'Failed to approve rental',
-                                })
-                              )
-                          }}
-                        >
-                          <Check size={14} />
-                        </button>
+                        {r.rawStatus === 'reserved' && (
+                          <button
+                            className="carsActionBtn"
+                            type="button"
+                            aria-label="Approve"
+                            onClick={() => {
+                              updateRentalStatus(r.sourceId, 'active')
+                                .then(() => refreshRequests())
+                                .catch((err) =>
+                                  setInfoModal({
+                                    title: 'Error',
+                                    message:
+                                      err instanceof Error ? err.message : 'Failed to approve rental',
+                                  })
+                                )
+                            }}
+                          >
+                            <Check size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

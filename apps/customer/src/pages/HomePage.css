@@ -1085,3 +1085,30 @@
     font-size: 12px;
   }
 }
+.offers-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.offers-actions .submit-button {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.offers-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #685ff7;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.offers-secondary:hover {
+  text-decoration: underline;
+}

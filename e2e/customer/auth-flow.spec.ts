@@ -16,6 +16,9 @@ test.describe('E2E-C03 customer auth flow', () => {
 
     await page.getByLabel(/Confirm Password/i).fill('password123')
 
+    // Signup now requires explicit consent to the Terms and Privacy Notice.
+    await page.getByRole('checkbox', { name: /accept the/i }).check()
+
     await page.getByRole('button', { name: /create account/i }).click()
 
     await expect(page).toHaveURL(/browse|login/)

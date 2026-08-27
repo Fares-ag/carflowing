@@ -18,6 +18,44 @@ export function requestContextMiddleware(req: Request, res: Response, next: Next
   next()
 }
 
+/**
+ * Access logs are pure noise in Vitest output, so they are off under VITEST
+ * unless ACCESS_LOG=true asks for them (the middleware's own tests do).
+ */
+export function accessLoggingEnabled(): boolean {
+  if (process.env.ACCESS_LOG === 'true') return true
+  if (process.env.ACCESS_LOG === 'false') return false
+  return process.env.VITEST !== 'true'
+}
+
+/**
+ * One structured line per completed request so the request id we already hand
+ * back to the client is greppable server-side. Never logs bodies, headers,
+ * cookies or query strings — those carry tokens and personal data.
+ */
+export function accessLogMiddleware(req: Request, res: Response, next: NextFunction): void {
+  if (!accessLoggingEnabled()) {
+    next()
+    return
+  }
+  const startedAt = process.hrtime.bigint()
+  // originalUrl minus the query string: query values can carry tokens.
+  const path = req.originalUrl.split('?')[0]
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6
+    const user = (req as Request & { user?: { sub?: string } }).user
+    logStructured(res.statusCode >= 500 ? 'error' : 'info', 'http.request', {
+      requestId: req.requestId,
+      method: req.method,
+      path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs),
+      userId: user?.sub ?? null,
+    })
+  })
+  next()
+}
+
 export function logStructured(
   level: 'info' | 'warn' | 'error',
   event: string,

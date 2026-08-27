@@ -29,7 +29,8 @@ describe('Promo codes', () => {
   it('PROMO-01: 50% first-month promo bills list price on renewal', async () => {
     const fixtures = await seedFixtures()
     const listMonthly = computeMonthlyAmount(fixtures.vehicles[0].pricePerDay)
-    const discounted = listMonthly / 2
+    const termMonthly = computeMonthlyAmount(fixtures.vehicles[0].pricePerDay, 3)
+    const discounted = termMonthly / 2
 
     const [promo] = await db
       .insert(promoCodes)
@@ -83,8 +84,8 @@ describe('Promo codes', () => {
     expect(approved.status).toBe(200)
 
     const [rental] = await db.select().from(rentals).where(eq(rentals.bookingRequestId, br.id)).limit(1)
-    expect(Number(rental.monthlyAmount)).toBe(listMonthly)
-    expect(Number(rental.totalAmount)).toBe(listMonthly * 3)
+    expect(Number(rental.monthlyAmount)).toBe(termMonthly)
+    expect(Number(rental.totalAmount)).toBe(termMonthly * 3)
 
     const invoiceRows = await db.select().from(invoices).where(eq(invoices.rentalId, rental.id))
     expect(invoiceRows).toHaveLength(1)
@@ -100,7 +101,7 @@ describe('Promo codes', () => {
 
     const allInvoices = await db.select().from(invoices).where(eq(invoices.rentalId, rental.id))
     expect(allInvoices).toHaveLength(2)
-    expect(Number(allInvoices[1].amount)).toBeCloseTo(listMonthly, 2)
+    expect(Number(allInvoices[1].amount)).toBeCloseTo(termMonthly, 2)
   })
 
   it('PROMO-02: same customer cannot redeem the same code twice', async () => {

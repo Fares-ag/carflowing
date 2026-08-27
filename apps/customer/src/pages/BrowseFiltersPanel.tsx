@@ -113,6 +113,7 @@ export function BrowseFiltersPanel({ state, onChange, onClear }: BrowseFiltersPa
                     <div className="filter-select-wrap">
                       <select
                         id={`browse-${section.id}`}
+                        aria-label={section.label}
                         className="filter-select"
                         value={state.location}
                         onChange={(event) => patch({ location: event.target.value })}
@@ -129,6 +130,7 @@ export function BrowseFiltersPanel({ state, onChange, onClear }: BrowseFiltersPa
                   {section.type === 'date' && (
                     <input
                       id="browse-start-date"
+                      aria-label={section.label}
                       type="date"
                       className="filter-date"
                       value={state.startDate}
@@ -141,6 +143,7 @@ export function BrowseFiltersPanel({ state, onChange, onClear }: BrowseFiltersPa
                     <div className="range-group">
                       <input
                         type="range"
+                        aria-label={`${section.label} minimum`}
                         min={section.min}
                         max={section.max}
                         step={section.step ?? 1}
@@ -156,6 +159,7 @@ export function BrowseFiltersPanel({ state, onChange, onClear }: BrowseFiltersPa
                       />
                       <input
                         type="range"
+                        aria-label={`${section.label} maximum`}
                         min={section.min}
                         max={section.max}
                         step={section.step ?? 1}
@@ -176,6 +180,7 @@ export function BrowseFiltersPanel({ state, onChange, onClear }: BrowseFiltersPa
                     <input
                       id={`browse-${section.id}`}
                       type="range"
+                      aria-label={section.label}
                       min={section.min}
                       max={section.max}
                       step={section.step ?? 1}

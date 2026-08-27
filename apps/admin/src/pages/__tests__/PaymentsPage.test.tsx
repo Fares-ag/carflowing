@@ -68,4 +68,39 @@ describe('PaymentsPage contract', () => {
       expect(screen.getByText('Chris Customer')).toBeInTheDocument()
     })
   })
+
+  it('A-QA-004: shows the real payment id, not a synthetic uppercased prefix', async () => {
+    renderWithProviders(<PaymentsPage />)
+    await waitFor(() => expect(screen.getByText('pay_1')).toBeInTheDocument())
+    // The old row showed `id.slice(0, 8).toUpperCase()`, a reference that
+    // matches nothing in the database or at the gateway.
+    expect(screen.queryByText('PAY_1')).not.toBeInTheDocument()
+  })
+
+  it('A-QA-005: prefers the gateway transaction id when the provider issued one', async () => {
+    vi.mocked(adminService.listPaymentsWithDetails).mockResolvedValue({
+      items: [
+        {
+          id: 'pay_2',
+          customerId: 'cust_1',
+          amount: 500,
+          status: 'completed',
+          type: 'rental',
+          method: 'card',
+          provider: 'skipcash',
+          externalTransactionId: 'SKC-9f2c41',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 50,
+    })
+    renderWithProviders(<PaymentsPage />)
+    await waitFor(() => expect(screen.getByText('SKC-9f2c41')).toBeInTheDocument())
+    expect(screen.getByText('SKC-9f2c41')).toHaveAttribute(
+      'title',
+      'Gateway reference: SKC-9f2c41'
+    )
+  })
 })

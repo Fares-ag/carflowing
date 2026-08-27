@@ -212,7 +212,7 @@ export const Notifications = memo(function Notifications() {
 
       
 
-      <div className="notifications-content">
+      <div className="notifications-content" role="main">
 
         <div className="page-header">
 

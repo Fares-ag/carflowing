@@ -126,7 +126,7 @@ export function SwapRequests() {
     <div className="dashboard-page">
       <Sidebar />
       <Header />
-      <div className="swapsPage">
+      <div className="swapsPage" role="main">
         <div className="swPageHeader">
           <h1 className="swPageTitle">Swap Requests</h1>
           <p className="swPageSubtitle">

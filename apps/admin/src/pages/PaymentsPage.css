@@ -353,7 +353,14 @@
 .paymentsRowId {
   font-weight: 600;
   color: #101828;
-  font-size: 16px;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Real references (gateway ids, UUIDs) are long — truncate for layout, the
+     full value stays available in the title attribute. */
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .paymentsRowInfo {

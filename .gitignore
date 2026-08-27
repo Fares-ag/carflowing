@@ -64,3 +64,20 @@ supabase/.temp/
 
 .vercel
 .env*
+!.env.example
+
+# Local operator credential files (admin/dealer logins used by scripts/)
+.production-admin.local
+
+# Working snapshots / archives kept beside the repo. Two of these contain .env
+# files — `git add -A` must never stage them.
+*.tar.gz
+*.tgz
+*.zip
+_to_delete/
+_audit_snapshot.tar.gz
+_carflow_src_snapshot.tar.gz
+
+# Generated audit reports (regenerate rather than commit)
+carflow-audit.html
+carflow-capability-gaps.html

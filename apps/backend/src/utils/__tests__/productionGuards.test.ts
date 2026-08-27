@@ -17,6 +17,8 @@ function prodEnv(overrides: Record<string, string | undefined> = {}): Record<str
     CORS_ORIGINS: 'https://customer.carflow.qa,https://dealer.carflow.qa',
     RESEND_API_KEY: 're_test',
     FROM_EMAIL: 'noreply@carflow.qa',
+    SENTRY_DSN: 'https://examplePublicKey@o0.ingest.sentry.io/0',
+    DATABASE_URL: 'postgresql://carflow:carflow@ep-cool-mud-123.eu-central-1.aws.neon.tech/carflow',
     SKIPCASH_MODE: 'production',
     SKIPCASH_KEY_ID: 'kid',
     SKIPCASH_KEY_SECRET: 'secret',
@@ -96,15 +98,66 @@ describe('assertProductionSecrets', () => {
     })
   })
 
-  it('rejects compromised SkipCash webhook key', () => {
+  it('rejects compromised SkipCash webhook key', async () => {
     withEnv(prodEnv({ SKIPCASH_WEBHOOK_KEY: '7adcc306-8732-46b9-9da6-f8769699e8c4' }), () => {
       expect(() => assertProductionSecrets()).toThrow(/committed/)
+    })
+  })
+
+  it('rejects SKIPCASH_SAVED_CARDS_CHARGE_READY in production', () => {
+    withEnv(prodEnv({ SKIPCASH_SAVED_CARDS_CHARGE_READY: 'true' }), () => {
+      expect(() => assertProductionSecrets()).toThrow(/SKIPCASH_SAVED_CARDS_CHARGE_READY/)
     })
   })
 
   it('rejects missing RESEND_API_KEY in production', () => {
     withEnv(prodEnv({ RESEND_API_KEY: undefined }), () => {
       expect(() => assertProductionSecrets()).toThrow(/RESEND_API_KEY/)
+    })
+  })
+
+  it('GUARD-EMAIL-01: rejects missing FROM_EMAIL in production', () => {
+    withEnv(prodEnv({ FROM_EMAIL: undefined }), () => {
+      expect(() => assertProductionSecrets()).toThrow(/FROM_EMAIL/)
+    })
+  })
+
+  it('GUARD-SENTRY-01: rejects missing SENTRY_DSN in production', () => {
+    withEnv(prodEnv({ SENTRY_DSN: undefined }), () => {
+      expect(() => assertProductionSecrets()).toThrow(/SENTRY_DSN/)
+    })
+  })
+
+  it('GUARD-SENTRY-02: allows no DSN with an explicit opt-out but warns loudly', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    withEnv(prodEnv({ SENTRY_DSN: undefined, ALLOW_NO_ERROR_REPORTING: 'true' }), () => {
+      expect(() => assertProductionSecrets()).not.toThrow()
+    })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ALLOW_NO_ERROR_REPORTING'))
+    warn.mockRestore()
+  })
+
+  it('GUARD-DB-01: rejects a pooled (PgBouncer) DATABASE_URL in production', () => {
+    withEnv(
+      prodEnv({
+        DATABASE_URL:
+          'postgresql://carflow:carflow@ep-cool-mud-123-pooler.eu-central-1.aws.neon.tech/carflow',
+      }),
+      () => {
+        expect(() => assertProductionSecrets()).toThrow(/DIRECT \(non-pooled\) connection string/)
+      }
+    )
+  })
+
+  it('GUARD-BLOB-01: rejects BLOB_ACCESS=public in production', () => {
+    withEnv(prodEnv({ BLOB_ACCESS: 'public' }), () => {
+      expect(() => assertProductionSecrets()).toThrow(/BLOB_ACCESS/)
+    })
+  })
+
+  it('GUARD-BLOB-02: allows the default private blob access', () => {
+    withEnv(prodEnv({ BLOB_ACCESS: undefined }), () => {
+      expect(() => assertProductionSecrets()).not.toThrow()
     })
   })
 

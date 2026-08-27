@@ -29,15 +29,25 @@ test.describe('ADM-E2E critical admin journeys', () => {
       await expect(page.getByText(/Customers/i).first()).toBeVisible({ timeout: 15000 })
       await expect(customerRow).toBeVisible({ timeout: 15000 })
 
+      // Scope each confirmation to its dialog and wait for the dialog to close:
+      // locator.click() has no default action timeout, so an unbounded click on a
+      // button that never becomes actionable hangs until the whole test times out.
       const suspendBtn = customerRow.getByRole('button', { name: /^Suspend$/i })
       await expect(suspendBtn).toBeVisible()
       await suspendBtn.click()
-      await page.getByRole('button', { name: /^Suspend$/i }).last().click()
+      const suspendDialog = page.getByRole('dialog', { name: /suspend customer/i })
+      await expect(suspendDialog).toBeVisible({ timeout: 10000 })
+      await suspendDialog.getByRole('button', { name: /^Suspend$/i }).click()
+      await expect(suspendDialog).toBeHidden({ timeout: 10000 })
       await expect(customerRow.getByText(/Suspended/i)).toBeVisible({ timeout: 10000 })
 
       const activateBtn = customerRow.getByRole('button', { name: /^Activate$/i })
+      await expect(activateBtn).toBeVisible({ timeout: 10000 })
       await activateBtn.click()
-      await page.getByRole('button', { name: /^Activate$/i }).last().click()
+      const activateDialog = page.getByRole('dialog', { name: /activate customer/i })
+      await expect(activateDialog).toBeVisible({ timeout: 10000 })
+      await activateDialog.getByRole('button', { name: /^Activate$/i }).click()
+      await expect(activateDialog).toBeHidden({ timeout: 10000 })
       await expect(customerRow.getByText(/Active/i)).toBeVisible({ timeout: 10000 })
     } finally {
       await loginAs('admin').catch(() => {})

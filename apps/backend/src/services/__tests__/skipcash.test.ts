@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createSkipCashPayment,
+  requestSkipCashRefund,
   SkipCashConfigError,
   SkipCashStatus,
   verifySkipCashWebhookSignature,
@@ -123,5 +124,142 @@ describe('verifySkipCashWebhookSignature', () => {
   it('rejects when the webhook key is not configured', () => {
     delete process.env.SKIPCASH_WEBHOOK_KEY
     expect(verifySkipCashWebhookSignature({ PaymentId: 'x', Amount: '1', StatusId: 2 }, 'sig')).toBe(false)
+  })
+})
+
+/**
+ * SkipCash reports business-rule rejections inside a 200 (`hasError`), so a
+ * bare `res.ok` recorded a REJECTED refund as money returned to the customer —
+ * admin then marked the payment refunded and stopped chasing it.
+ */
+describe('requestSkipCashRefund', () => {
+  const params = { externalPaymentId: 'skipcash-pay-1', amount: 250.5 }
+
+  afterEach(() => {
+    delete process.env.SKIPCASH_REFUND_ENABLED
+    delete process.env.SKIPCASH_KEY_ID
+    delete process.env.SKIPCASH_KEY_SECRET
+    vi.unstubAllGlobals()
+  })
+
+  function enableRefunds() {
+    process.env.SKIPCASH_REFUND_ENABLED = 'true'
+    process.env.SKIPCASH_KEY_ID = 'key-id'
+    process.env.SKIPCASH_KEY_SECRET = 'key-secret'
+  }
+
+  it('returns manual guidance when automatic refunds are not enabled', async () => {
+    const result = await requestSkipCashRefund(params)
+    expect(result.refunded).toBe(false)
+    expect(result.manual).toBe(true)
+  })
+
+  it('does NOT report a refund for HTTP 200 + hasError:true', async () => {
+    enableRefunds()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ hasError: true, errorMessage: 'Refund window has expired' }),
+      })
+    )
+
+    const result = await requestSkipCashRefund(params)
+
+    expect(result.refunded).toBe(false)
+    expect(result.manual).toBe(true)
+    expect(result.message).toBe('Refund window has expired')
+  })
+
+  it('does NOT report a refund for HTTP 200 with no resultObj', async () => {
+    enableRefunds()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
+    )
+
+    const result = await requestSkipCashRefund(params)
+
+    expect(result.refunded).toBe(false)
+    expect(result.manual).toBe(true)
+    expect(result.message).toContain('HTTP 200')
+  })
+
+  it('does NOT report a refund when the provider status is REFUND_FAILED', async () => {
+    enableRefunds()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          hasError: false,
+          resultObj: { id: 'refund-9', statusId: SkipCashStatus.REFUND_FAILED },
+        }),
+      })
+    )
+
+    const result = await requestSkipCashRefund(params)
+
+    expect(result.refunded).toBe(false)
+    expect(result.manual).toBe(true)
+    expect(result.message).toMatch(/REFUND_FAILED/)
+  })
+
+  it('reports a refund and its provider id on a clean success', async () => {
+    enableRefunds()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          hasError: false,
+          resultObj: { id: 'refund-42', statusId: SkipCashStatus.REFUNDED },
+        }),
+      })
+    )
+
+    const result = await requestSkipCashRefund(params)
+
+    expect(result).toEqual({ refunded: true, manual: false, providerRefundId: 'refund-42' })
+  })
+
+  it('treats PENDING_REFUND as accepted so ops do not refund a second time', async () => {
+    enableRefunds()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          hasError: false,
+          resultObj: { id: 'refund-43', statusId: SkipCashStatus.PENDING_REFUND },
+        }),
+      })
+    )
+
+    const result = await requestSkipCashRefund(params)
+
+    expect(result.refunded).toBe(true)
+    expect(result.providerRefundId).toBe('refund-43')
+  })
+
+  it('surfaces the gateway message on a non-2xx response', async () => {
+    enableRefunds()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: async () => ({ hasError: true, errorMessage: 'Payment already refunded' }),
+      })
+    )
+
+    const result = await requestSkipCashRefund(params)
+
+    expect(result.refunded).toBe(false)
+    expect(result.message).toBe('Payment already refunded')
   })
 })

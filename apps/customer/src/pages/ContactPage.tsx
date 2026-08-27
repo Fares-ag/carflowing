@@ -16,6 +16,7 @@ import { Footer } from '../components/shared/Footer'
 import { Header } from '../components/shared/Header'
 import {
   SUPPORT_EMAIL,
+  SUPPORT_PHONE_CONFIGURED,
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_TEL,
 } from '../constants/support'
@@ -79,6 +80,9 @@ export function ContactPage() {
     }
 
     if (!session) {
+      // There is no public complaints endpoint, so a guest message can only
+      // leave via their own mail client. Say so out loud: the old version
+      // navigated to a mailto: silently and looked like a failed submit.
       const body = [
         `Name: ${fullName.trim()}`,
         `Phone: ${phone.trim()}`,
@@ -86,6 +90,9 @@ export function ContactPage() {
         '',
         message.trim(),
       ].join('\n')
+      toast.info(
+        `Opening your email app with this message addressed to ${SUPPORT_EMAIL}. It is not sent until you press send there.`
+      )
       window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject.trim())}&body=${encodeURIComponent(body)}`
       return
     }
@@ -128,34 +135,38 @@ export function ContactPage() {
         </header>
 
         <section className="contact-methods" aria-label="Contact methods">
-          <article className="contact-method">
-            <div className="contact-method__icon" aria-hidden>
-              <Phone size={20} />
-            </div>
-            <h2>Call Us</h2>
-            <p className="contact-method__desc">Speak with our experts</p>
-            <a className="contact-method__action" href={`tel:${SUPPORT_PHONE_TEL}`}>
-              {SUPPORT_PHONE_DISPLAY}
-            </a>
-            <p className="contact-method__meta">24/7 Available</p>
-          </article>
+          {SUPPORT_PHONE_CONFIGURED && (
+            <>
+              <article className="contact-method">
+                <div className="contact-method__icon" aria-hidden>
+                  <Phone size={20} />
+                </div>
+                <h2>Call Us</h2>
+                <p className="contact-method__desc">Speak with our experts</p>
+                <a className="contact-method__action" href={`tel:${SUPPORT_PHONE_TEL}`}>
+                  {SUPPORT_PHONE_DISPLAY}
+                </a>
+                <p className="contact-method__meta">24/7 Available</p>
+              </article>
 
-          <article className="contact-method">
-            <div className="contact-method__icon" aria-hidden>
-              <MessageCircle size={20} />
-            </div>
-            <h2>WhatsApp</h2>
-            <p className="contact-method__desc">Quick support via chat</p>
-            <a
-              className="contact-method__action"
-              href={whatsappHref}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {SUPPORT_PHONE_DISPLAY}
-            </a>
-            <p className="contact-method__meta">Mon–Sat, 8AM–10PM</p>
-          </article>
+              <article className="contact-method">
+                <div className="contact-method__icon" aria-hidden>
+                  <MessageCircle size={20} />
+                </div>
+                <h2>WhatsApp</h2>
+                <p className="contact-method__desc">Quick support via chat</p>
+                <a
+                  className="contact-method__action"
+                  href={whatsappHref}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {SUPPORT_PHONE_DISPLAY}
+                </a>
+                <p className="contact-method__meta">Mon–Sat, 8AM–10PM</p>
+              </article>
+            </>
+          )}
 
           <article className="contact-method">
             <div className="contact-method__icon" aria-hidden>
@@ -253,14 +264,16 @@ export function ContactPage() {
 
               {!session && (
                 <p className="contact-form__hint">
-                  Guests can send via email. <Link to="/login?redirect=%2Fcontact">Sign in</Link> to
-                  track support requests in your account.
+                  You are not signed in, so this form opens your own email app addressed to{' '}
+                  {SUPPORT_EMAIL} — nothing reaches us until you press send there.{' '}
+                  <Link to="/login?redirect=%2Fcontact">Sign in</Link> to send it directly and track
+                  the reply in your account.
                 </p>
               )}
 
               <button type="submit" className="contact-submit" disabled={submitting}>
                 <Send size={16} aria-hidden />
-                {submitting ? 'Sending…' : 'Send Message'}
+                {!session ? 'Open email app' : submitting ? 'Sending…' : 'Send Message'}
               </button>
             </form>
           </div>
@@ -293,10 +306,23 @@ export function ContactPage() {
             your personalized quote today.
           </p>
           <div className="contact-cta__actions">
-            <a className="contact-cta__btn contact-cta__btn--primary" href={`tel:${SUPPORT_PHONE_TEL}`}>
-              <Phone size={16} aria-hidden />
-              Call {SUPPORT_PHONE_DISPLAY}
-            </a>
+            {SUPPORT_PHONE_CONFIGURED ? (
+              <a
+                className="contact-cta__btn contact-cta__btn--primary"
+                href={`tel:${SUPPORT_PHONE_TEL}`}
+              >
+                <Phone size={16} aria-hidden />
+                Call {SUPPORT_PHONE_DISPLAY}
+              </a>
+            ) : (
+              <a
+                className="contact-cta__btn contact-cta__btn--primary"
+                href={`mailto:${SUPPORT_EMAIL}`}
+              >
+                <Mail size={16} aria-hidden />
+                Email {SUPPORT_EMAIL}
+              </a>
+            )}
             <Link to="/browse" className="contact-cta__btn contact-cta__btn--ghost">
               <Calendar size={16} aria-hidden />
               Schedule Consultation

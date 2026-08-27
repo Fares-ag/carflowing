@@ -1,9 +1,10 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import type { Express } from 'express'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
-import { auditLogs, bookingRequests, invoices, maintenanceRecords, notifications, rentalExtensions, rentals, vehicles } from '../../db/schema.js'
+import { auditLogs, bookingRequests, dealerInvoices, dealerPlans, dealerSubscriptions, invoices, maintenanceRecords, notifications, rentalExtensions, rentals, vehicles } from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
+import { checkDealerVehicleQuota, getDealerVehicleQuota } from '../../services/dealerBilling.js'
 import { extendRentalTerm } from '../../services/rentalExtension.js'
 
 /** ID: DEAL-01..DEAL-20 — dealer route integration tests */
@@ -427,5 +428,139 @@ describe('Dealer API', () => {
 
     const [vehicle] = await db.select().from(vehicles).where(eq(vehicles.id, fixtures.vehicles[0].id))
     expect(vehicle.status).toBe('maintenance')
+  })
+})
+
+/**
+ * dealer_plans is not referenced by anything resetDb() truncates, so plan rows
+ * survive between tests: upsert by code instead of inserting blindly.
+ */
+async function seedDealerPlans() {
+  const rows = await db
+    .insert(dealerPlans)
+    .values([
+      { code: 'free', name: 'Free', priceQar: '0', vehicleLimit: 1, features: [] },
+      { code: 'starter', name: 'Starter', priceQar: '99', vehicleLimit: 10, features: [] },
+      { code: 'professional', name: 'Professional', priceQar: '299', vehicleLimit: 25, features: [] },
+    ])
+    .onConflictDoUpdate({
+      target: dealerPlans.code,
+      set: {
+        name: sql`excluded.name`,
+        priceQar: sql`excluded.price_qar`,
+        vehicleLimit: sql`excluded.vehicle_limit`,
+        active: sql`excluded.active`,
+      },
+    })
+    .returning()
+  return Object.fromEntries(rows.map((r) => [r.code, r])) as Record<
+    'free' | 'starter' | 'professional',
+    typeof dealerPlans.$inferSelect
+  >
+}
+
+/** ID: DEAL-B01..DEAL-B04 — dealer subscription billing */
+describe('Dealer billing API', () => {
+  let app: Express
+
+  beforeAll(() => {
+    app = buildTestApp()
+  })
+
+  afterEach(async () => {
+    await resetDb()
+  })
+
+  it('DEAL-B01: moving onto a paid tier is never free — it raises an open invoice', async () => {
+    const fixtures = await seedFixtures()
+    await seedDealerPlans()
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+
+    const list = await agent.get('/api/dealer/billing/plans')
+    expect(list.status).toBe(200)
+    expect(list.body.map((p: { code: string }) => p.code)).toEqual(['free', 'starter', 'professional'])
+
+    const change = await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'professional' })
+    expect(change.status).toBe(200)
+    expect(change.body.change).toBe('subscribed')
+    expect(change.body.subscription.status).toBe('active')
+    expect(change.body.subscription.planCode).toBe('professional')
+    // The defect being fixed: the dealer used to land on QAR 299/mo unbilled.
+    expect(change.body.invoice).not.toBeNull()
+    expect(change.body.invoice.amount).toBe(299)
+    expect(change.body.invoice.status).toBe('open')
+
+    const invoiceRows = await db.select().from(dealerInvoices)
+    expect(invoiceRows).toHaveLength(1)
+    expect(Number(invoiceRows[0].amount)).toBe(299)
+    expect(invoiceRows[0].dealerId).toBe(fixtures.dealer.dealerId)
+
+    const history = await agent.get('/api/dealer/billing/invoices')
+    expect(history.status).toBe(200)
+    expect(history.body).toHaveLength(1)
+    expect(history.body[0]).toMatchObject({ amount: 299, status: 'open' })
+    expect(typeof history.body[0].dueDate).toBe('string')
+
+    const current = await agent.get('/api/dealer/billing/subscription')
+    expect(current.status).toBe(200)
+    expect(current.body.plan.code).toBe('professional')
+    expect(current.body.quota).toMatchObject({ limit: 25, used: 2, remaining: 23, enforced: true })
+  })
+
+  it('DEAL-B02: an unknown or inactive plan cannot be self-assigned', async () => {
+    const fixtures = await seedFixtures()
+    const plans = await seedDealerPlans()
+    await db.update(dealerPlans).set({ active: false }).where(eq(dealerPlans.code, 'professional'))
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+
+    const inactive = await agent
+      .patch('/api/dealer/subscription/plan')
+      .send({ planId: plans.professional.id })
+    expect(inactive.status).toBe(404)
+
+    const missing = await agent.patch('/api/dealer/subscription/plan').send({})
+    expect(missing.status).toBe(400)
+
+    expect(await db.select().from(dealerSubscriptions)).toHaveLength(0)
+  })
+
+  it('DEAL-B03: the vehicle cap is enforced server-side and rejects creation over the cap', async () => {
+    const fixtures = await seedFixtures()
+    await seedDealerPlans()
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+
+    // Starter allows 10: the seeded fleet of 2 leaves headroom.
+    await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'starter' })
+    const starterQuota = await checkDealerVehicleQuota(fixtures.dealer.dealerId)
+    expect(starterQuota).toMatchObject({ limit: 10, used: 2, overLimit: false })
+
+    // Free allows 1: the surplus listing is shelved, not deleted...
+    const downgrade = await agent.patch('/api/dealer/subscription/plan').send({ planCode: 'free' })
+    expect(downgrade.status).toBe(200)
+    expect(downgrade.body.change).toBe('downgraded')
+    expect(downgrade.body.invoice).toBeNull()
+    expect(downgrade.body.deactivatedVehicles).toBe(1)
+    const fleet = await db.select().from(vehicles).where(eq(vehicles.dealerId, fixtures.dealer.dealerId))
+    expect(fleet).toHaveLength(2)
+    expect(fleet.filter((v) => v.status === 'inactive')).toHaveLength(1)
+
+    // ...and creating another vehicle is refused while the dealer is at the cap.
+    const quota = await getDealerVehicleQuota(fixtures.dealer.dealerId)
+    expect(quota).toMatchObject({ limit: 1, used: 1, remaining: 0 })
+    await expect(checkDealerVehicleQuota(fixtures.dealer.dealerId)).rejects.toMatchObject({
+      status: 402,
+    })
+  })
+
+  it('DEAL-B04: dealers without a subscription keep unmetered listings', async () => {
+    const fixtures = await seedFixtures()
+    await seedDealerPlans()
+    const quota = await checkDealerVehicleQuota(fixtures.dealer.dealerId)
+    expect(quota).toMatchObject({ limit: null, remaining: null, enforced: false, used: 2 })
+
+    const { agent } = await loginAs(app, fixtures.dealer.email, 'dealer')
+    const current = await agent.get('/api/dealer/billing/subscription')
+    expect(current.body.subscription).toBeNull()
+    expect(current.body.quota.enforced).toBe(false)
   })
 })

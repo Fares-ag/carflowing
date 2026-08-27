@@ -1,10 +1,27 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, or } from 'drizzle-orm'
 import type { Express } from 'express'
 import request from 'supertest'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/index.js'
-import { bookingRequests, customerProfiles, maintenanceRecords, notifications, paymentMethods, profiles, rentals, vehicles } from '../../db/schema.js'
+import {
+  bookingRequests,
+  complaintReplies,
+  complaints,
+  customerProfiles,
+  emailOutbox,
+  invoices,
+  maintenanceRecords,
+  messages,
+  notifications,
+  paymentMethods,
+  payments,
+  profiles,
+  rentals,
+  userSecurity,
+  vehicles,
+} from '../../db/schema.js'
 import { buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
+import { addDays, todayISO } from '../../utils/dates.js'
 
 const deleteStoredFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 
@@ -78,6 +95,125 @@ describe('Customer API', () => {
     expect(ownerDetail.body.id).toBe(vehicleId)
   })
 
+  describe('simultaneous booking holds', () => {
+    const previousCap = process.env.MAX_ACTIVE_HOLDS_PER_CUSTOMER
+
+    afterEach(() => {
+      if (previousCap === undefined) delete process.env.MAX_ACTIVE_HOLDS_PER_CUSTOMER
+      else process.env.MAX_ACTIVE_HOLDS_PER_CUSTOMER = previousCap
+    })
+
+    async function pendingHoldCount(customerId: string) {
+      const rows = await db
+        .select()
+        .from(bookingRequests)
+        .where(
+          and(eq(bookingRequests.customerId, customerId), eq(bookingRequests.status, 'pending'))
+        )
+      return rows.length
+    }
+
+    it('CUST-HOLD-01: a customer cannot delist more vehicles than the hold cap', async () => {
+      process.env.MAX_ACTIVE_HOLDS_PER_CUSTOMER = '2'
+      const fixtures = await seedFixtures()
+      const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+      const vehicleIds = [
+        fixtures.vehicles[0].id,
+        fixtures.vehicles[1].id,
+        fixtures.dealer2Vehicle.id,
+      ]
+
+      expect(
+        (await agent.post('/api/customer/booking-requests').send({ vehicleId: vehicleIds[0] })).status
+      ).toBe(201)
+      expect(
+        (await agent.post('/api/customer/booking-requests').send({ vehicleId: vehicleIds[1] })).status
+      ).toBe(201)
+
+      const third = await agent
+        .post('/api/customer/booking-requests')
+        .send({ vehicleId: vehicleIds[2] })
+      expect(third.status).toBe(409)
+      expect(third.body.error).toMatch(/on hold/i)
+
+      expect(await pendingHoldCount(fixtures.customer.id)).toBe(2)
+      // The refused vehicle is still on the public catalog for everyone else.
+      const anon = await request(app).get('/api/customer/vehicles').query({ pageSize: 50 })
+      expect(anon.body.items.some((v: { id: string }) => v.id === vehicleIds[2])).toBe(true)
+    })
+
+    it('CUST-HOLD-02: concurrent requests cannot race past the hold cap', async () => {
+      process.env.MAX_ACTIVE_HOLDS_PER_CUSTOMER = '2'
+      const fixtures = await seedFixtures()
+      const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+      const vehicleIds = [
+        fixtures.vehicles[0].id,
+        fixtures.vehicles[1].id,
+        fixtures.dealer2Vehicle.id,
+      ]
+
+      const results = await Promise.all(
+        vehicleIds.map((vehicleId) =>
+          agent.post('/api/customer/booking-requests').send({ vehicleId })
+        )
+      )
+      // Every request is answered either way...
+      expect(results.filter((r) => r.status === 201 || r.status === 409)).toHaveLength(3)
+      // ...and however they interleave, the cap is never exceeded: the third
+      // request is either refused up front or its hold is released again.
+      expect(await pendingHoldCount(fixtures.customer.id)).toBe(2)
+      const declined = await db
+        .select()
+        .from(bookingRequests)
+        .where(
+          and(
+            eq(bookingRequests.customerId, fixtures.customer.id),
+            eq(bookingRequests.status, 'declined')
+          )
+        )
+      const refusedUpFront = results.filter((r) => r.status === 409).length
+      expect(refusedUpFront + declined.length).toBe(1)
+      for (const row of declined) {
+        expect(row.declineReason).toMatch(/too many simultaneous holds/i)
+      }
+    })
+
+    it('CUST-HOLD-03: an abandoned pay-at-shop hold stops blocking and stops counting', async () => {
+      process.env.MAX_ACTIVE_HOLDS_PER_CUSTOMER = '1'
+      const fixtures = await seedFixtures()
+      const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+      const staleVehicleId = fixtures.vehicles[0].id
+
+      const stale = await agent
+        .post('/api/customer/booking-requests')
+        .send({ vehicleId: staleVehicleId })
+      expect(stale.status).toBe(201)
+
+      // At the cap while the request is fresh...
+      const blocked = await agent
+        .post('/api/customer/booking-requests')
+        .send({ vehicleId: fixtures.vehicles[1].id })
+      expect(blocked.status).toBe(409)
+
+      // ...but the dealer never answered, so the hold ages out of its SLA.
+      await db
+        .update(bookingRequests)
+        .set({ createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) })
+        .where(eq(bookingRequests.id, stale.body.id))
+
+      const allowed = await agent
+        .post('/api/customer/booking-requests')
+        .send({ vehicleId: fixtures.vehicles[1].id })
+      expect(allowed.status).toBe(201)
+
+      // The abandoned hold no longer hides its vehicle from other visitors.
+      const anonList = await request(app).get('/api/customer/vehicles').query({ pageSize: 50 })
+      expect(anonList.body.items.some((v: { id: string }) => v.id === staleVehicleId)).toBe(true)
+      const anonDetail = await request(app).get(`/api/customer/vehicles/${staleVehicleId}`)
+      expect(anonDetail.status).toBe(200)
+    })
+  })
+
   it('CUST-CAT-01: category filter returns server total and pages beyond the first 20', async () => {
     const fixtures = await seedFixtures()
     await db.insert(vehicles).values(
@@ -127,7 +263,7 @@ describe('Customer API', () => {
     expect(list.body.items.some((f: { vehicleId: string }) => f.vehicleId === vehicleId)).toBe(true)
 
     const dup = await agent.post('/api/customer/favorites').send({ vehicleId })
-    expect([201, 500]).toContain(dup.status)
+    expect(dup.status).toBe(200)
 
     await agent.delete(`/api/customer/favorites/${added.body.id}`)
     await agent.delete('/api/customer/favorites')
@@ -370,11 +506,15 @@ describe('Customer API', () => {
   it('CUST-30: approved booking persists delivery fields on rental', async () => {
     const fixtures = await seedFixtures()
     const { agent: customerAgent } = await loginAs(app, fixtures.customer.email, 'customer')
+    // Relative dates: a hardcoded start date eventually falls into the past,
+    // which checkout now rejects outright.
+    const startDate = addDays(todayISO(), 7)
+    const deliveryDate = addDays(todayISO(), 8)
     const note = JSON.stringify({
       durationMonths: 1,
-      startDate: '2026-05-01',
+      startDate,
       total: 3000,
-      delivery: { location: 'Doha Mall', date: '2026-05-02', time: '10:00' },
+      delivery: { location: 'Doha Mall', date: deliveryDate, time: '10:00' },
     })
     const br = await customerAgent.post('/api/customer/booking-requests').send({
       vehicleId: fixtures.vehicles[0].id,
@@ -387,7 +527,7 @@ describe('Customer API', () => {
       .send({ status: 'approved' })
     const [rental] = await db.select().from(rentals).where(eq(rentals.customerId, fixtures.customer.id))
     expect(rental.pickupLocation).toBe('Doha Mall')
-    expect(String(rental.pickupDate)).toContain('2026-05-02')
+    expect(String(rental.pickupDate)).toContain(deliveryDate)
     expect(rental.pickupTime).toBe('10:00')
   })
 
@@ -445,6 +585,150 @@ describe('Customer API', () => {
 
     const remaining = await db.select().from(profiles).where(eq(profiles.id, fixtures.customer.id))
     expect(remaining).toHaveLength(0)
+  })
+
+  it('CUST-36: account deletion erases messages, complaints, queued mail and stored objects', async () => {
+    const fixtures = await seedFixtures()
+    await db
+      .update(customerProfiles)
+      .set({
+        qidDocumentPath: `documents/${fixtures.customer.id}/qid.pdf`,
+        driversLicensePath: `documents/${fixtures.customer.id}/license.pdf`,
+      })
+      .where(eq(customerProfiles.userId, fixtures.customer.id))
+    await db
+      .update(profiles)
+      .set({ avatarUrl: `user-avatars/profiles/${fixtures.customer.id}/avatar.png` })
+      .where(eq(profiles.id, fixtures.customer.id))
+    await db.insert(messages).values({
+      fromUserId: fixtures.customer.id,
+      toUserId: fixtures.dealer.id,
+      subject: 'Question about the BMW',
+      body: 'Call me on +97455551234',
+    })
+    const [complaint] = await db
+      .insert(complaints)
+      .values({
+        customerId: fixtures.customer.id,
+        category: 'billing',
+        subject: 'Double charge',
+        description: 'My card ending 4242 was charged twice',
+      })
+      .returning()
+    await db.insert(complaintReplies).values({
+      complaintId: complaint.id,
+      authorId: fixtures.customer.id,
+      body: 'Any update?',
+    })
+    await db.insert(emailOutbox).values({
+      to: fixtures.customer.email,
+      subject: 'Your CarFlow booking',
+      html: '<p>Full personal details in the body</p>',
+    })
+    await db.insert(userSecurity).values({
+      userId: fixtures.customer.id,
+      smsPhone: '+97455551234',
+    })
+
+    const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const res = await agent.delete('/api/customer/account')
+    expect(res.status).toBe(204)
+
+    expect(deleteStoredFileMock).toHaveBeenCalledWith(`documents/${fixtures.customer.id}/qid.pdf`)
+    expect(deleteStoredFileMock).toHaveBeenCalledWith(
+      `documents/${fixtures.customer.id}/license.pdf`
+    )
+    expect(deleteStoredFileMock).toHaveBeenCalledWith(
+      `user-avatars/profiles/${fixtures.customer.id}/avatar.png`
+    )
+
+    expect(
+      await db
+        .select()
+        .from(messages)
+        .where(
+          or(
+            eq(messages.fromUserId, fixtures.customer.id),
+            eq(messages.toUserId, fixtures.customer.id)
+          )
+        )
+    ).toHaveLength(0)
+    expect(
+      await db.select().from(complaints).where(eq(complaints.customerId, fixtures.customer.id))
+    ).toHaveLength(0)
+    expect(
+      await db.select().from(emailOutbox).where(eq(emailOutbox.to, fixtures.customer.email))
+    ).toHaveLength(0)
+    expect(
+      await db.select().from(userSecurity).where(eq(userSecurity.userId, fixtures.customer.id))
+    ).toHaveLength(0)
+  })
+
+  it('CUST-EXPORT-01: data export covers rentals, invoices, payments, messages, complaints and documents', async () => {
+    const fixtures = await seedFixtures()
+    const [rental] = await db
+      .insert(rentals)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        vehicleId: fixtures.vehicles[0].id,
+        startDate: '2026-01-01',
+        endDate: '2026-04-01',
+        status: 'active',
+        totalAmount: '9000',
+        monthlyAmount: '3000',
+        termMonths: 3,
+      })
+      .returning()
+    await db.insert(invoices).values({
+      ownerId: fixtures.customer.id,
+      ownerType: 'customer',
+      amount: '3000',
+      description: 'First month',
+      rentalId: rental.id,
+    })
+    await db.insert(payments).values({
+      customerId: fixtures.customer.id,
+      rentalId: rental.id,
+      amount: '3000',
+      status: 'completed',
+      type: 'rental',
+    })
+    await db.insert(messages).values({
+      fromUserId: fixtures.dealer.id,
+      toUserId: fixtures.customer.id,
+      subject: 'Handover time',
+      body: 'See you at 10am',
+    })
+    await db.insert(complaints).values({
+      customerId: fixtures.customer.id,
+      category: 'vehicle',
+      subject: 'Scratch on the door',
+      description: 'Noted at pickup',
+    })
+    await db
+      .update(customerProfiles)
+      .set({ qidDocumentPath: `documents/${fixtures.customer.id}/qid.pdf` })
+      .where(eq(customerProfiles.userId, fixtures.customer.id))
+
+    const { agent } = await loginAs(app, fixtures.customer.email, 'customer')
+    const res = await agent.get('/api/customer/account/export')
+    expect(res.status).toBe(200)
+    expect(res.body.profile.email).toBe(fixtures.customer.email)
+    expect(res.body.profile.passwordHash).toBeUndefined()
+    expect(res.body.rentals).toHaveLength(1)
+    expect(res.body.invoices).toHaveLength(1)
+    expect(res.body.payments).toHaveLength(1)
+    expect(res.body.messages).toHaveLength(1)
+    expect(res.body.messages[0].body).toBe('See you at 10am')
+    expect(res.body.complaints).toHaveLength(1)
+    expect(res.body.documents).toEqual([
+      {
+        type: 'qid',
+        storagePath: `documents/${fixtures.customer.id}/qid.pdf`,
+        downloadUrl: `/api/uploads/documents/file?path=${encodeURIComponent(`documents/${fixtures.customer.id}/qid.pdf`)}`,
+      },
+    ])
   })
 
   it('CUST-34: customer can request maintenance on own active rental but not another customer rental', async () => {

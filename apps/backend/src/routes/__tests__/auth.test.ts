@@ -6,7 +6,7 @@ import type { Express } from 'express'
 import request from 'supertest'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
-import { dealers, passwordResetTokens, profiles, userSecurity } from '../../db/schema.js'
+import { dealers, emailVerificationTokens, passwordResetTokens, profiles, userSecurity } from '../../db/schema.js'
 import { LOGIN_LOCKOUT_THRESHOLD } from '../../auth/loginLockout.js'
 import { DEMO_PASSWORD, buildTestApp, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
@@ -430,6 +430,31 @@ describe('Auth API', () => {
         .post('/api/auth/change-password')
         .send({ currentPassword: 'a', newPassword: 'b' })
       expect(res.status).toBe(401)
+    })
+  })
+
+  describe('POST /api/auth/verify-email', () => {
+    it('AUTH-VERIFY-01: valid token marks the profile verified', async () => {
+      const fixtures = await seedFixtures()
+      await db.update(profiles).set({ emailVerifiedAt: null }).where(eq(profiles.id, fixtures.customer.id))
+      const crypto = await import('crypto')
+      const raw = 'verify-email-token-plain'
+      const tokenHash = crypto.createHash('sha256').update(raw).digest('hex')
+      await db.insert(emailVerificationTokens).values({
+        userId: fixtures.customer.id,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      })
+      const res = await request(app).post('/api/auth/verify-email').send({ token: raw })
+      expect(res.status).toBe(200)
+      const [user] = await db.select().from(profiles).where(eq(profiles.id, fixtures.customer.id))
+      expect(user.emailVerifiedAt).toBeTruthy()
+    })
+
+    it('AUTH-VERIFY-02: invalid token is rejected', async () => {
+      await seedFixtures()
+      const res = await request(app).post('/api/auth/verify-email').send({ token: 'not-a-real-token' })
+      expect(res.status).toBe(400)
     })
   })
 })

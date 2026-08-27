@@ -64,6 +64,9 @@ export function validateUploadContent(
   allowed: readonly AllowedUploadMime[]
 ): { mime: AllowedUploadMime; ext: string } | { error: string } {
   const mime = claimedMime.trim().toLowerCase()
+  if (mime === 'image/svg+xml' || mime === 'image/svg') {
+    return { error: 'SVG uploads are not allowed' }
+  }
   if (!allowed.includes(mime as AllowedUploadMime)) {
     return { error: `Unsupported file type: ${mime || 'unknown'}` }
   }

@@ -1,0 +1,72 @@
+.route-error {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+  background: #f8f9fc;
+}
+
+.route-error__card {
+  width: 100%;
+  max-width: 460px;
+  padding: 2rem;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  text-align: center;
+}
+
+.route-error__card h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.route-error__card p {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: #4b5563;
+}
+
+.route-error__actions {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.route-error__btn {
+  padding: 0.7rem 1.15rem;
+  border: none;
+  border-radius: 10px;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.route-error__btn:hover {
+  background: #4338ca;
+}
+
+.route-error__btn--ghost {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  color: #374151;
+}
+
+.route-error__btn--ghost:hover {
+  background: #f3f4f6;
+}
+
+.route-error__detail {
+  margin-top: 1.25rem !important;
+  font-size: 0.75rem !important;
+  color: #9ca3af !important;
+  word-break: break-word;
+}

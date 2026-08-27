@@ -24,13 +24,22 @@ import {
   extendRental,
   getRentalReview,
   getRentalSubscription,
+  getBillingCapabilities,
   listCatalogVehicles,
+  listPaymentMethods,
   listRentalMaintenanceRequests,
   pauseRental,
   resumeRental,
   submitRentalReview,
 } from '../../services/customerService'
-import { createSkipCashInvoiceIntent, getSkipCashPaymentStatus, retrySkipCashPayment } from '../../services/paymentService'
+import {
+  createSkipCashInvoiceIntent,
+  createSkipCashInvoiceIntentWithSavedCard,
+  getSkipCashPaymentStatus,
+  retrySkipCashPayment,
+  type SkipCashPaymentIntent,
+  type SkipCashSavedCardInvoiceIntent,
+} from '../../services/paymentService'
 import {
   clearInvoicePaymentAttempt,
   readInvoicePaymentAttempt,
@@ -60,12 +69,37 @@ export function SubscriptionPanel({ rentalId }: { rentalId: string }) {
     queryFn: () => getRentalSubscription(rentalId),
   })
 
+  const { data: billingCapabilities } = useQuery({
+    queryKey: ['billingCapabilities'],
+    queryFn: getBillingCapabilities,
+  })
+
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['paymentMethods'],
+    queryFn: listPaymentMethods,
+  })
+
+  const tokenizedDefaultMethod = useMemo(
+    () =>
+      paymentMethods.find((m) => m.hasProviderToken && m.isDefault) ??
+      paymentMethods.find((m) => m.hasProviderToken),
+    [paymentMethods]
+  )
+
+  const savedCardsEnabled = billingCapabilities?.skipcashSavedCardsEnabled ?? false
+
   const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null)
   const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(null)
   const [failedInvoicePayment, setFailedInvoicePayment] = useState<{
     invoiceId: string
     paymentId: string
   } | null>(null)
+  // A payment SkipCash has not resolved yet (3DS/OTP still in flight, or the
+  // webhook not back). Never offer retry here: the money may already be
+  // captured and a retry starts a second real charge.
+  const [pendingInvoicePayment, setPendingInvoicePayment] = useState<{ invoiceId: string } | null>(
+    null
+  )
   const [showVerifyPrompt, setShowVerifyPrompt] = useState(false)
   const [resending, setResending] = useState(false)
 
@@ -151,15 +185,23 @@ export function SubscriptionPanel({ rentalId }: { rentalId: string }) {
     void getSkipCashPaymentStatus(attempt.paymentId)
       .then((payment) => {
         if (cancelled) return
-        if (payment.status === 'failed' || payment.status === 'pending') {
+        if (payment.status === 'failed') {
           setFailedInvoicePayment(attempt)
+          setPendingInvoicePayment(null)
+        } else if (payment.status === 'pending') {
+          setPendingInvoicePayment({ invoiceId: attempt.invoiceId })
+          setFailedInvoicePayment(null)
         } else if (payment.status === 'completed') {
           clearInvoicePaymentAttempt()
           setFailedInvoicePayment(null)
+          setPendingInvoicePayment(null)
         }
       })
       .catch(() => {
-        if (!cancelled) setFailedInvoicePayment(null)
+        if (!cancelled) {
+          setFailedInvoicePayment(null)
+          setPendingInvoicePayment(null)
+        }
       })
     return () => {
       cancelled = true
@@ -213,10 +255,16 @@ export function SubscriptionPanel({ rentalId }: { rentalId: string }) {
     ])
   }
 
-  const handlePayInvoice = async (invoice: Invoice) => {
+  const handlePayInvoice = async (invoice: Invoice, useSavedCard = false) => {
     setPayingInvoiceId(invoice.id)
     try {
-      const intent = await createSkipCashInvoiceIntent(invoice.id)
+      const intent: SkipCashPaymentIntent | SkipCashSavedCardInvoiceIntent =
+        useSavedCard && tokenizedDefaultMethod
+          ? await createSkipCashInvoiceIntentWithSavedCard(invoice.id, tokenizedDefaultMethod.id)
+          : await createSkipCashInvoiceIntent(invoice.id)
+      if ('message' in intent && intent.message && !intent.savedCardUsed) {
+        toast.info(intent.message)
+      }
       rememberInvoicePaymentAttempt(invoice.id, intent.paymentId)
       window.location.href = intent.payUrl
       // Keep the button in its busy state while the browser navigates away.
@@ -539,7 +587,11 @@ export function SubscriptionPanel({ rentalId }: { rentalId: string }) {
                   </span>
                   {(invoice.status === 'due' || invoice.status === 'overdue') && (
                     <>
-                      {failedInvoicePayment?.invoiceId === invoice.id ? (
+                      {pendingInvoicePayment?.invoiceId === invoice.id ? (
+                        <span className="subscription-invoice-pending" role="status">
+                          We are still confirming your payment — no need to pay again.
+                        </span>
+                      ) : failedInvoicePayment?.invoiceId === invoice.id ? (
                         <button
                           type="button"
                           className="subscription-btn subscription-btn--pay"
@@ -552,15 +604,28 @@ export function SubscriptionPanel({ rentalId }: { rentalId: string }) {
                           {retryingInvoiceId === invoice.id ? 'Restarting…' : 'Retry payment'}
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          className="subscription-btn subscription-btn--pay"
-                          disabled={payingInvoiceId !== null || retryingInvoiceId !== null}
-                          onClick={() => handlePayInvoice(invoice)}
-                        >
-                          <CreditCard size={14} />
-                          {payingInvoiceId === invoice.id ? 'Redirecting…' : 'Pay online'}
-                        </button>
+                        <>
+                          {savedCardsEnabled && tokenizedDefaultMethod && (
+                            <button
+                              type="button"
+                              className="subscription-btn subscription-btn--pay subscription-btn--saved"
+                              disabled={payingInvoiceId !== null || retryingInvoiceId !== null}
+                              onClick={() => handlePayInvoice(invoice, true)}
+                            >
+                              <CreditCard size={14} />
+                              {payingInvoiceId === invoice.id ? 'Redirecting…' : 'Pay saved card'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="subscription-btn subscription-btn--pay"
+                            disabled={payingInvoiceId !== null || retryingInvoiceId !== null}
+                            onClick={() => handlePayInvoice(invoice)}
+                          >
+                            <CreditCard size={14} />
+                            {payingInvoiceId === invoice.id ? 'Redirecting…' : 'Pay online'}
+                          </button>
+                        </>
                       )}
                     </>
                   )}

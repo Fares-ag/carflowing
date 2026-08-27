@@ -281,6 +281,7 @@ export function mapInvoice(row: any): Invoice {
       (row.periodStart ?? row.period_start) ? dateOnly(row.periodStart ?? row.period_start) : undefined,
     periodEnd:
       (row.periodEnd ?? row.period_end) ? dateOnly(row.periodEnd ?? row.period_end) : undefined,
+    creditApplied: num(row.creditApplied ?? row.credit_applied ?? 0) || undefined,
   }
 }
 
@@ -361,6 +362,8 @@ export function mapLead(row: any): Lead {
 }
 
 export function mapPaymentMethod(row: any): PaymentMethod {
+  const provider = (row.provider ?? 'reference') as PaymentMethod['provider']
+  const providerTokenId = row.providerTokenId ?? row.provider_token_id
   return {
     id: row.id,
     brand: row.brand,
@@ -369,6 +372,8 @@ export function mapPaymentMethod(row: any): PaymentMethod {
     expiryYear: row.expiryYear ?? row.expiry_year,
     isDefault: row.isDefault ?? row.is_default,
     methodType: row.methodType ?? row.method_type,
+    provider,
+    hasProviderToken: provider === 'skipcash' && !!providerTokenId,
   }
 }
 

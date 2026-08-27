@@ -3,6 +3,11 @@ import { memo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import './Header.css'
 
+interface HeaderProps {
+  title?: string
+  subtitle?: string
+}
+
 function goBackSafely(navigate: ReturnType<typeof useNavigate>) {
   const idx = (window.history.state as { idx?: number } | null)?.idx
   if (typeof idx === 'number' && idx > 0) {
@@ -12,7 +17,7 @@ function goBackSafely(navigate: ReturnType<typeof useNavigate>) {
   navigate('/dashboard')
 }
 
-export const Header = memo(function Header() {
+export const Header = memo(function Header({ title, subtitle }: HeaderProps) {
   const navigate = useNavigate()
   return (
     <header className="header">
@@ -31,6 +36,12 @@ export const Header = memo(function Header() {
             <span>Home</span>
           </Link>
         </div>
+        {(title || subtitle) && (
+          <div className="header-title-block">
+            {title ? <h1 className="header-title">{title}</h1> : null}
+            {subtitle ? <p className="header-subtitle">{subtitle}</p> : null}
+          </div>
+        )}
       </div>
     </header>
   )

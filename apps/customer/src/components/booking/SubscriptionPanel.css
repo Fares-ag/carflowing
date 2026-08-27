@@ -601,3 +601,15 @@
     justify-content: flex-start;
   }
 }
+
+.subscription-invoice-pending {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1d4ed8;
+}

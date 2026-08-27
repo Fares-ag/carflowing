@@ -1,6 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { bookingRequests, rentals, vehicles } from '../db/schema.js'
+import { storageKeyFromReference } from '../storage/index.js'
 
 /**
  * Dealers may read customer identity documents only while there is an active
@@ -48,11 +49,25 @@ export async function dealerCanAccessCustomerDocuments(
   return !!booking
 }
 
-export function userOwnsStoredPath(userId: string, storedPath: string): boolean {
-  const normalized = storedPath.replace(/\\/g, '/')
+/**
+ * Ownership of a stored object, given either a raw storage key or any of the
+ * URL shapes we hand out for it.
+ *
+ * The reference has to be resolved to a key first: under `UPLOAD_DRIVER=blob`
+ * (production) nothing the client holds is a bare key — avatars come back as
+ * `…/api/uploads/media?path=…` and documents as `…/api/uploads/documents/file?path=…`
+ * — so a prefix test on the raw string refused every legitimate owner
+ * (audit: DELETE /uploads/by-url always 403 under blob).
+ */
+export function userOwnsStoredPath(userId: string, storedPathOrUrl: string): boolean {
+  if (!storedPathOrUrl) return false
+  const key = storageKeyFromReference(storedPathOrUrl) ?? storedPathOrUrl
+  const normalized = key.replace(/\\/g, '/').replace(/^\/+/, '')
+  // A prefix match alone would accept `documents/<ownId>/../../elsewhere`.
+  if (normalized.split('/').includes('..')) return false
   return (
     normalized.startsWith(`${userId}/`) ||
     normalized.startsWith(`documents/${userId}/`) ||
-    normalized.includes(`/${userId}/`)
+    normalized.startsWith(`user-avatars/profiles/${userId}/`)
   )
 }

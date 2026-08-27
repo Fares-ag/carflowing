@@ -18,6 +18,42 @@ export function todayISO(): string {
   }).format(new Date())
 }
 
+function tzOffsetMinutes(at: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  const parts: Record<string, string> = {}
+  for (const part of dtf.formatToParts(at)) {
+    if (part.type !== 'literal') parts[part.type] = part.value
+  }
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second)
+  )
+  return (asUtc - at.getTime()) / 60000
+}
+
+/**
+ * UTC instant of midnight on `dateISO` in the billing timezone. Day-bucketed
+ * reporting keys off the local calendar date, so using UTC midnight would
+ * shift every bucket by the zone offset (3h for Asia/Qatar).
+ */
+export function zonedDayStartUtc(dateISO: string): Date {
+  const guess = new Date(`${dateISO}T00:00:00.000Z`)
+  const offset = tzOffsetMinutes(guess, billingTimezone())
+  return new Date(guess.getTime() - offset * 60000)
+}
 function daysInMonth(year: number, monthIndex0: number): number {
   return new Date(Date.UTC(year, monthIndex0 + 1, 0)).getUTCDate()
 }

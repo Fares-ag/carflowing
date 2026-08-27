@@ -49,12 +49,13 @@ export interface SignUpInput {
   email: string
   password: string
   name: string
+  referralCode?: string
 }
 
-export async function signUp({ email, password, name }: SignUpInput): Promise<AuthSession> {
+export async function signUp({ email, password, name, referralCode }: SignUpInput): Promise<AuthSession> {
   const data = await apiRequest<AuthSession>('/auth/signup', {
     method: 'POST',
-    body: { email, password, name, expectedRole: 'customer' },
+    body: { email, password, name, expectedRole: 'customer', referralCode: referralCode?.trim() || undefined },
   })
   return data
 }

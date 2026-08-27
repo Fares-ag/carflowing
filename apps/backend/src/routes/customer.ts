@@ -6,7 +6,7 @@ import {
   customerCancelRentalSchema,
   validateCheckoutNote,
 } from '@carflow/shared/validation'
-import { and, count, desc, eq, exists, gt, inArray, notExists, or } from 'drizzle-orm'
+import { and, count, desc, eq, gt, inArray, or } from 'drizzle-orm'
 import { Router } from 'express'
 import { hashPassword } from '../auth/password.js'
 import { revokeAllRefreshSessions } from '../auth/sessions.js'
@@ -20,6 +20,7 @@ import {
   mapFavorite,
   mapInvoice,
   mapNotification,
+  mapPayment,
   mapPaymentMethod,
   mapRental,
   mapRentalEvent,
@@ -31,37 +32,54 @@ import {
   bookingRequests,
   complaints,
   complaintReplies,
+  consentRecords,
   customerProfiles,
   dealers,
+  emailOutbox,
+  emailVerificationTokens,
   favorites,
   invoices,
+  messages,
   notifications,
+  passwordResetTokens,
   paymentMethods,
   payments,
   profiles,
+  referralCodes,
+  refreshSessions,
   rentalEvents,
   rentals,
   subscriptions,
   swapRequests,
+  twoFaChallenges,
+  userPreferences,
+  userSecurity,
   vehicles,
 } from '../db/schema.js'
 import { optionalAuth, requireAuth, requireRole, type AuthedRequest } from '../middleware/auth.js'
 import { requireCheckoutEnabled } from '../middleware/featureFlags.js'
 import { logAuditSafe } from '../services/audit.js'
+import { billingCapabilities } from '../services/savedCardPayments.js'
 import { trackAnalyticsEventSafe } from '../services/analyticsEvents.js'
-import { createBookingRequestForVehicle } from '../services/booking.js'
+import { createBookingRequestForVehicle, sanitizeCartNoteForPersist, withdrawPendingBookingRequest } from '../services/booking.js'
 import { userOwnsStoredPath } from '../services/documentAccess.js'
-import { getSubscriptionDepositAmount } from '../services/appSettings.js'
+import { getMaxPauseDays, getSubscriptionDepositAmount } from '../services/appSettings.js'
 import { buildCustomerDashboardResponse } from '../services/dashboardStats.js'
 import { cancelRental, swapEligibleFrom } from '../services/rentalLifecycle.js'
-import { getMaxPauseDays } from '../services/appSettings.js'
 import {
   buildCatalogConditions,
   catalogNeedsDealerJoin,
   catalogOrderBy,
   parseCatalogQuery,
 } from '../services/vehicleCatalog.js'
-import { buildVehicleCatalogFilter } from '../services/vehicleAvailability.js'
+import {
+  buildVehicleCatalogFilter,
+  checkCustomerHoldCapacity,
+  getHoldCutoffs,
+  holdIsLiveCondition,
+  holdLimitMessage,
+  releaseHoldExceedingCap,
+} from '../services/vehicleAvailability.js'
 import {
   attachReviewAggregates,
   fetchVehicleReviewAggregates,
@@ -69,20 +87,26 @@ import {
   listVehicleReviews,
 } from '../services/reviews.js'
 import { deleteStoredFile } from '../storage/index.js'
-import { asyncHandler, cursorPaginated, paginated, parseCursorPagination, parsePagination } from '../utils/http.js'
-import { parseBody } from '../validation/parse.js'
+import { asyncHandler, cursorPaginated, paginated, parseCursorPagination, parsePagination, attachUuidParamGuard } from '../utils/http.js'
+import { parseBody, formatZodError } from '../validation/parse.js'
 import { customerFeaturesRouter } from './customerFeatures.js'
 
 export const customerRouter = Router()
+attachUuidParamGuard(customerRouter)
 
 async function deleteIdentityDocumentsSafely(
   profile:
-    | { qidDocumentPath?: string | null; driversLicensePath?: string | null }
+    | {
+        qidDocumentPath?: string | null
+        driversLicensePath?: string | null
+        avatarUrl?: string | null
+      }
     | undefined
 ): Promise<void> {
   const docs: Array<{ label: string; path: string | null | undefined }> = [
     { label: 'qid', path: profile?.qidDocumentPath },
     { label: 'driversLicense', path: profile?.driversLicensePath },
+    { label: 'avatar', path: profile?.avatarUrl },
   ]
   for (const { label, path: docPath } of docs) {
     if (!docPath?.trim()) continue
@@ -94,7 +118,25 @@ async function deleteIdentityDocumentsSafely(
   }
 }
 
-function vehicleCatalogFilter(viewerId?: string, startDate?: string) {
+/**
+ * Removes an object that a new upload has just superseded. Never throws: the
+ * DB already points at the new file, and an orphaned blob must not fail the
+ * request that replaced it.
+ */
+async function deleteSupersededDocument(
+  previous: string | null | undefined,
+  next: string | null | undefined
+): Promise<void> {
+  const old = previous?.trim()
+  if (!old || old === next?.trim()) return
+  try {
+    await deleteStoredFile(old)
+  } catch (err) {
+    console.error('[documents] failed to delete superseded document', { path: old, err })
+  }
+}
+
+async function vehicleCatalogFilter(viewerId?: string, startDate?: string) {
   return buildVehicleCatalogFilter(viewerId, startDate)
 }
 
@@ -119,7 +161,7 @@ customerRouter.get(
   optionalAuth,
   asyncHandler(async (req: AuthedRequest, res) => {
     const filters = parseCatalogQuery(req.query as Record<string, unknown>)
-    const catalogWhere = vehicleCatalogFilter(req.user?.sub, filters.startDate)
+    const catalogWhere = await vehicleCatalogFilter(req.user?.sub, filters.startDate)
     const where = buildCatalogConditions(filters, catalogWhere)
     const orderBy = catalogOrderBy(filters.sort)
     const withDealer = catalogNeedsDealerJoin(filters)
@@ -202,10 +244,19 @@ customerRouter.get(
       res.status(404).json({ error: 'Vehicle not found' })
       return
     }
+    // Only a *live* hold hides the car: an abandoned request that has outlived
+    // its SLA must not delist the vehicle until the sweeper gets to it.
+    const cutoffs = await getHoldCutoffs()
     const [pending] = await db
       .select({ customerId: bookingRequests.customerId })
       .from(bookingRequests)
-      .where(and(eq(bookingRequests.vehicleId, row.id), eq(bookingRequests.status, 'pending')))
+      .where(
+        and(
+          eq(bookingRequests.vehicleId, row.id),
+          eq(bookingRequests.status, 'pending'),
+          holdIsLiveCondition(cutoffs)
+        )
+      )
       .limit(1)
     if (pending && pending.customerId !== req.user?.sub) {
       res.status(404).json({ error: 'Vehicle not found' })
@@ -333,10 +384,17 @@ customerRouter.get(
     }
     const vehicleIds = favRows.map((f) => f.vehicleId)
     const vehicleRows = await db.select().from(vehicles).where(inArray(vehicles.id, vehicleIds))
+    const favouriteCutoffs = await getHoldCutoffs()
     const pendingRows = await db
       .select({ vehicleId: bookingRequests.vehicleId })
       .from(bookingRequests)
-      .where(and(inArray(bookingRequests.vehicleId, vehicleIds), eq(bookingRequests.status, 'pending')))
+      .where(
+        and(
+          inArray(bookingRequests.vehicleId, vehicleIds),
+          eq(bookingRequests.status, 'pending'),
+          holdIsLiveCondition(favouriteCutoffs)
+        )
+      )
     const pendingIds = new Set(pendingRows.map((p) => p.vehicleId))
     const vehicleMap = new Map(vehicleRows.map((v) => [v.id, v]))
     const items = favRows.map((f) => {
@@ -370,7 +428,21 @@ customerRouter.post(
     const [row] = await db
       .insert(favorites)
       .values({ customerId: req.user!.sub, vehicleId })
+      .onConflictDoNothing({ target: [favorites.customerId, favorites.vehicleId] })
       .returning()
+    if (!row) {
+      const [existing] = await db
+        .select()
+        .from(favorites)
+        .where(and(eq(favorites.customerId, req.user!.sub), eq(favorites.vehicleId, vehicleId)))
+        .limit(1)
+      if (existing) {
+        res.status(200).json(mapFavorite(existing))
+        return
+      }
+      res.status(409).json({ error: 'Unable to save favorite' })
+      return
+    }
     res.status(201).json(mapFavorite(row))
   })
 )
@@ -445,11 +517,27 @@ customerRouter.post(
         return
       }
     }
+    // Every pending request delists its vehicle for everyone else, so one
+    // account may only hold a handful at a time. The pre-flight check keeps the
+    // dealer from being notified about a request we are about to refuse; the
+    // post-create reconciliation closes the concurrent-request race.
+    const capacity = await checkCustomerHoldCapacity(req.user!.sub)
+    if (!capacity.allowed) {
+      res.status(409).json({ error: holdLimitMessage(capacity.limit) })
+      return
+    }
     const result = await createBookingRequestForVehicle({
       customerId: req.user!.sub,
       vehicleId: body.vehicleId,
       note: body.note,
     })
+    if (result.status === 201 && 'id' in result.body) {
+      const released = await releaseHoldExceedingCap(req.user!.sub, result.body.id)
+      if (released) {
+        res.status(409).json({ error: holdLimitMessage(capacity.limit) })
+        return
+      }
+    }
     res.status(result.status).json(result.body)
   })
 )
@@ -464,22 +552,11 @@ customerRouter.patch(
       res.status(403).json({ error: 'Customers can only withdraw a pending booking request' })
       return
     }
-    const [row] = await db
-      .update(bookingRequests)
-      .set({ status: 'declined' })
-      .where(
-        and(
-          eq(bookingRequests.id, req.params.id),
-          eq(bookingRequests.customerId, req.user!.sub),
-          eq(bookingRequests.status, 'pending')
-        )
-      )
-      .returning()
-    if (!row) {
-      res.status(404).json({ error: 'Not found or already resolved' })
-      return
-    }
-    res.json(mapBookingRequest(row))
+    const result = await withdrawPendingBookingRequest({
+      customerId: req.user!.sub,
+      bookingRequestId: req.params.id,
+    })
+    res.status(result.status).json(result.body)
   })
 )
 
@@ -487,6 +564,14 @@ customerRouter.patch(
   '/booking-requests/:id/note',
   asyncHandler(async (req: AuthedRequest, res) => {
     const { note } = req.body as { note?: string }
+    if (note) {
+      const noteCheck = validateCheckoutNote(note)
+      if (!noteCheck.ok) {
+        res.status(400).json({ error: noteCheck.error })
+        return
+      }
+    }
+    const persistedNote = sanitizeCartNoteForPersist(note ?? null)
     // The note carries the cart (duration → price at approval), so it is
     // frozen once the request leaves `pending`, is an online-payment hold,
     // or already has a completed payment attached (audit: price tampering).
@@ -516,7 +601,7 @@ customerRouter.patch(
     }
     const [row] = await db
       .update(bookingRequests)
-      .set({ note: note ?? null })
+      .set({ note: persistedNote })
       .where(eq(bookingRequests.id, existing.id))
       .returning()
     res.json(mapBookingRequest(row))
@@ -558,6 +643,13 @@ customerRouter.get(
       .from(paymentMethods)
       .where(eq(paymentMethods.userId, req.user!.sub))
     res.json(rows.map(mapPaymentMethod))
+  })
+)
+
+customerRouter.get(
+  '/billing-capabilities',
+  asyncHandler(async (_req: AuthedRequest, res) => {
+    res.json(billingCapabilities())
   })
 )
 
@@ -643,6 +735,10 @@ customerRouter.patch(
         })
         .where(eq(customerProfiles.id, existing.id))
         .returning()
+      // The scan we just replaced is no longer reachable from anywhere and the
+      // app promises it is deleted — so delete it (audit: orphaned ID scans).
+      await deleteSupersededDocument(existing.qidDocumentPath, row.qidDocumentPath)
+      await deleteSupersededDocument(existing.driversLicensePath, row.driversLicensePath)
       res.json(row)
       return
     }
@@ -717,7 +813,9 @@ customerRouter.get(
       .from(customerProfiles)
       .where(eq(customerProfiles.userId, req.user!.sub))
       .limit(1)
-    res.json({ profile: user ?? null, customerProfile: cp ?? null })
+    // select() returns every profiles column, including password_hash.
+    const { passwordHash: _passwordHash, ...safeProfile } = user ?? {}
+    res.json({ profile: user ? safeProfile : null, customerProfile: cp ?? null })
   })
 )
 
@@ -729,7 +827,17 @@ customerRouter.patch(
       res.status(400).json({ error: 'avatarUrl required' })
       return
     }
+    const [previous] = await db
+      .select({ avatarUrl: profiles.avatarUrl })
+      .from(profiles)
+      .where(eq(profiles.id, req.user!.sub))
+      .limit(1)
     await db.update(profiles).set({ avatarUrl }).where(eq(profiles.id, req.user!.sub))
+    // Only ever delete an object this user owns: avatarUrl can also point at a
+    // third-party image the account was created with.
+    if (previous?.avatarUrl && userOwnsStoredPath(req.user!.sub, previous.avatarUrl)) {
+      await deleteSupersededDocument(previous.avatarUrl, avatarUrl)
+    }
     res.json({ ok: true })
   })
 )
@@ -795,13 +903,19 @@ customerRouter.patch(
       res.status(403).json({ error: 'Customers can only cancel their subscription' })
       return
     }
-    const body = parseBody(customerCancelRentalSchema, req, res)
-    if (!body) return
+    const cancelFields = customerCancelRentalSchema.safeParse({
+      reason: (req.body as { reason?: unknown }).reason,
+      collection: (req.body as { collection?: unknown }).collection,
+    })
+    if (!cancelFields.success) {
+      res.status(400).json({ error: formatZodError(cancelFields.error) })
+      return
+    }
     const result = await cancelRental({
       rentalId: req.params.id,
       actor: { id: req.user!.sub, role: 'customer' },
-      reason: body.reason,
-      collection: body.collection,
+      reason: cancelFields.data.reason,
+      collection: cancelFields.data.collection,
     })
     res.status(result.status).json(result.status < 400 ? mapRental(result.body) : result.body)
   })
@@ -1041,6 +1155,139 @@ customerRouter.post(
   })
 )
 
+/**
+ * Portability export (GDPR art. 20 / Qatar PDPPL): everything we hold about the
+ * caller, not just the profile row. Documents are listed as a manifest with the
+ * authenticated download path — the bytes themselves stay behind the document
+ * proxy so an export can never leak a scan to an unauthenticated reader.
+ */
+customerRouter.get(
+  '/account/export',
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const userId = req.user!.sub
+    const [user] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1)
+    if (!user) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    const { passwordHash: _passwordHash, ...safeProfile } = user
+    const [cp] = await db
+      .select()
+      .from(customerProfiles)
+      .where(eq(customerProfiles.userId, userId))
+      .limit(1)
+    const rentalRows = await db
+      .select()
+      .from(rentals)
+      .where(eq(rentals.customerId, userId))
+      .orderBy(desc(rentals.createdAt))
+    const invoiceRows = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.ownerId, userId), eq(invoices.ownerType, 'customer')))
+      .orderBy(desc(invoices.date))
+    const paymentRows = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.customerId, userId))
+      .orderBy(desc(payments.createdAt))
+    const bookingRows = await db
+      .select()
+      .from(bookingRequests)
+      .where(eq(bookingRequests.customerId, userId))
+      .orderBy(desc(bookingRequests.createdAt))
+    const messageRows = await db
+      .select()
+      .from(messages)
+      .where(or(eq(messages.fromUserId, userId), eq(messages.toUserId, userId)))
+      .orderBy(desc(messages.createdAt))
+    const complaintRows = await db
+      .select()
+      .from(complaints)
+      .where(eq(complaints.customerId, userId))
+      .orderBy(desc(complaints.createdAt))
+    const complaintIds = complaintRows.map((c) => c.id)
+    const replyRows = complaintIds.length
+      ? await db
+          .select()
+          .from(complaintReplies)
+          .where(inArray(complaintReplies.complaintId, complaintIds))
+          .orderBy(complaintReplies.createdAt)
+      : []
+    const notificationRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt))
+    const favoriteRows = await db
+      .select()
+      .from(favorites)
+      .where(eq(favorites.customerId, userId))
+      .orderBy(desc(favorites.createdAt))
+    const paymentMethodRows = await db
+      .select()
+      .from(paymentMethods)
+      .where(eq(paymentMethods.userId, userId))
+    const consentRows = await db
+      .select()
+      .from(consentRecords)
+      .where(eq(consentRecords.profileId, userId))
+      .orderBy(desc(consentRecords.acceptedAt))
+
+    const documents = (
+      [
+        { type: 'qid' as const, path: cp?.qidDocumentPath },
+        { type: 'drivers_license' as const, path: cp?.driversLicensePath },
+      ] satisfies Array<{ type: string; path?: string | null }>
+    )
+      .filter((doc): doc is { type: 'qid' | 'drivers_license'; path: string } => !!doc.path?.trim())
+      .map((doc) => ({
+        type: doc.type,
+        storagePath: doc.path,
+        downloadUrl: `/api/uploads/documents/file?path=${encodeURIComponent(doc.path)}`,
+      }))
+
+    res.json({
+      exportedAt: new Date().toISOString(),
+      profile: safeProfile,
+      customerProfile: cp ?? null,
+      rentals: rentalRows.map(mapRental),
+      invoices: invoiceRows.map(mapInvoice),
+      payments: paymentRows.map(mapPayment),
+      bookingRequests: bookingRows.map(mapBookingRequest),
+      messages: messageRows.map((m) => ({
+        id: m.id,
+        direction: m.fromUserId === userId ? 'sent' : 'received',
+        subject: m.subject,
+        body: m.body,
+        folder: m.folder,
+        read: m.read,
+        createdAt: m.createdAt.toISOString(),
+      })),
+      complaints: complaintRows.map((c) => ({
+        ...mapComplaint(c),
+        replies: replyRows
+          .filter((r) => r.complaintId === c.id)
+          .map((r) => ({
+            id: r.id,
+            body: r.body,
+            createdAt: r.createdAt.toISOString(),
+            fromSupport: r.authorId !== userId,
+          })),
+      })),
+      notifications: notificationRows.map(mapNotification),
+      favorites: favoriteRows.map(mapFavorite),
+      paymentMethods: paymentMethodRows.map(mapPaymentMethod),
+      consents: consentRows.map((c) => ({
+        documentKind: c.documentKind,
+        documentVersion: c.documentVersion,
+        acceptedAt: c.acceptedAt.toISOString(),
+      })),
+      documents,
+    })
+  })
+)
+
 customerRouter.delete(
   '/account',
   asyncHandler(async (req: AuthedRequest, res) => {
@@ -1065,6 +1312,12 @@ customerRouter.delete(
       .where(eq(rentals.customerId, userId))
       .limit(1)
 
+    const [account] = await db
+      .select({ email: profiles.email, avatarUrl: profiles.avatarUrl })
+      .from(profiles)
+      .where(eq(profiles.id, userId))
+      .limit(1)
+
     const [identityDocs] = await db
       .select({
         qidDocumentPath: customerProfiles.qidDocumentPath,
@@ -1075,22 +1328,40 @@ customerRouter.delete(
       .limit(1)
 
     await db.transaction(async (tx) => {
+      // Personal data with no retention claim, removed on both paths. The
+      // hard-delete path would cascade most of it, but the anonymize path
+      // keeps the profile row alive, so every table has to be named here.
       await tx.delete(favorites).where(eq(favorites.customerId, userId))
       await tx.delete(paymentMethods).where(eq(paymentMethods.userId, userId))
+      await tx
+        .delete(messages)
+        .where(or(eq(messages.fromUserId, userId), eq(messages.toUserId, userId)))
+      await tx.delete(complaintReplies).where(eq(complaintReplies.authorId, userId))
+      await tx.delete(complaints).where(eq(complaints.customerId, userId))
+      await tx.delete(notifications).where(eq(notifications.userId, userId))
+      await tx.delete(userPreferences).where(eq(userPreferences.userId, userId))
+      await tx.delete(userSecurity).where(eq(userSecurity.userId, userId))
+      await tx.delete(referralCodes).where(eq(referralCodes.userId, userId))
+      await tx.delete(refreshSessions).where(eq(refreshSessions.userId, userId))
+      await tx.delete(twoFaChallenges).where(eq(twoFaChallenges.userId, userId))
+      await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId))
+      await tx.delete(emailVerificationTokens).where(eq(emailVerificationTokens.userId, userId))
+      // Queued/sent mail keeps the full rendered body — and the address — long
+      // after the account is gone.
+      if (account?.email) {
+        await tx.delete(emailOutbox).where(eq(emailOutbox.to, account.email))
+      }
+      // The consent record is the evidence that consent was given; keep the
+      // fact, drop the identifiers attached to it.
+      await tx
+        .update(consentRecords)
+        .set({ ipAddress: null, userAgent: null })
+        .where(eq(consentRecords.profileId, userId))
+      await tx.delete(customerProfiles).where(eq(customerProfiles.userId, userId))
 
       if (anyRentals.length > 0) {
         // Rental/financial history must survive (RESTRICT FK + retention):
-        // anonymize the profile instead of deleting it. Identity documents,
-        // notifications, and auth tokens carry PII and go with it
-        // (re-audit L3).
-        await deleteIdentityDocumentsSafely(identityDocs)
-        await tx.delete(notifications).where(eq(notifications.userId, userId))
-        const { passwordResetTokens, emailVerificationTokens } = await import('../db/schema.js')
-        await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId))
-        await tx.delete(emailVerificationTokens).where(eq(emailVerificationTokens.userId, userId))
-        await tx
-          .delete(customerProfiles)
-          .where(eq(customerProfiles.userId, userId))
+        // anonymize the profile instead of deleting it (re-audit L3).
         const randomSecret = crypto.randomBytes(24).toString('hex')
         await tx
           .update(profiles)
@@ -1105,15 +1376,21 @@ customerRouter.delete(
           })
           .where(eq(profiles.id, userId))
       } else {
-        await deleteIdentityDocumentsSafely(identityDocs)
-        await tx.delete(customerProfiles).where(eq(customerProfiles.userId, userId))
         await tx.delete(profiles).where(eq(profiles.id, userId))
       }
     })
 
+    // Blob/disk objects are outside the transaction: only delete them once the
+    // rows that referenced them are gone for good.
+    const ownedAvatar =
+      account?.avatarUrl && userOwnsStoredPath(userId, account.avatarUrl) ? account.avatarUrl : null
+    await deleteIdentityDocumentsSafely({ ...identityDocs, avatarUrl: ownedAvatar })
+
     await revokeAllRefreshSessions(userId)
     await logAuditSafe({
-      actorId: userId,
+      // The profile row is gone on the hard-delete path, and audit_logs.actor_id
+      // is an FK — naming it there would drop the record of the deletion.
+      actorId: anyRentals.length > 0 ? userId : null,
       actorRole: 'customer',
       action: anyRentals.length > 0 ? 'account.anonymized' : 'account.deleted',
       entityType: 'profile',

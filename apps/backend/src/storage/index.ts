@@ -12,6 +12,19 @@ function uploadRoot() {
   return process.env.UPLOAD_DIR || path.resolve(process.cwd(), 'uploads')
 }
 
+/**
+ * Resolves a storage key under the upload root, returning null when the key
+ * escapes it. Ownership checks upstream are prefix-based, so a key such as
+ * `documents/<ownId>/../../../etc/passwd` can pass them; containment has to be
+ * enforced here, where the key actually becomes a filesystem path.
+ */
+function containedPath(key: string): string | null {
+  const root = path.resolve(uploadRoot())
+  const full = path.resolve(root, key)
+  if (full !== root && !full.startsWith(root + path.sep)) return null
+  return full
+}
+
 function publicBaseUrl() {
   const port = process.env.PORT || '3001'
   return process.env.PUBLIC_API_URL || `http://localhost:${port}`
@@ -26,6 +39,28 @@ function blobAccess(): 'public' | 'private' {
   if (configured === 'public' || configured === 'private') return configured
   // Default private — matches Vercel Blob stores created with private access.
   return 'private'
+}
+
+let warnedAboutPublicDocuments = false
+
+/**
+ * Identity documents are ALWAYS private, whatever BLOB_ACCESS says. A public
+ * blob URL is guessable-by-leak and bypasses every check in
+ * `/api/uploads/documents/file`, so `BLOB_ACCESS=public` must never be able to
+ * publish a Qatar ID or a driving licence.
+ */
+function accessForKind(kind: UploadKind): 'public' | 'private' {
+  if (kind !== 'documents') return blobAccess()
+  if (blobAccess() === 'public' && !warnedAboutPublicDocuments) {
+    warnedAboutPublicDocuments = true
+    console.warn('[storage] BLOB_ACCESS=public ignored for identity documents; storing them privately')
+  }
+  return 'private'
+}
+
+/** Reads must use the same access mode the object was written with. */
+function accessForKey(key: string): 'public' | 'private' {
+  return key.replace(/^\/+/, '').startsWith('documents/') ? 'private' : blobAccess()
 }
 
 /**
@@ -49,7 +84,7 @@ export async function storeFile(
     const token = process.env.BLOB_READ_WRITE_TOKEN
     if (!token) throw new Error('BLOB_READ_WRITE_TOKEN is not configured')
     const sensitive = kind === 'documents'
-    const access = blobAccess()
+    const access = accessForKind(kind)
     const result = await put(key, buffer, {
       access,
       contentType,
@@ -91,6 +126,7 @@ export interface StoredFile {
 async function readableStreamToBuffer(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
   const reader = stream.getReader()
   const chunks: Uint8Array[] = []
+  // eslint-disable-next-line no-constant-condition -- stream drain loop, exits on reader done
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
@@ -103,13 +139,15 @@ export async function getStoredFile(key: string): Promise<StoredFile | null> {
   if (driver() === 'blob') {
     const token = process.env.BLOB_READ_WRITE_TOKEN
     if (!token) return null
-    const result = await get(key, { access: blobAccess(), token })
+    const result = await get(key, { access: accessForKey(key), token })
     if (!result || result.statusCode !== 200 || !result.stream) return null
     const buffer = await readableStreamToBuffer(result.stream)
     return { buffer, contentType: result.blob.contentType ?? undefined }
   }
   try {
-    const buffer = await fs.readFile(path.join(uploadRoot(), key))
+    const localPath = containedPath(key)
+    if (!localPath) return null
+    const buffer = await fs.readFile(localPath)
     return { buffer }
   } catch {
     return null
@@ -126,11 +164,14 @@ export async function deleteStoredFile(storedPathOrUrl: string): Promise<void> {
       await del(key, { token })
       return
     }
-    let relative = storedPathOrUrl
-    const marker = '/uploads/'
-    const idx = storedPathOrUrl.indexOf(marker)
-    if (idx >= 0) relative = storedPathOrUrl.slice(idx + marker.length)
-    const fullPath = path.join(uploadRoot(), relative)
+    // Same resolution the blob branch uses: a reference can be a raw key, a
+    // static `/uploads/...` URL, or a `?path=`-style proxy URL.
+    const relative = storageKeyFromReference(storedPathOrUrl) ?? storedPathOrUrl
+    const fullPath = containedPath(relative)
+    if (!fullPath) {
+      console.warn('[storage] refusing to delete outside the upload root', { path: storedPathOrUrl })
+      return
+    }
     await fs.unlink(fullPath).catch(() => undefined)
   } catch (err) {
     console.error('[storage] deleteStoredFile failed', { path: storedPathOrUrl, err })
@@ -138,7 +179,8 @@ export async function deleteStoredFile(storedPathOrUrl: string): Promise<void> {
 }
 
 export function resolveLocalPath(key: string): string {
-  return path.join(uploadRoot(), key)
+  // Escaping keys collapse to the root itself, which never resolves to a file.
+  return containedPath(key) ?? path.resolve(uploadRoot())
 }
 
 /** Resolve a DB-stored url/path reference to a blob/disk storage key. */

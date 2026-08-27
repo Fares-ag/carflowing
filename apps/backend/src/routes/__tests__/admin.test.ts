@@ -553,4 +553,70 @@ describe('Admin API', () => {
       expect(Number.isFinite(kpi.value)).toBe(true)
     }
   })
+
+  it('ADM-DISPUTE-01: finance can create, list, and patch payment disputes', async () => {
+    const fixtures = await seedFixtures()
+    const [payment] = await db
+      .insert(payments)
+      .values({
+        customerId: fixtures.customer.id,
+        dealerId: fixtures.dealer.dealerId,
+        amount: '250',
+        status: 'completed',
+        type: 'rental',
+        method: 'card',
+      })
+      .returning()
+    const { agent: financeAgent } = await loginAs(app, fixtures.finance.email, 'finance')
+    const created = await financeAgent
+      .post('/api/admin/disputes')
+      .send({ paymentId: payment.id, reason: 'chargeback' })
+    expect(created.status).toBe(201)
+
+    const list = await financeAgent.get('/api/admin/disputes')
+    expect(list.status).toBe(200)
+    expect(list.body.items.some((d: { paymentId: string }) => d.paymentId === payment.id)).toBe(true)
+
+    const patched = await financeAgent
+      .patch(`/api/admin/disputes/${created.body.id}`)
+      .send({ status: 'investigating' })
+    expect(patched.status).toBe(200)
+    expect(patched.body.status).toBe('investigating')
+
+    const { agent: opsAgent } = await loginAs(app, fixtures.ops.email, 'ops')
+    const forbidden = await opsAgent
+      .post('/api/admin/disputes')
+      .send({ paymentId: payment.id, reason: 'nope' })
+    expect(forbidden.status).toBe(403)
+  })
+
+  it('ADM-MSG-01: support cannot mutate dealer-customer private messages', async () => {
+    const fixtures = await seedFixtures()
+    const { messages } = await import('../../db/schema.js')
+    const [privateMsg] = await db
+      .insert(messages)
+      .values({
+        fromUserId: fixtures.customer.id,
+        toUserId: fixtures.dealer.id,
+        subject: 'private',
+        body: 'hello dealer',
+      })
+      .returning()
+    const { agent } = await loginAs(app, fixtures.support.email, 'support')
+    const blocked = await agent.patch(`/api/admin/messages/${privateMsg.id}/read`).send({ read: true })
+    expect(blocked.status).toBe(404)
+
+    const [deskMsg] = await db
+      .insert(messages)
+      .values({
+        fromUserId: fixtures.support.id,
+        toUserId: fixtures.customer.id,
+        subject: 'desk',
+        body: 'hello customer',
+      })
+      .returning()
+    const allowed = await agent.patch(`/api/admin/messages/${deskMsg.id}/read`).send({ read: true })
+    expect(allowed.status).toBe(200)
+    expect(allowed.body.read).toBe(true)
+  })
 })

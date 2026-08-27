@@ -11,6 +11,7 @@ import {
   rentals,
   subscriptions,
 } from '../../db/schema.js'
+import { computeMonthlyAmount } from '../../services/booking.js'
 import { buildTestApp, DEMO_PASSWORD, loginAs, resetDb, seedFixtures } from '../../test/helpers.js'
 
 /** ID: FLOW-01..FLOW-07 — end-to-end API business flows */
@@ -153,9 +154,12 @@ describe('Business flow integration', () => {
     const expectedEnd = new Date(`${startDate}T00:00:00Z`)
     expectedEnd.setUTCMonth(expectedEnd.getUTCMonth() + 3)
     expect(rental.endDate).toBe(expectedEnd.toISOString().slice(0, 10))
-    expect(Number(rental.totalAmount)).toBe(450 * 30 * 3)
+    // A 3-month term carries the multi-month discount (services/booking.ts
+    // TERM_DISCOUNTS); assert against the server-authoritative helper rather
+    // than the undiscounted list price.
+    expect(Number(rental.totalAmount)).toBe(computeMonthlyAmount(450, 3) * 3)
     // Subscription fields captured at approval (invygo-style monthly cycle):
-    expect(Number(rental.monthlyAmount)).toBe(450 * 30)
+    expect(Number(rental.monthlyAmount)).toBe(computeMonthlyAmount(450, 3))
     expect(rental.termMonths).toBe(3)
     expect(rental.nextBillingDate).not.toBeNull()
   })

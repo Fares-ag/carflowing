@@ -20,6 +20,30 @@ export function cursorPaginated<T>(items: T[], pageSize: number, nextCursor: str
   return { items, pageSize, nextCursor }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_PARAM_NAMES = ['id', 'dealerId', 'customerId', 'userId', 'vehicleId', 'rentalId'] as const
+
+/** Reject non-UUID route params so Postgres never 500s on invalid ids. */
+export function attachUuidParamGuard(router: {
+  param: (name: string, handler: (...args: any[]) => void) => void
+}) {
+  const handler = (
+    _req: unknown,
+    res: { status: (code: number) => { json: (body: unknown) => void } },
+    next: () => void,
+    value: string
+  ) => {
+    if (!UUID_RE.test(value)) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    next()
+  }
+  for (const name of UUID_PARAM_NAMES) {
+    router.param(name, handler)
+  }
+}
+
 export function asyncHandler(
   fn: (req: any, res: any, next: any) => Promise<void>
 ) {

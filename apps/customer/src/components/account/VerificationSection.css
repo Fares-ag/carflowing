@@ -236,3 +236,24 @@
   margin: 0;
 }
 
+.verification-number-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  text-align: left;
+}
+
+.verification-number-input {
+  width: 100%;
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border, #d4d8de);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+}
+
+.verification-number-input:disabled {
+  opacity: 0.6;
+}

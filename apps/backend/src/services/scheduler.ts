@@ -1,20 +1,42 @@
-import { eq, desc } from 'drizzle-orm'
-import { sqlClient, db } from '../db/index.js'
-import { appSettings, jobRuns } from '../db/schema.js'
+import { eq, desc, lt } from 'drizzle-orm'
+import { db } from '../db/index.js'
+import {
+  appSettings,
+  emailVerificationTokens,
+  jobRuns,
+  passwordResetTokens,
+  refreshSessions,
+  twoFaChallenges,
+} from '../db/schema.js'
 import { captureException, captureMessage } from '../utils/observability.js'
 import { logStructured } from '../utils/requestContext.js'
-import { recordDailyRollups } from './analyticsRollups.js'
-import { processEmailOutbox } from './emailOutbox.js'
+import { purgeOldAnalyticsEvents, recordDailyRollups } from './analyticsRollups.js'
+import { processEmailOutbox, purgeExpiredEmailOutbox, redactSentEmailBodies } from './emailOutbox.js'
 import { generateDueInvoices, markOverdueInvoices, releaseExpiredHolds } from './billing.js'
-import { countStuckPendingPayments, getLastJobsSweepAt } from './healthMetrics.js'
+import {
+  countPaymentsNeedingRefund,
+  countStuckPendingPayments,
+  getLastJobsSweepAt,
+  jobsStaleThresholdMs,
+} from './healthMetrics.js'
 import { sendInvoicePaymentReminders } from './invoiceReminders.js'
-import { JOBS_ADVISORY_LOCK_KEY } from './jobsLock.js'
+import { jobsIntervalMs, runWithJobsAdvisoryLock } from './jobsLock.js'
 import { generateDealerPayouts } from './payouts.js'
 import { reconcilePendingSkipCashPayments } from './reconciliation.js'
+import { resumeExpiredPauses } from './rentalLifecycle.js'
 
-export function jobsIntervalMs(): number {
-  const n = Number(process.env.JOBS_INTERVAL_MS)
-  return Number.isFinite(n) && n >= 15_000 ? n : 5 * 60 * 1000
+export { jobsIntervalMs }
+
+/** Days an expired session / consumed token is kept before the retention sweep drops it. */
+export function authArtifactRetentionDays(): number {
+  const n = Number(process.env.AUTH_ARTIFACT_RETENTION_DAYS)
+  return Number.isFinite(n) && n >= 1 ? n : 30
+}
+
+/** How often the retention sweep runs inside the job loop. */
+export function retentionSweepIntervalMs(): number {
+  const n = Number(process.env.RETENTION_SWEEP_INTERVAL_MS)
+  return Number.isFinite(n) && n >= 60_000 ? n : 6 * 60 * 60 * 1000
 }
 
 async function runJobSafe<T>(
@@ -36,14 +58,90 @@ async function runJobSafe<T>(
   }
 }
 
+/**
+ * Deletes expired sessions and spent/expired one-time tokens. audit_logs is
+ * deliberately excluded — migration 0013 makes it append-only.
+ *
+ * This lives here rather than in a retention module of its own only because the
+ * job sweep is the single caller; the deletes are all indexed range scans on
+ * expires_at.
+ */
+export async function purgeExpiredAuthArtifacts(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - authArtifactRetentionDays() * 24 * 60 * 60 * 1000)
+  const sessions = await db
+    .delete(refreshSessions)
+    .where(lt(refreshSessions.expiresAt, cutoff))
+    .returning({ id: refreshSessions.id })
+  const resets = await db
+    .delete(passwordResetTokens)
+    .where(lt(passwordResetTokens.expiresAt, cutoff))
+    .returning({ id: passwordResetTokens.id })
+  const verifications = await db
+    .delete(emailVerificationTokens)
+    .where(lt(emailVerificationTokens.expiresAt, cutoff))
+    .returning({ id: emailVerificationTokens.id })
+  const challenges = await db
+    .delete(twoFaChallenges)
+    .where(lt(twoFaChallenges.expiresAt, cutoff))
+    .returning({ id: twoFaChallenges.id })
+  return sessions.length + resets.length + verifications.length + challenges.length
+}
+
+/** Data-retention sweep for the unbounded tables (never touches audit_logs). */
+export async function runRetentionSweep(now = new Date()): Promise<{
+  emailOutboxPurged: number
+  emailBodiesRedacted: number
+  authArtifactsPurged: number
+  analyticsEventsPurged: number
+}> {
+  const emailBodiesRedacted = await redactSentEmailBodies()
+  const emailOutboxPurged = await purgeExpiredEmailOutbox(now)
+  const authArtifactsPurged = await purgeExpiredAuthArtifacts(now)
+  const analyticsEventsPurged = await purgeOldAnalyticsEvents(now)
+  const result = {
+    emailOutboxPurged,
+    emailBodiesRedacted,
+    authArtifactsPurged,
+    analyticsEventsPurged,
+  }
+  logStructured('info', 'jobs.retention_sweep', result)
+  return result
+}
+
+let lastRetentionSweepAt = 0
+
+/** Per-process cadence guard so the deletes do not run on every 5-minute tick. */
+async function maybeRunRetentionSweep(): Promise<void> {
+  const now = Date.now()
+  if (lastRetentionSweepAt && now - lastRetentionSweepAt < retentionSweepIntervalMs()) return
+  lastRetentionSweepAt = now
+  await runRetentionSweep(new Date(now))
+}
+
+/** Test seam: forget the last retention run so the next sweep performs one. */
+export function resetRetentionSweepCadence(): void {
+  lastRetentionSweepAt = 0
+}
+
 async function runPostSweepAlerts(previousSweepAt: Date | null): Promise<void> {
-  const stuckPendingCount = await countStuckPendingPayments()
+  const [stuckPendingCount, needsRefundCount] = await Promise.all([
+    countStuckPendingPayments(),
+    countPaymentsNeedingRefund(),
+  ])
   const interval = jobsIntervalMs()
 
   if (stuckPendingCount > 0) {
     const message = `Scheduler alert: ${stuckPendingCount} payment(s) pending longer than 30 minutes`
     logStructured('warn', 'jobs.alert.stuck_pending', { stuckPendingCount })
     captureMessage(message, 'warning')
+  }
+
+  if (needsRefundCount > 0) {
+    // Money captured at the provider that never became a booking. Every one of
+    // these is a customer owed a refund, so this pages at error level.
+    const message = `Scheduler alert: ${needsRefundCount} payment(s) captured but unusable and awaiting refund`
+    logStructured('error', 'jobs.alert.needs_refund', { needsRefundCount })
+    captureMessage(message, 'error')
   }
 
   if (previousSweepAt) {
@@ -54,6 +152,9 @@ async function runPostSweepAlerts(previousSweepAt: Date | null): Promise<void> {
         previousSweepAt: previousSweepAt.toISOString(),
         ageMs,
         thresholdMs: 2 * interval,
+        // /health uses the wider threshold and, unlike this alarm, reports even
+        // when the scheduler is dead and no sweep runs at all.
+        healthThresholdMs: jobsStaleThresholdMs(),
       })
       captureMessage(message, 'warning')
     }
@@ -67,17 +168,11 @@ export async function runJobsOnce(): Promise<{
   holdsReleased: number
   payouts: number
   reminders: number
+  pausesResumed: number
 } | null> {
-  // pg advisory locks are SESSION-scoped, and sqlClient is a connection POOL:
-  // lock and unlock must run on the SAME physical connection or the lock
-  // wedges on an idle pooled connection and every future sweep is skipped
-  // (found in re-audit). reserve() pins one connection for the whole sweep.
-  const reserved = await sqlClient.reserve()
-  const startedAt = new Date()
-  let runId: string | null = null
-  try {
-    const [lock] = await reserved`SELECT pg_try_advisory_lock(${JOBS_ADVISORY_LOCK_KEY}) AS locked`
-    if (!lock?.locked) return null
+  return runWithJobsAdvisoryLock(async () => {
+    const startedAt = new Date()
+    let runId: string | null = null
     try {
       const previousSweepAt = await getLastJobsSweepAt()
       const [runRow] = await db.insert(jobRuns).values({ startedAt }).returning({ id: jobRuns.id })
@@ -95,8 +190,10 @@ export async function runJobsOnce(): Promise<{
       )
       const holdsReleased = await runJobSafe('releaseExpiredHolds', releaseExpiredHolds, 0, failures)
       const payouts = await runJobSafe('generateDealerPayouts', generateDealerPayouts, 0, failures)
+      const pausesResumed = await runJobSafe('resumeExpiredPauses', resumeExpiredPauses, 0, failures)
       const outboxDelivered = await runJobSafe('processEmailOutbox', processEmailOutbox, 0, failures)
       await runJobSafe('recordDailyRollups', recordDailyRollups, undefined, failures)
+      await runJobSafe('retentionSweep', maybeRunRetentionSweep, undefined, failures)
 
       const sweptAt = new Date()
       logStructured('info', 'jobs.sweep_ok', {
@@ -107,6 +204,7 @@ export async function runJobsOnce(): Promise<{
         reconciled,
         holdsReleased,
         payouts,
+        pausesResumed,
         outboxDelivered,
         failedJobs: failures,
       })
@@ -143,7 +241,7 @@ export async function runJobsOnce(): Promise<{
           .where(eq(jobRuns.id, runId))
       }
 
-      return { invoices, overdue, reconciled, holdsReleased, payouts, reminders }
+      return { invoices, overdue, reconciled, holdsReleased, payouts, reminders, pausesResumed }
     } catch (err) {
       if (runId) {
         await db
@@ -159,12 +257,8 @@ export async function runJobsOnce(): Promise<{
       })
       captureException(err, { scope: 'jobs_sweep' })
       throw err
-    } finally {
-      await reserved`SELECT pg_advisory_unlock(${JOBS_ADVISORY_LOCK_KEY})`
     }
-  } finally {
-    reserved.release()
-  }
+  })
 }
 
 let timer: ReturnType<typeof setInterval> | null = null

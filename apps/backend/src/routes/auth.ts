@@ -5,6 +5,7 @@ import { Router } from 'express'
 import { hashPassword, verifyPassword } from '../auth/password.js'
 import {
   createRefreshSession,
+  hashJti,
   isRefreshSessionActive,
   revokeAllRefreshSessions,
   revokeRefreshSession,
@@ -18,6 +19,12 @@ import {
   verify2faChallengeToken,
   verifyRefreshToken,
 } from '../auth/tokens.js'
+import { securityRouter } from '../auth/securityRouter.js'
+import {
+  STAFF_2FA_REQUIRED_ERROR,
+  staffNeedsTwoFactorEnrolment,
+  staffTwoFactorMissing,
+} from '../auth/staffTwoFactor.js'
 import { consume2faChallenge, create2faChallenge, validate2faChallenge } from '../auth/twoFaChallenges.js'
 import { trackAnalyticsEventSafe } from '../services/analyticsEvents.js'
 import {
@@ -45,9 +52,11 @@ async function issueSession(
 ) {
   await resetLoginAttempts(user.id)
   const payload = { sub: user.id, role: user.role, email: user.email }
-  const accessToken = await signAccessToken(payload)
+  // Refresh token first: the access token embeds `sid` so revoking the session
+  // (logout-all, password change, account deletion) invalidates it at once.
   const { token: refreshToken, jti } = await signRefreshToken(payload)
   await createRefreshSession(user.id, jti)
+  const accessToken = await signAccessToken({ ...payload, sid: hashJti(jti) })
   setAuthCookies(res, accessToken, refreshToken)
   return {
     userId: user.id,
@@ -58,14 +67,22 @@ async function issueSession(
   }
 }
 
+/**
+ * Account security (TOTP enrolment, SMS verification) for every authenticated
+ * role — no role gate. The same router is also mounted at /api/customer/security
+ * so the customer app's existing paths keep working.
+ */
+authRouter.use('/security', requireAuth, securityRouter)
+
 authRouter.post('/signup', async (req, res) => {
   try {
-    const { email, password, name, expectedRole, meta } = req.body as {
+    const { email, password, name, expectedRole, meta, referralCode } = req.body as {
       email?: string
       password?: string
       name?: string
       expectedRole?: UserRole
       meta?: { businessName?: string; phone?: string; address?: string }
+      referralCode?: string
     }
     const role: UserRole = expectedRole === 'dealer' ? 'dealer' : 'customer'
     if (role === 'dealer') {
@@ -85,6 +102,18 @@ authRouter.post('/signup', async (req, res) => {
     if (passwordError) {
       res.status(400).json({ error: passwordError })
       return
+    }
+    if (role === 'customer' && referralCode?.trim()) {
+      const { validateReferralCodeForSignup, ReferralError } = await import('../services/referrals.js')
+      try {
+        await validateReferralCodeForSignup(referralCode)
+      } catch (err) {
+        if (err instanceof ReferralError) {
+          res.status(400).json({ error: err.message })
+          return
+        }
+        throw err
+      }
     }
     const existing = await db.select().from(profiles).where(eq(profiles.email, email.toLowerCase())).limit(1)
     if (existing[0]) {
@@ -117,6 +146,10 @@ authRouter.post('/signup', async (req, res) => {
     } else {
       await db.insert(customerProfiles).values({ userId: user.id, status: 'unverified' })
       await sendVerificationEmail(user).catch((err) => console.error('verify email send failed', err))
+      if (referralCode?.trim()) {
+        const { redeemReferralAtSignup } = await import('../services/referrals.js')
+        await redeemReferralAtSignup(user.id, referralCode)
+      }
     }
 
     trackAnalyticsEventSafe({
@@ -196,6 +229,12 @@ authRouter.post('/login', async (req, res) => {
       res.json({ requires2fa: true, challengeToken, userId: user.id })
       return
     }
+    // Admin-portal accounts are the highest-value ones in the system; once
+    // REQUIRE_STAFF_2FA is on they may not hold a password-only session.
+    if (staffTwoFactorMissing(user.role, sec?.totpEnabled)) {
+      res.status(403).json({ error: STAFF_2FA_REQUIRED_ERROR, requires2faEnrolment: true })
+      return
+    }
     const session = await issueSession(res, user)
     res.json(session)
   } catch (err) {
@@ -273,6 +312,11 @@ authRouter.post('/refresh', async (req, res) => {
       res.status(403).json({ error: 'Account is suspended' })
       return
     }
+    if (await staffNeedsTwoFactorEnrolment(user)) {
+      clearAuthCookies(res)
+      res.status(403).json({ error: STAFF_2FA_REQUIRED_ERROR, requires2faEnrolment: true })
+      return
+    }
     await revokeRefreshSession(payload.sub, payload.jti)
     const session = await issueSession(res, user)
     res.json(session)
@@ -347,6 +391,7 @@ authRouter.post('/reset-password', async (req, res) => {
     const passwordHash = await hashPassword(password)
     await db.update(profiles).set({ passwordHash }).where(eq(profiles.id, row.userId))
     await revokeAllRefreshSessions(row.userId)
+    await resetLoginAttempts(row.userId)
     await db
       .update(passwordResetTokens)
       .set({ usedAt: new Date() })
@@ -436,10 +481,6 @@ authRouter.post('/verify-email', async (req, res) => {
       .update(profiles)
       .set({ emailVerifiedAt: new Date() })
       .where(eq(profiles.id, row.userId))
-    await db
-      .update(customerProfiles)
-      .set({ status: 'verified' })
-      .where(eq(customerProfiles.userId, row.userId))
     await db
       .update(emailVerificationTokens)
       .set({ usedAt: new Date() })

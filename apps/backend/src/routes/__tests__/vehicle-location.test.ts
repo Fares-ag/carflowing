@@ -3,7 +3,7 @@ import type { Express } from 'express'
 import request from 'supertest'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../db/index.js'
-import { rentals, vehicles } from '../../db/schema.js'
+import { bookingRequests, rentals } from '../../db/schema.js'
 import { addMonths, todayISO } from '../../utils/dates.js'
 import { buildTestApp, resetDb, seedFixtures } from '../../test/helpers.js'
 
@@ -60,6 +60,38 @@ describe('Vehicle location & availability browse', () => {
       .get('/api/customer/vehicles')
       .query({ startDate: todayISO(), pageSize: 50 })
     expect(beforeRental.body.items.some((v: { id: string }) => v.id === vehicleId)).toBe(true)
+  })
+
+  it('LOC-04: a hold blocks the date-filtered catalog only until its SLA runs out', async () => {
+    const fixtures = await seedFixtures()
+    const vehicleId = fixtures.vehicles[0].id
+    const startDate = todayISO()
+
+    const [hold] = await db
+      .insert(bookingRequests)
+      .values({
+        customerId: fixtures.customer.id,
+        vehicleId,
+        status: 'pending',
+        note: JSON.stringify({ startDate, durationMonths: 1 }),
+      })
+      .returning()
+
+    const blocked = await request(app)
+      .get('/api/customer/vehicles')
+      .query({ startDate, pageSize: 50 })
+    expect(blocked.body.items.some((v: { id: string }) => v.id === vehicleId)).toBe(false)
+
+    // Nobody ever answered this request; it must not hold the car forever.
+    await db
+      .update(bookingRequests)
+      .set({ createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) })
+      .where(eq(bookingRequests.id, hold.id))
+
+    const released = await request(app)
+      .get('/api/customer/vehicles')
+      .query({ startDate, pageSize: 50 })
+    expect(released.body.items.some((v: { id: string }) => v.id === vehicleId)).toBe(true)
   })
 
   it('LOC-03: catalog results include location fields', async () => {

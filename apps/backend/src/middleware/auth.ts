@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from 'express'
 
 export { ADMIN_PORTAL_ROLES }
 import { eq } from 'drizzle-orm'
+import { isSessionActiveByHash } from '../auth/sessions.js'
 import {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
@@ -38,7 +39,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     }
     req.user = await verifyAccessToken(token)
     const [user] = await db
-      .select({ status: profiles.status })
+      .select({ status: profiles.status, role: profiles.role })
       .from(profiles)
       .where(eq(profiles.id, req.user.sub))
       .limit(1)
@@ -50,6 +51,16 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
       res.status(403).json({ error: 'Account is suspended' })
       return
     }
+    // Revocation watermark: logout-all, password change, and account deletion
+    // revoke the refresh session, which must kill the access token minted
+    // alongside it straight away rather than 15 minutes later. Tokens issued
+    // before session binding shipped carry no `sid`; they are rejected too so
+    // the SPA falls back to /api/auth/refresh and picks up a bound token.
+    if (!(await isSessionActiveByHash(req.user.sub, req.user.sid))) {
+      res.status(401).json({ error: 'Session revoked' })
+      return
+    }
+    req.user = { ...req.user, role: user.role }
     next()
   } catch {
     res.status(401).json({ error: 'Invalid or expired session' })

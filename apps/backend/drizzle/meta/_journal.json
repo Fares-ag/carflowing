@@ -108,6 +108,13 @@
       "breakpoints": true
     },
     {
+      "idx": 15,
+      "version": "7",
+      "when": 1788100000000,
+      "tag": "0015_app_settings_knobs",
+      "breakpoints": true
+    },
+    {
       "idx": 16,
       "version": "7",
       "when": 1788200000000,
@@ -182,6 +189,69 @@
       "version": "7",
       "when": 1789200000000,
       "tag": "0026_review_responses",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1789300000000,
+      "tag": "0027_skipcash_saved_cards",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1789400000000,
+      "tag": "0028_whatsapp_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789500000000,
+      "tag": "0029_referrals",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1789600000000,
+      "tag": "0030_favorites_customer_vehicle_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1789700000000,
+      "tag": "0031_complaint_replies",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789800000000,
+      "tag": "0032_consent_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789900000000,
+      "tag": "0033_dealer_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790000000000,
+      "tag": "0034_retention_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790100000000,
+      "tag": "0035_staff_invites_admin_role",
       "breakpoints": true
     }
   ]

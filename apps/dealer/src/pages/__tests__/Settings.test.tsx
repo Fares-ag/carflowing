@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '../../test/render'
 import { Settings } from '../Settings'
@@ -29,5 +29,21 @@ describe('Dealer Settings bank details', () => {
     })
     expect(screen.getByPlaceholderText(/Legal business name on account/i)).toBeInTheDocument()
     expect(screen.getByPlaceholderText(/QA00/i)).toBeInTheDocument()
+  })
+
+  it('UI-D-SET-02: the security tab offers real 2FA enrolment, not a deferral notice', async () => {
+    renderWithProviders(<Settings />)
+    await waitFor(() => expect(screen.getByText('Payout bank details')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /^security$/i }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Two-factor authentication')).toBeInTheDocument()
+    )
+    expect(
+      screen.getByRole('button', { name: /enable two-factor authentication/i })
+    ).toBeInTheDocument()
+    // Used to say security was handled by "your account provider".
+    expect(screen.queryByText(/available through your account provider/i)).not.toBeInTheDocument()
   })
 })

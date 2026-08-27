@@ -491,6 +491,7 @@ CREATE INDEX IF NOT EXISTS invoices_status_idx ON invoices (status);
 CREATE INDEX IF NOT EXISTS vehicles_dealer_idx ON vehicles (dealer_id);
 CREATE INDEX IF NOT EXISTS messages_to_user_idx ON messages (to_user_id);
 CREATE INDEX IF NOT EXISTS favorites_customer_idx ON favorites (customer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS favorites_customer_vehicle_uidx ON favorites (customer_id, vehicle_id);
 CREATE INDEX IF NOT EXISTS complaints_customer_idx ON complaints (customer_id);
 
 -- Re-audit hardening: at most ONE in-flight (pending) payment per booking
@@ -917,3 +918,152 @@ ALTER TABLE rental_reviews
   ADD COLUMN IF NOT EXISTS dealer_response text,
   ADD COLUMN IF NOT EXISTS dealer_responded_at timestamptz,
   ADD COLUMN IF NOT EXISTS dealer_responded_by uuid REFERENCES profiles(id) ON DELETE SET NULL;
+
+-- 0027: SkipCash saved-card token storage
+ALTER TABLE payment_methods
+  ADD COLUMN IF NOT EXISTS provider text NOT NULL DEFAULT 'reference',
+  ADD COLUMN IF NOT EXISTS provider_token_id text,
+  ADD COLUMN IF NOT EXISTS token_saved_at timestamptz;
+
+CREATE UNIQUE INDEX IF NOT EXISTS payment_methods_user_provider_token_uidx
+  ON payment_methods (user_id, provider, provider_token_id)
+  WHERE provider_token_id IS NOT NULL;
+
+-- 0028: WhatsApp notification preference
+ALTER TABLE user_preferences
+  ADD COLUMN IF NOT EXISTS whatsapp_notifications boolean NOT NULL DEFAULT false;
+
+-- 0029: Referral program
+CREATE TABLE IF NOT EXISTS referral_codes (
+  user_id uuid PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+  code text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS referrals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  referrer_user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  referred_user_id uuid NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
+  referral_code text NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  first_paid_invoice_id uuid REFERENCES invoices(id) ON DELETE SET NULL,
+  credited_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS referrals_referrer_user_id_idx ON referrals (referrer_user_id);
+
+CREATE TABLE IF NOT EXISTS customer_credits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  amount numeric NOT NULL,
+  remaining_amount numeric NOT NULL,
+  source text NOT NULL,
+  referral_id uuid REFERENCES referrals(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS customer_credits_user_remaining_idx ON customer_credits (user_id)
+  WHERE remaining_amount > 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS customer_credits_referral_grant_uidx
+  ON customer_credits (referral_id, user_id, source)
+  WHERE referral_id IS NOT NULL;
+
+ALTER TABLE invoices
+  ADD COLUMN IF NOT EXISTS credit_applied numeric NOT NULL DEFAULT 0;
+
+-- 0030: One favorite row per customer/vehicle
+CREATE UNIQUE INDEX IF NOT EXISTS favorites_customer_vehicle_uidx
+  ON favorites (customer_id, vehicle_id);
+
+-- 0031: Complaint reply thread index (table is created above)
+CREATE INDEX IF NOT EXISTS complaint_replies_complaint_idx ON complaint_replies (complaint_id);
+
+-- 0032: Versioned legal-document consent records
+CREATE TABLE IF NOT EXISTS consent_records (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  document_kind text NOT NULL,
+  document_version text NOT NULL,
+  accepted_at timestamptz NOT NULL DEFAULT now(),
+  ip_address text,
+  user_agent text
+);
+
+CREATE INDEX IF NOT EXISTS consent_records_profile_kind_idx
+  ON consent_records (profile_id, document_kind);
+
+-- 0033: Dealer SaaS billing
+DO $$ BEGIN CREATE TYPE dealer_subscription_status AS ENUM ('active', 'past_due', 'cancelled'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE dealer_invoice_status AS ENUM ('open', 'paid', 'past_due', 'void'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS dealer_plans (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text NOT NULL UNIQUE,
+  name text NOT NULL,
+  price_qar numeric NOT NULL DEFAULT 0,
+  -- NULL means unlimited listings.
+  vehicle_limit integer,
+  features jsonb NOT NULL DEFAULT '[]'::jsonb,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT dealer_plans_price_qar_nonneg CHECK (price_qar >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS dealer_subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  dealer_id uuid NOT NULL REFERENCES dealers(id) ON DELETE RESTRICT,
+  plan_id uuid NOT NULL REFERENCES dealer_plans(id) ON DELETE RESTRICT,
+  status dealer_subscription_status NOT NULL DEFAULT 'active',
+  current_period_start timestamptz NOT NULL DEFAULT now(),
+  current_period_end timestamptz NOT NULL,
+  cancel_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS dealer_subscriptions_dealer_open_uidx
+  ON dealer_subscriptions (dealer_id)
+  WHERE status <> 'cancelled';
+
+CREATE TABLE IF NOT EXISTS dealer_invoices (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  dealer_id uuid NOT NULL REFERENCES dealers(id) ON DELETE RESTRICT,
+  subscription_id uuid NOT NULL REFERENCES dealer_subscriptions(id) ON DELETE RESTRICT,
+  amount numeric NOT NULL DEFAULT 0,
+  status dealer_invoice_status NOT NULL DEFAULT 'open',
+  period_start timestamptz NOT NULL,
+  period_end timestamptz NOT NULL,
+  due_date timestamptz NOT NULL,
+  paid_at timestamptz,
+  payment_id uuid REFERENCES payments(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT dealer_invoices_amount_nonneg CHECK (amount >= 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS dealer_invoices_subscription_period_uidx
+  ON dealer_invoices (subscription_id, period_start);
+
+CREATE INDEX IF NOT EXISTS dealer_invoices_dealer_status_idx
+  ON dealer_invoices (dealer_id, status);
+
+-- 0034: Retention sweep indexes
+CREATE INDEX IF NOT EXISTS refresh_sessions_expires_at_idx ON refresh_sessions (expires_at);
+CREATE INDEX IF NOT EXISTS password_reset_tokens_expires_at_idx ON password_reset_tokens (expires_at);
+CREATE INDEX IF NOT EXISTS email_verification_tokens_expires_at_idx ON email_verification_tokens (expires_at);
+CREATE INDEX IF NOT EXISTS two_fa_challenges_expires_at_idx ON two_fa_challenges (expires_at);
+CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs (created_at);
+CREATE INDEX IF NOT EXISTS analytics_events_created_at_idx ON analytics_events (created_at);
+CREATE INDEX IF NOT EXISTS email_outbox_created_at_idx ON email_outbox (created_at);
+
+-- 0035: staff invites may grant the full admin role (matches ADMIN_PORTAL_ROLES)
+ALTER TABLE staff_invites DROP CONSTRAINT IF EXISTS staff_invites_role_check;
+ALTER TABLE staff_invites
+  ADD CONSTRAINT staff_invites_role_check CHECK (role IN ('admin', 'finance', 'ops', 'support'));
+
+-- Sync with drizzle/0007: payment_disputes carries its status CHECK inline in the
+-- migration chain, but bootstrap.sql created the table without it.
+ALTER TABLE payment_disputes DROP CONSTRAINT IF EXISTS payment_disputes_status_check;
+ALTER TABLE payment_disputes
+  ADD CONSTRAINT payment_disputes_status_check
+  CHECK (status IN ('open', 'investigating', 'won', 'lost', 'closed'));

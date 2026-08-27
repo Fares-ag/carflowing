@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { and, eq, or, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { Router } from 'express'
 import multer from 'multer'
 import { db } from '../db/index.js'
@@ -25,6 +25,7 @@ import {
   setAttachmentResponseHeaders,
   validateUploadContent,
   VEHICLE_IMAGE_MIMES,
+  restrictiveContentTypeForPath,
 } from '../utils/uploadContent.js'
 
 const upload = multer({
@@ -51,12 +52,15 @@ function sanitizeVehicleImagePrefix(raw: string): string | null {
   return normalizedKey.slice('vehicle-images/'.length) || 'temp'
 }
 
-function storageKeyFromUrl(url: string): string | null {
-  return storageKeyFromReference(url)
-}
-
+/**
+ * Ownership is compared on storage KEYS, not on URL strings. Under
+ * `UPLOAD_DRIVER=blob` a vehicle image is handed out as
+ * `…/api/uploads/media?path=vehicle-images/…`, whose key only appears
+ * percent-encoded inside the URL — so the old `LIKE '%<key>%'` never matched
+ * and the endpoint answered 403 for every image its owner tried to delete.
+ */
 async function dealerOwnsVehicleImage(dealerUserId: string, url: string): Promise<boolean> {
-  const key = storageKeyFromUrl(url)
+  const key = storageKeyFromReference(url)
   if (!key?.startsWith('vehicle-images/')) return false
   const [dealer] = await db
     .select({ id: dealers.id })
@@ -64,45 +68,67 @@ async function dealerOwnsVehicleImage(dealerUserId: string, url: string): Promis
     .where(eq(dealers.ownerUserId, dealerUserId))
     .limit(1)
   if (!dealer) return false
-  const [vehicle] = await db
-    .select({ id: vehicles.id })
+  const rows = await db
+    .select({ imageUrl: vehicles.imageUrl, imageUrls: vehicles.imageUrls })
     .from(vehicles)
-    .where(
-      and(
-        eq(vehicles.dealerId, dealer.id),
-        or(
-          eq(vehicles.imageUrl, url),
-          sql`${vehicles.imageUrl} LIKE ${'%' + key + '%'}`,
-          sql`${url} = ANY(${vehicles.imageUrls})`
-        )
-      )
+    .where(eq(vehicles.dealerId, dealer.id))
+  return rows.some((row) =>
+    [row.imageUrl, ...(row.imageUrls ?? [])].some(
+      (reference) => !!reference && storageKeyFromReference(reference) === key
     )
-    .limit(1)
-  return !!vehicle
+  )
 }
 
-/** Public proxy for marketplace images stored in a private Vercel Blob store. */
+/**
+ * Deletes the object a fresh upload has just replaced. Best-effort: the DB
+ * already points at the new object, so a storage hiccup must not fail the
+ * upload the user just made.
+ */
+async function deleteSupersededObject(
+  userId: string,
+  previous: string | null | undefined,
+  next: string
+): Promise<void> {
+  const old = previous?.trim()
+  if (!old || old === next.trim()) return
+  if (!userOwnsStoredPath(userId, old)) return
+  try {
+    await deleteStoredFile(old)
+  } catch (err) {
+    console.error('[uploads] failed to delete superseded object', { path: old, err })
+  }
+}
+
+function sanitizePublicMediaPath(raw: string): string | null {
+  const pathValue = String(raw || '').trim()
+  if (!pathValue || pathValue.includes('..') || pathValue.includes('\\') || pathValue.includes('\0')) {
+    return null
+  }
+  const normalized = path.posix.normalize(pathValue).replace(/^\/+/, '')
+  if (!normalized.startsWith('vehicle-images/') && !normalized.startsWith('user-avatars/')) {
+    return null
+  }
+  if (normalized.includes('..')) return null
+  return normalized
+}
+
+/** Catalog/avatar proxy for private blob stores. Documents are never served here. */
 uploadsRouter.get(
   '/media',
   asyncHandler(async (req, res) => {
-    const docPath = String(req.query.path || '')
-    if (!docPath || docPath.includes('..')) {
+    const mediaPath = sanitizePublicMediaPath(String(req.query.path || ''))
+    if (!mediaPath) {
       res.status(400).json({ error: 'Invalid path' })
       return
     }
-    if (!docPath.startsWith('vehicle-images/') && !docPath.startsWith('user-avatars/')) {
-      res.status(403).json({ error: 'Forbidden' })
-      return
-    }
-    const file = await getStoredFile(docPath)
+    const file = await getStoredFile(mediaPath)
     if (!file) {
-      res.status(404).json({ error: 'File not found' })
+      res.status(404).json({ error: 'Not found' })
       return
     }
-    // Allow customer/dealer/admin frontends on other origins to render <img> tags.
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
-    res.setHeader('Cache-Control', 'public, max-age=86400, immutable')
-    if (file.contentType) res.type(file.contentType)
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Cache-Control', 'public, max-age=86400')
+    res.setHeader('Content-Type', file.contentType ?? restrictiveContentTypeForPath(mediaPath))
     res.send(file.buffer)
   })
 )
@@ -158,8 +184,16 @@ uploadsRouter.post(
       return
     }
     const relative = `profiles/${req.user!.sub}/avatar-${Date.now()}${validated.ext}`
+    const [previous] = await db
+      .select({ avatarUrl: profiles.avatarUrl })
+      .from(profiles)
+      .where(eq(profiles.id, req.user!.sub))
+      .limit(1)
     const stored = await storeFile('user-avatars', relative, file.buffer, validated.mime)
     await db.update(profiles).set({ avatarUrl: stored.url }).where(eq(profiles.id, req.user!.sub))
+    // The replaced avatar is unreachable from now on; don't leave it in the
+    // bucket forever. Only objects this user owns are eligible.
+    await deleteSupersededObject(req.user!.sub, previous?.avatarUrl, stored.url)
     res.json({ url: stored.url, path: stored.path })
   })
 )
@@ -194,6 +228,7 @@ uploadsRouter.post(
       .where(eq(customerProfiles.userId, req.user!.sub))
       .limit(1)
     if (cp) {
+      const superseded = type === 'qid' ? cp.qidDocumentPath : cp.driversLicensePath
       await db
         .update(customerProfiles)
         .set(
@@ -202,6 +237,8 @@ uploadsRouter.post(
             : { driversLicensePath: stored.path }
         )
         .where(eq(customerProfiles.id, cp.id))
+      // Retention copy promises the previous scan is gone once replaced.
+      await deleteSupersededObject(req.user!.sub, superseded, stored.path)
     } else {
       await db.insert(customerProfiles).values({
         userId: req.user!.sub,
@@ -333,7 +370,10 @@ uploadsRouter.delete(
     if (req.user!.role !== 'admin') {
       const ownsPath = userOwnsStoredPath(req.user!.sub, url)
       let dealerVehicleImage = false
-      if (req.user!.role === 'dealer' && url.includes('vehicle-images/')) {
+      // Test the resolved KEY, not the raw string: a blob media URL carries
+      // `vehicle-images/...` percent-encoded in its query string.
+      const key = storageKeyFromReference(url)
+      if (req.user!.role === 'dealer' && key?.startsWith('vehicle-images/')) {
         dealerVehicleImage = await dealerOwnsVehicleImage(req.user!.sub, url)
       }
       if (!ownsPath && !dealerVehicleImage) {

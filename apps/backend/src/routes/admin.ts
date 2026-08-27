@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { isAdminPortalRole } from '@carflow/shared/types'
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { hashPassword } from '../auth/password.js'
@@ -79,7 +80,7 @@ import {
   settingsAuditSnapshot,
 } from '../services/appSettings.js'
 import { requestSkipCashRefund } from '../services/skipcash.js'
-import { asyncHandler, paginated, parsePagination } from '../utils/http.js'
+import { asyncHandler, paginated, parsePagination, attachUuidParamGuard } from '../utils/http.js'
 import { parseBody } from '../validation/parse.js'
 import {
   adminCreateMessageSchema,
@@ -93,9 +94,19 @@ import {
   adminPatchVehicleStatusSchema,
   pauseRentalSchema,
 } from '../validation/schemas.js'
+import { adminBroadcastRouter } from './adminBroadcast.js'
+import { adminFeaturesRouter } from './adminFeatures.js'
+import { adminPromoRouter } from './adminPromo.js'
 
 export const adminRouter = Router()
+attachUuidParamGuard(adminRouter)
 adminRouter.use(requireAuth, requireAdminPortal)
+
+// Mounted ahead of this router’s own routes so literal paths such as
+// /vehicles/search match before the /vehicles/:id pattern captures them.
+adminRouter.use(adminPromoRouter)
+adminRouter.use(adminBroadcastRouter)
+adminRouter.use(adminFeaturesRouter)
 
 adminRouter.get(
   '/dashboard',
@@ -191,7 +202,12 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     const { page, pageSize, offset, limit } = parsePagination(req.query as any)
     const [totalRow] = await db.select({ value: count() }).from(vehicles)
-    const rows = await db.select().from(vehicles).limit(limit).offset(offset)
+    const rows = await db
+      .select()
+      .from(vehicles)
+      .orderBy(vehicles.id)
+      .limit(limit)
+      .offset(offset)
     res.json(paginated(rows.map(mapVehicle), Number(totalRow.value), page, pageSize))
   })
 )
@@ -344,7 +360,13 @@ adminRouter.get(
     const { page, pageSize, offset, limit } = parsePagination(req.query as any)
     const where = eq(profiles.role, 'customer')
     const [totalRow] = await db.select({ value: count() }).from(profiles).where(where)
-    const rows = await db.select().from(profiles).where(where).limit(limit).offset(offset)
+    const rows = await db
+      .select()
+      .from(profiles)
+      .where(where)
+      .orderBy(desc(profiles.createdAt))
+      .limit(limit)
+      .offset(offset)
     res.json(paginated(rows.map(mapProfileToUser), Number(totalRow.value), page, pageSize))
   })
 )
@@ -355,7 +377,13 @@ adminRouter.get(
     const { page, pageSize, offset, limit } = parsePagination(req.query as any)
     const where = eq(profiles.role, 'customer')
     const [totalRow] = await db.select({ value: count() }).from(profiles).where(where)
-    const rows = await db.select().from(profiles).where(where).limit(limit).offset(offset)
+    const rows = await db
+      .select()
+      .from(profiles)
+      .where(where)
+      .orderBy(desc(profiles.createdAt))
+      .limit(limit)
+      .offset(offset)
     const ids = rows.map((u) => u.id)
     const cps = ids.length
       ? await db.select().from(customerProfiles).where(inArray(customerProfiles.userId, ids))
@@ -434,11 +462,22 @@ adminRouter.patch(
       return
     }
     const [before] = await db
-      .select({ status: profiles.status, email: profiles.email, name: profiles.name })
+      .select({
+        status: profiles.status,
+        email: profiles.email,
+        name: profiles.name,
+        role: profiles.role,
+      })
       .from(profiles)
       .where(eq(profiles.id, req.params.userId))
       .limit(1)
     if (!before) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    // Staff accounts are suspended through /staff/:id/deactivate, which also
+    // blocks self-lockout. Without this check that guard is trivially bypassed.
+    if (before.role !== 'customer') {
       res.status(404).json({ error: 'Not found' })
       return
     }
@@ -500,6 +539,10 @@ adminRouter.patch(
       }
       patch.email = normalized
       patch.emailVerifiedAt = null
+    }
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: 'No fields to update' })
+      return
     }
     await db.update(profiles).set(patch as any).where(eq(profiles.id, req.params.userId))
     await logAuditSafe({
@@ -727,7 +770,12 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     const { page, pageSize, offset, limit } = parsePagination(req.query as any)
     const [totalRow] = await db.select({ value: count() }).from(dealers)
-    const rows = await db.select().from(dealers).limit(limit).offset(offset)
+    const rows = await db
+      .select()
+      .from(dealers)
+      .orderBy(desc(dealers.createdAt))
+      .limit(limit)
+      .offset(offset)
     res.json(paginated(rows.map(mapDealer), Number(totalRow.value), page, pageSize))
   })
 )
@@ -793,8 +841,13 @@ adminRouter.post(
         .returning()
       accountCreated = true
     } else {
-      if (profile.role === 'admin') {
-        res.status(400).json({ error: 'Cannot convert an admin account into a dealer' })
+      // Promoting a customer into a dealer is a supported flow (ADM-16). Staff
+      // accounts are not: silently rewriting their role would lock them out of
+      // the admin portal.
+      if (profile.role !== 'dealer' && profile.role !== 'customer') {
+        res.status(400).json({
+          error: `This email belongs to a ${profile.role} staff account and cannot be converted into a dealer.`,
+        })
         return
       }
       await db
@@ -968,6 +1021,10 @@ adminRouter.patch(
     if (bankIban !== undefined) patch.bankIban = bankIban?.trim() || null
     if (verified === true) patch.bankDetailsVerifiedAt = new Date()
     if (verified === false) patch.bankDetailsVerifiedAt = null
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: 'No fields to update' })
+      return
+    }
     const [row] = await db
       .update(dealers)
       .set(patch as any)
@@ -1107,28 +1164,6 @@ adminRouter.post(
       return
     }
 
-    let refundedByProvider = false
-    let providerMessage: string | undefined
-    if (payment.provider === 'skipcash' && payment.externalTransactionId) {
-      const result = await requestSkipCashRefund({
-        externalPaymentId: payment.externalTransactionId,
-        amount: requested,
-      })
-      refundedByProvider = result.refunded
-      providerMessage = result.message
-    }
-
-    if (!refundedByProvider && manualConfirmed !== true) {
-      // Nothing has actually been refunded — say so instead of pretending.
-      res.status(409).json({
-        error:
-          providerMessage ||
-          'Automatic refund is not available. Process it manually (SkipCash dashboard or cash), then retry with manualConfirmed: true.',
-        requiresManualConfirmation: true,
-      })
-      return
-    }
-
     const result = await db.transaction(async (tx) => {
       const [locked] = await tx
         .select()
@@ -1148,6 +1183,31 @@ adminRouter.post(
           status: 409 as const,
           body: {
             error: `Refund exceeds the remaining ${lockedRemaining.toFixed(2)} (a concurrent refund may have just completed)`,
+          } as any,
+        }
+      }
+      // The provider call runs UNDER the row lock. Outside it, two concurrent
+      // refunds both clear the unlocked pre-check and both reach SkipCash, so
+      // real money leaves twice while the ledger records a single refund.
+      let refundedByProvider = false
+      let providerMessage: string | undefined
+      if (locked.provider === 'skipcash' && locked.externalTransactionId) {
+        const providerResult = await requestSkipCashRefund({
+          externalPaymentId: locked.externalTransactionId,
+          amount: requested,
+        })
+        refundedByProvider = providerResult.refunded
+        providerMessage = providerResult.message
+      }
+      if (!refundedByProvider && manualConfirmed !== true) {
+        // Nothing has actually been refunded — say so instead of pretending.
+        return {
+          status: 409 as const,
+          body: {
+            error:
+              providerMessage ||
+              'Automatic refund is not available. Process it manually (SkipCash dashboard or cash), then retry with manualConfirmed: true.',
+            requiresManualConfirmation: true,
           } as any,
         }
       }
@@ -1297,6 +1357,10 @@ adminRouter.patch(
     if (u.priceYearly !== undefined) patch.priceYearly = String(u.priceYearly)
     if (u.features !== undefined) patch.features = u.features
     const [before] = await db.select().from(plans).where(eq(plans.id, req.params.id)).limit(1)
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: 'No fields to update' })
+      return
+    }
     const [row] = await db
       .update(plans)
       .set(patch as any)
@@ -1511,6 +1575,7 @@ adminRouter.post(
 
 adminRouter.get(
   '/messages',
+  requireSupportCapability,
   asyncHandler(async (req, res) => {
     const { page, pageSize, offset, limit } = parsePagination(req.query as any)
     const folder = req.query.folder as string | undefined
@@ -1541,6 +1606,7 @@ adminRouter.get(
 
 adminRouter.get(
   '/messages/folder-counts',
+  requireSupportCapability,
   asyncHandler(async (_req, res) => {
     const rows = await db
       .select({ folder: messages.folder, value: count() })
@@ -1563,6 +1629,7 @@ adminRouter.get(
 
 adminRouter.get(
   '/messages/activity',
+  requireSupportCapability,
   asyncHandler(async (req, res) => {
     const limit = Math.min(50, Number(req.query.limit) || 10)
     const rows = await db
@@ -1579,6 +1646,25 @@ adminRouter.get(
     )
   })
 )
+
+async function loadAdminScopedMessage(messageId: string) {
+  const [msg] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1)
+  if (!msg) return null
+  const [fromUser] = await db
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, msg.fromUserId))
+    .limit(1)
+  const [toUser] = await db
+    .select({ role: profiles.role })
+    .from(profiles)
+    .where(eq(profiles.id, msg.toUserId))
+    .limit(1)
+  if (!isAdminPortalRole(fromUser?.role ?? '') && !isAdminPortalRole(toUser?.role ?? '')) {
+    return null
+  }
+  return msg
+}
 
 adminRouter.post(
   '/messages',
@@ -1610,6 +1696,12 @@ adminRouter.patch(
     const body = parseBody(adminPatchMessageReadSchema, req, res)
     if (!body) return
 
+    const existing = await loadAdminScopedMessage(req.params.id)
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+
     const [row] = await db
       .update(messages)
       .set({ read: body.read })
@@ -1629,6 +1721,19 @@ adminRouter.patch(
   asyncHandler(async (req, res) => {
     const body = parseBody(adminPatchMessageFolderSchema, req, res)
     if (!body) return
+
+    const existing = await loadAdminScopedMessage(req.params.id)
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+
+    if (existing.folder === 'sent') {
+      res.status(409).json({
+        error: 'Sent messages cannot be moved between folders.',
+      })
+      return
+    }
 
     const [row] = await db
       .update(messages)
@@ -2174,11 +2279,3 @@ adminRouter.post(
     res.json({ ok: true })
   })
 )
-
-import { adminFeaturesRouter } from './adminFeatures.js'
-import { adminBroadcastRouter } from './adminBroadcast.js'
-import { adminPromoRouter } from './adminPromo.js'
-adminRouter.use(adminPromoRouter)
-adminRouter.use(adminBroadcastRouter)
-adminRouter.use(adminFeaturesRouter)
-

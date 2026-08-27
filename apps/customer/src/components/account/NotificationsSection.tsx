@@ -8,6 +8,7 @@ import './NotificationsSection.css'
 type NotificationPrefs = {
   emailRentalUpdates: boolean
   smsRentalUpdates: boolean
+  whatsappRentalUpdates: boolean
   reminderNotifications: boolean
   emailPromotions: boolean
   smsPromotions: boolean
@@ -18,6 +19,7 @@ type NotificationPrefs = {
 const DEFAULT_PREFS: NotificationPrefs = {
   emailRentalUpdates: true,
   smsRentalUpdates: true,
+  whatsappRentalUpdates: false,
   reminderNotifications: true,
   emailPromotions: false,
   smsPromotions: false,
@@ -28,12 +30,14 @@ const DEFAULT_PREFS: NotificationPrefs = {
 function fromServer(prefs: {
   emailNotifications: boolean
   smsNotifications: boolean
+  whatsappNotifications?: boolean
   pushNotifications: boolean
   marketingEmails: boolean
 }): NotificationPrefs {
   return {
     emailRentalUpdates: prefs.emailNotifications,
     smsRentalUpdates: prefs.smsNotifications,
+    whatsappRentalUpdates: prefs.whatsappNotifications ?? false,
     reminderNotifications: prefs.emailNotifications,
     emailPromotions: prefs.marketingEmails,
     smsPromotions: prefs.marketingEmails,
@@ -46,6 +50,7 @@ function toServer(prefs: NotificationPrefs) {
   return {
     emailNotifications: prefs.emailRentalUpdates || prefs.reminderNotifications,
     smsNotifications: prefs.smsRentalUpdates,
+    whatsappNotifications: prefs.whatsappRentalUpdates,
     pushNotifications: prefs.pushNotifications,
     marketingEmails:
       prefs.emailPromotions || prefs.smsPromotions || prefs.weeklyDigest,
@@ -122,6 +127,21 @@ export default function NotificationsSection() {
               <button
                 className={`toggle-switch ${notifications.smsRentalUpdates ? 'active' : ''}`}
                 onClick={() => toggleNotification('smsRentalUpdates')}
+              >
+                <span className="toggle-slider"></span>
+              </button>
+            </div>
+
+            <div className="notification-item">
+              <div className="notification-info">
+                <label className="notification-label">WhatsApp Rental Updates</label>
+                <p className="notification-description">
+                  Booking approvals, invoice due/overdue, and payment confirmations via WhatsApp
+                </p>
+              </div>
+              <button
+                className={`toggle-switch ${notifications.whatsappRentalUpdates ? 'active' : ''}`}
+                onClick={() => toggleNotification('whatsappRentalUpdates')}
               >
                 <span className="toggle-slider"></span>
               </button>
